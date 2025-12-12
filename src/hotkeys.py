@@ -270,13 +270,11 @@ class HotkeyCapture:
 
 # Suggested hotkeys for users with macro keys
 SUGGESTED_HOTKEYS = {
-    "start_recording": "F14",
-    "stop_recording": "F15",
+    "record_toggle": "F15",
     "stop_and_transcribe": "F16",
 }
 
 HOTKEY_DESCRIPTIONS = {
-    "start_recording": "Start Recording",
-    "stop_recording": "Stop Recording (discard)",
+    "record_toggle": "Record Toggle (Start/Stop)",
     "stop_and_transcribe": "Stop & Transcribe",
 }

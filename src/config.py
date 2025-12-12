@@ -16,11 +16,14 @@ GEMINI_MODELS = [
     ("gemini-flash-latest", "Gemini Flash (Latest)"),
     ("gemini-2.5-flash", "Gemini 2.5 Flash"),
     ("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite (Budget)"),
+    ("gemini-2.5-pro", "Gemini 2.5 Pro"),
 ]
 
 OPENAI_MODELS = [
     ("gpt-4o-audio-preview", "GPT-4o Audio Preview"),
-    ("gpt-4o-mini-audio-preview", "GPT-4o Mini Audio Preview"),
+    ("gpt-4o-mini-audio-preview", "GPT-4o Mini Audio Preview (Budget)"),
+    ("gpt-audio", "GPT Audio"),
+    ("gpt-audio-mini", "GPT Audio Mini (Budget)"),
 ]
 
 MISTRAL_MODELS = [
@@ -57,9 +60,8 @@ class Config:
 
     # Hotkeys (global keyboard shortcuts)
     # Supported keys: F14-F20 (macro keys), F1-F12, or modifier combinations
-    hotkey_start_recording: str = ""
-    hotkey_stop_recording: str = ""
-    hotkey_stop_and_transcribe: str = ""
+    hotkey_record_toggle: str = "f15"  # Toggle recording on/off
+    hotkey_stop_and_transcribe: str = "f16"  # Stop and transcribe
 
     # Cleanup prompt
     cleanup_prompt: str = """Your task is to provide a cleaned transcription of the audio recorded by the user.

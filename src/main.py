@@ -139,9 +139,10 @@ class TranscriptionWorker(QThread):
 class SettingsDialog(QDialog):
     """Settings dialog for API keys and preferences."""
 
-    def __init__(self, config: Config, parent=None):
+    def __init__(self, config: Config, recorder, parent=None):
         super().__init__(parent)
         self.config = config
+        self.recorder = recorder
         self.setWindowTitle("Settings")
         self.setMinimumWidth(500)
         self.setup_ui()
@@ -169,36 +170,20 @@ class SettingsDialog(QDialog):
 
         tabs.addTab(api_tab, "API Keys")
 
-        # Models tab
-        models_tab = QWidget()
-        models_layout = QFormLayout(models_tab)
+        # Audio tab (microphone selection)
+        audio_tab = QWidget()
+        audio_layout = QFormLayout(audio_tab)
 
-        self.gemini_model = QComboBox()
-        for model_id, display_name in GEMINI_MODELS:
-            self.gemini_model.addItem(display_name, model_id)
-        # Set current selection based on config
-        gemini_idx = self.gemini_model.findData(self.config.gemini_model)
-        if gemini_idx >= 0:
-            self.gemini_model.setCurrentIndex(gemini_idx)
-        models_layout.addRow("Gemini Model:", self.gemini_model)
+        self.mic_combo = QComboBox()
+        self._refresh_microphones()
+        audio_layout.addRow("Microphone:", self.mic_combo)
 
-        self.openai_model = QComboBox()
-        for model_id, display_name in OPENAI_MODELS:
-            self.openai_model.addItem(display_name, model_id)
-        openai_idx = self.openai_model.findData(self.config.openai_model)
-        if openai_idx >= 0:
-            self.openai_model.setCurrentIndex(openai_idx)
-        models_layout.addRow("OpenAI Model:", self.openai_model)
+        self.sample_rate = QComboBox()
+        self.sample_rate.addItems(["16000", "22050", "44100", "48000"])
+        self.sample_rate.setCurrentText(str(self.config.sample_rate))
+        audio_layout.addRow("Sample Rate:", self.sample_rate)
 
-        self.mistral_model = QComboBox()
-        for model_id, display_name in MISTRAL_MODELS:
-            self.mistral_model.addItem(display_name, model_id)
-        mistral_idx = self.mistral_model.findData(self.config.mistral_model)
-        if mistral_idx >= 0:
-            self.mistral_model.setCurrentIndex(mistral_idx)
-        models_layout.addRow("Mistral Model:", self.mistral_model)
-
-        tabs.addTab(models_tab, "Models")
+        tabs.addTab(audio_tab, "Audio")
 
         # Behavior tab
         behavior_tab = QWidget()
@@ -207,11 +192,6 @@ class SettingsDialog(QDialog):
         self.start_minimized = QCheckBox()
         self.start_minimized.setChecked(self.config.start_minimized)
         behavior_layout.addRow("Start minimized to tray:", self.start_minimized)
-
-        self.sample_rate = QComboBox()
-        self.sample_rate.addItems(["16000", "22050", "44100", "48000"])
-        self.sample_rate.setCurrentText(str(self.config.sample_rate))
-        behavior_layout.addRow("Sample Rate:", self.sample_rate)
 
         tabs.addTab(behavior_tab, "Behavior")
 
@@ -231,13 +211,9 @@ class SettingsDialog(QDialog):
 
         hotkeys_form = QFormLayout()
 
-        self.hotkey_start = HotkeyEdit()
-        self.hotkey_start.setText(self.config.hotkey_start_recording.upper())
-        hotkeys_form.addRow("Start Recording:", self.hotkey_start)
-
-        self.hotkey_stop = HotkeyEdit()
-        self.hotkey_stop.setText(self.config.hotkey_stop_recording.upper())
-        hotkeys_form.addRow("Stop Recording (discard):", self.hotkey_stop)
+        self.hotkey_toggle = HotkeyEdit()
+        self.hotkey_toggle.setText(self.config.hotkey_record_toggle.upper())
+        hotkeys_form.addRow("Record Toggle (Start/Stop):", self.hotkey_toggle)
 
         self.hotkey_stop_transcribe = HotkeyEdit()
         self.hotkey_stop_transcribe.setText(self.config.hotkey_stop_and_transcribe.upper())
@@ -246,7 +222,7 @@ class SettingsDialog(QDialog):
         hotkeys_layout.addLayout(hotkeys_form)
 
         # Suggested hotkeys button
-        suggest_btn = QPushButton("Use Suggested (F14-F16)")
+        suggest_btn = QPushButton("Use Suggested (F15, F16)")
         suggest_btn.clicked.connect(self._use_suggested_hotkeys)
         hotkeys_layout.addWidget(suggest_btn)
 
@@ -275,25 +251,41 @@ class SettingsDialog(QDialog):
         btn_layout.addWidget(save_btn)
         layout.addLayout(btn_layout)
 
+    def _refresh_microphones(self):
+        """Refresh the list of available microphones."""
+        self.mic_combo.clear()
+        devices = self.recorder.get_input_devices()
+        for idx, name in devices:
+            self.mic_combo.addItem(name, idx)
+
+        # Select previously used mic if available
+        if self.config.selected_microphone:
+            idx = self.mic_combo.findText(self.config.selected_microphone)
+            if idx >= 0:
+                self.mic_combo.setCurrentIndex(idx)
+                return
+
+        # Default to Samson Q2U if available
+        for i in range(self.mic_combo.count()):
+            if "Samson" in self.mic_combo.itemText(i) or "Q2U" in self.mic_combo.itemText(i):
+                self.mic_combo.setCurrentIndex(i)
+                return
+
     def _use_suggested_hotkeys(self):
-        """Fill in the suggested hotkeys (F14-F16)."""
-        self.hotkey_start.setText(SUGGESTED_HOTKEYS["start_recording"])
-        self.hotkey_stop.setText(SUGGESTED_HOTKEYS["stop_recording"])
+        """Fill in the suggested hotkeys (F15, F16)."""
+        self.hotkey_toggle.setText(SUGGESTED_HOTKEYS["record_toggle"])
         self.hotkey_stop_transcribe.setText(SUGGESTED_HOTKEYS["stop_and_transcribe"])
 
     def save_settings(self):
         self.config.gemini_api_key = self.gemini_key.text()
         self.config.openai_api_key = self.openai_key.text()
         self.config.mistral_api_key = self.mistral_key.text()
-        self.config.gemini_model = self.gemini_model.currentData()
-        self.config.openai_model = self.openai_model.currentData()
-        self.config.mistral_model = self.mistral_model.currentData()
+        self.config.selected_microphone = self.mic_combo.currentText()
         self.config.start_minimized = self.start_minimized.isChecked()
         self.config.sample_rate = int(self.sample_rate.currentText())
         self.config.cleanup_prompt = self.cleanup_prompt.toPlainText()
         # Hotkeys (store lowercase for consistency)
-        self.config.hotkey_start_recording = self.hotkey_start.text().lower()
-        self.config.hotkey_stop_recording = self.hotkey_stop.text().lower()
+        self.config.hotkey_record_toggle = self.hotkey_toggle.text().lower()
         self.config.hotkey_stop_and_transcribe = self.hotkey_stop_transcribe.text().lower()
         save_config(self.config)
         self.accept()
@@ -361,10 +353,11 @@ class MainWindow(QMainWindow):
 
         provider_layout.addSpacing(20)
 
-        provider_layout.addWidget(QLabel("Mic:"))
-        self.mic_combo = QComboBox()
-        self.refresh_microphones()
-        provider_layout.addWidget(self.mic_combo, 1)
+        provider_layout.addWidget(QLabel("Model:"))
+        self.model_combo = QComboBox()
+        self.update_model_combo()  # Populate based on current provider
+        self.model_combo.currentIndexChanged.connect(self.on_model_changed)
+        provider_layout.addWidget(self.model_combo, 1)
 
         layout.addLayout(provider_layout)
 
@@ -551,18 +544,11 @@ class MainWindow(QMainWindow):
     def _register_hotkeys(self):
         """Register all configured hotkeys."""
         # Use lambdas that post events to the main thread
-        if self.config.hotkey_start_recording:
+        if self.config.hotkey_record_toggle:
             self.hotkey_listener.register(
-                "start_recording",
-                self.config.hotkey_start_recording,
-                lambda: QTimer.singleShot(0, self._hotkey_start_recording)
-            )
-
-        if self.config.hotkey_stop_recording:
-            self.hotkey_listener.register(
-                "stop_recording",
-                self.config.hotkey_stop_recording,
-                lambda: QTimer.singleShot(0, self._hotkey_stop_recording)
+                "record_toggle",
+                self.config.hotkey_record_toggle,
+                lambda: QTimer.singleShot(0, self._hotkey_record_toggle)
             )
 
         if self.config.hotkey_stop_and_transcribe:
@@ -572,15 +558,12 @@ class MainWindow(QMainWindow):
                 lambda: QTimer.singleShot(0, self._hotkey_stop_and_transcribe)
             )
 
-    def _hotkey_start_recording(self):
-        """Handle global hotkey for starting recording."""
-        if not self.recorder.is_recording:
-            self.toggle_recording()
-
-    def _hotkey_stop_recording(self):
-        """Handle global hotkey for stopping recording (discard)."""
+    def _hotkey_record_toggle(self):
+        """Handle global hotkey for toggling recording on/off."""
         if self.recorder.is_recording:
-            self.delete_recording()
+            self.delete_recording()  # Stop and discard
+        else:
+            self.toggle_recording()  # Start recording
 
     def _hotkey_stop_and_transcribe(self):
         """Handle global hotkey for stop and transcribe."""
@@ -636,38 +619,81 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(2000, lambda: self.status_label.setText("Ready"))
                 QTimer.singleShot(2000, lambda: self.status_label.setStyleSheet("color: #666;"))
 
-    def refresh_microphones(self):
-        """Refresh the list of available microphones."""
-        self.mic_combo.clear()
-        devices = self.recorder.get_input_devices()
-        for idx, name in devices:
-            self.mic_combo.addItem(name, idx)
+    def update_model_combo(self):
+        """Update the model dropdown based on selected provider."""
+        self.model_combo.blockSignals(True)
+        self.model_combo.clear()
 
-        # Select previously used mic if available
-        if self.config.selected_microphone:
-            idx = self.mic_combo.findText(self.config.selected_microphone)
-            if idx >= 0:
-                self.mic_combo.setCurrentIndex(idx)
-                return
+        provider = self.config.selected_provider.lower()
+        if provider == "gemini":
+            models = GEMINI_MODELS
+            current_model = self.config.gemini_model
+        elif provider == "openai":
+            models = OPENAI_MODELS
+            current_model = self.config.openai_model
+        else:
+            models = MISTRAL_MODELS
+            current_model = self.config.mistral_model
 
-        # Default to Samson Q2U if available
-        for i in range(self.mic_combo.count()):
-            if "Samson" in self.mic_combo.itemText(i) or "Q2U" in self.mic_combo.itemText(i):
-                self.mic_combo.setCurrentIndex(i)
-                return
+        for model_id, display_name in models:
+            self.model_combo.addItem(display_name, model_id)
+
+        # Select current model
+        idx = self.model_combo.findData(current_model)
+        if idx >= 0:
+            self.model_combo.setCurrentIndex(idx)
+
+        self.model_combo.blockSignals(False)
 
     def on_provider_changed(self, provider: str):
         """Handle provider change."""
         self.config.selected_provider = provider.lower()
+        self.update_model_combo()
         save_config(self.config)
+
+    def on_model_changed(self, index: int):
+        """Handle model selection change."""
+        if index < 0:
+            return
+        model_id = self.model_combo.currentData()
+        provider = self.config.selected_provider.lower()
+
+        if provider == "gemini":
+            self.config.gemini_model = model_id
+        elif provider == "openai":
+            self.config.openai_model = model_id
+        else:
+            self.config.mistral_model = model_id
+
+        save_config(self.config)
+
+    def get_selected_microphone_index(self):
+        """Get the index of the configured microphone."""
+        devices = self.recorder.get_input_devices()
+
+        # Try to find configured mic
+        if self.config.selected_microphone:
+            for idx, name in devices:
+                if name == self.config.selected_microphone:
+                    return idx
+
+        # Default to first Samson/Q2U if available
+        for idx, name in devices:
+            if "Samson" in name or "Q2U" in name:
+                return idx
+
+        # Fall back to first device
+        if devices:
+            return devices[0][0]
+        return None
 
     def toggle_recording(self):
         """Start or stop recording."""
         if not self.recorder.is_recording:
-            # Set microphone
-            mic_idx = self.mic_combo.currentData()
-            self.recorder.set_device(mic_idx)
-            self.config.selected_microphone = self.mic_combo.currentText()
+            # Set microphone from config
+            mic_idx = self.get_selected_microphone_index()
+            if mic_idx is not None:
+                self.recorder.set_device(mic_idx)
 
             self.recorder.start_recording()
             self.record_btn.setText("Recording...")
@@ -797,7 +823,7 @@ class MainWindow(QMainWindow):
 
     def show_settings(self):
         """Show settings dialog."""
-        dialog = SettingsDialog(self.config, self)
+        dialog = SettingsDialog(self.config, self.recorder, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.config = load_config()
             self.recorder.sample_rate = self.config.sample_rate

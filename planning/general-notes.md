@@ -1,8 +1,10 @@
 # Audio Multimodal For Transcription: Pricing Challenges
 
+Dec 12, 2025
+
 Multimodal models which accept audio tokens as inputs are viable and potentiallly highly advantageous replacements for ASR and STT. 
 
-When Apis allow users to provide audio binary data in addition to textual prompts, the user can offer a determinative prompt to steer the transcription providers. 
+When APIs allow users to provide audio binary data in addition to textual prompts, the user can offer a determinative prompt to steer the transcription providers. 
 
 Estimating costs for this job is slightly more complicated than using a traditional ASR or STT model, however. 
 
@@ -28,4 +30,27 @@ Comparing providers is possible so long as the pricing is transparent!
 Gemini is my favorite model for multimodal (and many things in general) because their pricing is clear:
 
 - `flash-latest` which maps onto the latest version of Flash can be thought of as the normal/standard model with fixed rates for text in, audio in, and text out. 
-- `flash-lite-*` (replace with variant) provides a cost-effective endpoint where 
+- `flash-lite-*` (replace with variant) provides a cost-effective endpoint where cost minimisation is a chief concern
+
+By contrast, it's difficult to guesstimate how much OpenAI multimodal audio processing will cost even though they have a well-developed lineup.
+
+At the time of writing `gpt-audio` is billed at $32/1M tokens (audio input) and `gpt-audio-mini` at $10/1M tokens - a little over a three-fold difference.
+
+Confusingly (IMO!) there is also: `gpt-4o-transcribe`, `gpt-4o-transcribe-diarize` and `gpt-40-mini-transcribe` - in addition to `gpt-4o-audio-preview` and `gpt-4o-mini-audio-preview`.
+
+In total, that's 7 models which support the audio input processing modality.
+
+[Prompting](https://platform.openai.com/docs/guides/speech-to-text) is supported in the transcribe endpoints which blurrs the line a little between what those might be useful for and the audio multimodal chat endpoints (which for an instructional task seem at first glance less suited to this workload).
+
+The result: confusion!
+
+![alt text](prices/openai/confusion.png)
+
+---
+
+# Provider Recommendations
+
+My personal preferences are, therefore:
+
+- Gemini
+- Mistral
