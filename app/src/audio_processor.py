@@ -84,3 +84,39 @@ def estimate_compressed_size(duration_seconds: float) -> int:
     # 16kHz * 2 bytes (16-bit) * 1 channel = 32,000 bytes/second
     # Plus ~44 bytes WAV header
     return int(duration_seconds * 32000) + 44
+
+
+def archive_audio(audio_data: bytes, output_path: str) -> bool:
+    """
+    Archive audio to Opus format for efficient storage.
+
+    Opus at ~24kbps is excellent for speech archival - about 90% smaller
+    than uncompressed WAV while remaining very listenable.
+
+    Args:
+        audio_data: Raw WAV audio bytes
+        output_path: Path to save the Opus file
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        audio = AudioSegment.from_wav(io.BytesIO(audio_data))
+
+        # Ensure mono 16kHz for consistent archival
+        if audio.channels > 1:
+            audio = audio.set_channels(1)
+        if audio.frame_rate != TARGET_SAMPLE_RATE:
+            audio = audio.set_frame_rate(TARGET_SAMPLE_RATE)
+
+        # Export to Opus with speech-optimized bitrate
+        audio.export(
+            output_path,
+            format="opus",
+            bitrate="24k",
+            parameters=["-application", "voip"]  # Optimize for speech
+        )
+        return True
+    except Exception as e:
+        print(f"Error archiving audio: {e}")
+        return False

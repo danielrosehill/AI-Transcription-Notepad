@@ -10,24 +10,45 @@ Instead of separate speech-to-text followed by text cleanup, this app sends audi
 
 ## Architecture
 
-### Source Files
+### Directory Structure
 
-- `src/main.py` - Main PyQt6 application window and UI
-- `src/audio_recorder.py` - Audio recording with PyAudio
-- `src/audio_processor.py` - Audio compression (downsample to 16kHz mono)
-- `src/transcription.py` - API clients for Gemini, OpenAI, and Mistral
-- `src/markdown_widget.py` - Markdown rendering widget
-- `src/config.py` - Configuration management (API keys, models, settings)
-- `src/hotkeys.py` - Global hotkey handling using pynput
+```
+Voice-Notepad-V3/
+├── app/                    # Application code
+│   ├── src/               # Python source files
+│   └── requirements.txt   # Python dependencies
+├── planning/              # Planning notes and API docs
+├── build.sh               # Build .deb package
+├── install.sh             # Install/upgrade from .deb
+├── build-install.sh       # Build and install in one step
+├── run.sh                 # Run for development
+└── dist/                  # Built packages (gitignored)
+```
+
+### Source Files (in app/src/)
+
+- `main.py` - Main PyQt6 application window and UI (tabbed interface)
+- `audio_recorder.py` - Audio recording with PyAudio
+- `audio_processor.py` - Audio compression and Opus archival
+- `transcription.py` - API clients for Gemini, OpenAI, and Mistral
+- `markdown_widget.py` - Markdown rendering widget
+- `config.py` - Configuration management (API keys, models, settings)
+- `hotkeys.py` - Global hotkey handling using pynput
+- `cost_tracker.py` - Daily API cost tracking based on token usage
+- `cost_widget.py` - Cost tab for detailed spend tracking by time period
+- `database.py` - SQLite database for transcription history
+- `vad_processor.py` - Voice Activity Detection (silence removal)
+- `history_widget.py` - History tab for browsing past transcriptions
+- `analysis_widget.py` - Analytics tab for model performance stats
 
 ### Configuration
 
 Settings stored in `~/.config/voice-notepad-v3/`:
-- API keys (Gemini, OpenAI, Mistral)
-- Model selections
-- Cleanup prompt customization
-- UI preferences
-- Global hotkey bindings
+- `config.json` - API keys, model selections, preferences
+- `transcriptions.db` - SQLite database for transcript history
+- `usage/` - Daily cost tracking JSON files
+- `audio-archive/` - Opus audio archives (if enabled)
+- `models/` - Downloaded VAD model (silero_vad.onnx)
 
 ### Global Hotkeys
 
@@ -60,11 +81,9 @@ The app supports global hotkeys that work even when the window is minimized or u
 ### Running the App
 
 ```bash
-source .venv/bin/activate
-python -m src.main
-# or
 ./run.sh
 ```
+This creates the venv in `app/.venv` if needed and launches the app.
 
 ### Environment Variables
 
@@ -92,15 +111,107 @@ Audio is compressed before upload:
 - Converted to appropriate format for each provider
 - Reduces file size and upload time
 
-## Planned Features
+## Features
 
-From the original concept notes:
+### Implemented
 
 - [x] **Global hotkeys**: System-wide keyboard shortcuts (F14-F20 recommended)
-- [ ] **Cost tracking**: Track API spend (today/week/month)
+- [x] **Cost tracking**: Daily estimated spend displayed in status bar
+- [x] **Transcript history**: SQLite database stores all transcriptions with metadata
+- [x] **VAD (Voice Activity Detection)**: Strips silence before API upload (reduces cost)
+- [x] **Audio archival**: Optional Opus archival (~24kbps, very small files)
+- [x] **History tab**: Browse, search, and reuse past transcriptions
+- [x] **Cost tab**: Detailed spend tracking (hourly, daily, weekly, all-time)
+- [x] **Analysis tab**: Model performance metrics (inference time, chars/sec)
+- [x] **Tabbed interface**: Record, History, Cost, and Analysis tabs
+
+### Planned
+
 - [ ] **Auto-copy to clipboard**: Automatic clipboard copy after transcription
 - [ ] **Virtual input insertion**: Type transcription into any text field (Wayland challenge)
-- [ ] **Debian packaging**: Build as .deb for easy distribution
+- [x] **Debian packaging**: Build as .deb for easy distribution
+- [ ] **S3 cloud backup**: Mirror local data to object storage
+- [ ] **Words per minute tracking**: Analyze speech patterns
+
+## Building & Packaging
+
+Three scripts for building and installing:
+
+### Build Only
+```bash
+./build.sh [VERSION]
+# Example: ./build.sh 1.2.0
+```
+Builds `.deb` package to `dist/voice-notepad_VERSION_amd64.deb`.
+
+### Install/Upgrade Only
+```bash
+./install.sh
+```
+Installs the latest package from `dist/` (requires sudo).
+
+### Build and Install
+```bash
+./build-install.sh [VERSION]
+```
+Does both in one step - builds the package then installs it.
+
+**Package details:**
+- Bundles Python venv with all dependencies in `/opt/voice-notepad/`
+- Creates launcher script, desktop entry, and icon
+- System dependencies: python3, python3-venv, ffmpeg, portaudio19-dev
+
+## Cost Tracking
+
+The app tracks estimated API costs based on token usage reported by each provider. Usage is stored per-day in `~/.config/voice-notepad-v3/usage/YYYY-MM-DD.json`.
+
+The status bar shows "Today: $X.XXXX (N)" where N is the number of transcriptions.
+
+**Note:** Costs are estimates based on published token pricing. Audio token costs vary by provider and may not be fully accurate. For precise billing, check your provider's dashboard.
+
+## Voice Activity Detection (VAD)
+
+VAD is enabled by default (Settings → Behavior → Enable VAD). It uses Silero VAD (ONNX model) to detect speech segments and remove silence before sending audio to the API.
+
+**Benefits:**
+- Reduces audio file size by removing silence
+- Lowers API costs (fewer audio tokens)
+- Faster upload times
+- The VAD model (~1.4MB) is downloaded automatically on first use
+
+**Technical details:**
+- Processes audio after recording stops, before compression
+- Uses 16kHz audio for detection
+- Minimum speech segment: 250ms
+- Padding around speech: 30ms
+
+## Transcript History
+
+All transcriptions are automatically saved to a local SQLite database with:
+- Timestamp
+- Provider and model used
+- Transcript text
+- Audio duration (original and after VAD)
+- Inference time in milliseconds
+- Token usage and estimated cost
+- Optional archived audio file path
+
+**History Tab:**
+- Search transcriptions by text content
+- Click to preview, double-click to load into editor
+- View metadata (duration, inference time, cost)
+- Delete individual transcriptions
+
+**Analysis Tab:**
+- Summary stats for last 7 days
+- Model performance comparison (avg inference time, chars/sec)
+- Total storage usage breakdown
+
+## Audio Archival
+
+Optional feature (Settings → Behavior → Archive audio recordings). When enabled, audio is saved in Opus format (~24kbps) to `~/.config/voice-notepad-v3/audio-archive/`.
+
+**Format:** Opus codec optimized for speech. A 1-minute recording uses ~180KB.
 
 ## Testing Changes
 

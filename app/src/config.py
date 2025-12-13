@@ -64,9 +64,15 @@ class Config:
     hotkey_record_toggle: str = "f15"  # Toggle recording on/off
     hotkey_stop_and_transcribe: str = "f16"  # Stop and transcribe
 
+    # Storage settings
+    store_audio: bool = False  # Archive audio recordings
+    vad_enabled: bool = True   # Enable Voice Activity Detection (silence removal)
+
     # Cleanup prompt
     cleanup_prompt: str = """Your task is to provide a cleaned transcription of the audio recorded by the user.
-- Remove filler words (um, uh, like, you know, etc.)
+- Remove filler words (um, uh, like, you know, so, well, etc.)
+- Remove standalone acknowledgments that don't add meaning (e.g., "Okay." or "Right." as their own sentences)
+- Remove conversational verbal tics and hedging phrases (e.g., "you know", "I mean", "kind of", "sort of", "basically", "actually" when used as fillers)
 - Add proper punctuation and sentence structure
 - Add natural paragraph spacing
 - If the user makes any verbal instructions during the recording (such as "don't include this" or "new paragraph"), follow those instructions

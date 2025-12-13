@@ -4,14 +4,23 @@ import base64
 import tempfile
 import os
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Optional
+
+
+@dataclass
+class TranscriptionResult:
+    """Result from transcription API including usage data."""
+    text: str
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class TranscriptionClient(ABC):
     """Base class for transcription clients."""
 
     @abstractmethod
-    def transcribe(self, audio_data: bytes, prompt: str) -> str:
+    def transcribe(self, audio_data: bytes, prompt: str) -> TranscriptionResult:
         """Transcribe audio with cleanup prompt."""
         pass
 
@@ -30,7 +39,7 @@ class GeminiClient(TranscriptionClient):
             self._client = genai.Client(api_key=self.api_key)
         return self._client
 
-    def transcribe(self, audio_data: bytes, prompt: str) -> str:
+    def transcribe(self, audio_data: bytes, prompt: str) -> TranscriptionResult:
         """Transcribe audio using Gemini's multimodal capabilities."""
         client = self._get_client()
         from google.genai import types
@@ -43,7 +52,18 @@ class GeminiClient(TranscriptionClient):
             ]
         )
 
-        return response.text
+        # Extract usage metadata
+        input_tokens = 0
+        output_tokens = 0
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            input_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0) or 0
+            output_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0) or 0
+
+        return TranscriptionResult(
+            text=response.text,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens
+        )
 
 
 class OpenAIClient(TranscriptionClient):
@@ -60,7 +80,7 @@ class OpenAIClient(TranscriptionClient):
             self._client = OpenAI(api_key=self.api_key)
         return self._client
 
-    def transcribe(self, audio_data: bytes, prompt: str) -> str:
+    def transcribe(self, audio_data: bytes, prompt: str) -> TranscriptionResult:
         """Transcribe audio using OpenAI's audio capabilities."""
         client = self._get_client()
 
@@ -86,7 +106,18 @@ class OpenAIClient(TranscriptionClient):
             ]
         )
 
-        return response.choices[0].message.content
+        # Extract usage data
+        input_tokens = 0
+        output_tokens = 0
+        if hasattr(response, 'usage') and response.usage:
+            input_tokens = getattr(response.usage, 'prompt_tokens', 0) or 0
+            output_tokens = getattr(response.usage, 'completion_tokens', 0) or 0
+
+        return TranscriptionResult(
+            text=response.choices[0].message.content,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens
+        )
 
 
 class MistralClient(TranscriptionClient):
@@ -103,7 +134,7 @@ class MistralClient(TranscriptionClient):
             self._client = Mistral(api_key=self.api_key)
         return self._client
 
-    def transcribe(self, audio_data: bytes, prompt: str) -> str:
+    def transcribe(self, audio_data: bytes, prompt: str) -> TranscriptionResult:
         """Transcribe audio using Mistral's Voxtral model."""
         client = self._get_client()
 
@@ -126,7 +157,18 @@ class MistralClient(TranscriptionClient):
             ]
         )
 
-        return response.choices[0].message.content
+        # Extract usage data
+        input_tokens = 0
+        output_tokens = 0
+        if hasattr(response, 'usage') and response.usage:
+            input_tokens = getattr(response.usage, 'prompt_tokens', 0) or 0
+            output_tokens = getattr(response.usage, 'completion_tokens', 0) or 0
+
+        return TranscriptionResult(
+            text=response.choices[0].message.content,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens
+        )
 
 
 def get_client(provider: str, api_key: str, model: str) -> TranscriptionClient:

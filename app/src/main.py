@@ -40,6 +40,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
+import time
 from PyQt6.QtGui import QIcon, QAction, QFont, QClipboard, QShortcut, QKeySequence
 
 from .config import (
@@ -47,15 +48,21 @@ from .config import (
     GEMINI_MODELS, OPENAI_MODELS, MISTRAL_MODELS,
 )
 from .audio_recorder import AudioRecorder
-from .transcription import get_client
-from .audio_processor import compress_audio_for_api
+from .transcription import get_client, TranscriptionResult
+from .audio_processor import compress_audio_for_api, archive_audio, get_audio_info
 from .markdown_widget import MarkdownTextWidget
+from .database import get_db, AUDIO_ARCHIVE_DIR
+from .vad_processor import remove_silence, is_vad_available
 from .hotkeys import (
     GlobalHotkeyListener,
     HotkeyCapture,
     SUGGESTED_HOTKEYS,
     HOTKEY_DESCRIPTIONS,
 )
+from .cost_tracker import get_tracker
+from .history_widget import HistoryWidget
+from .cost_widget import CostWidget
+from .analysis_widget import AnalysisWidget
 
 
 class HotkeyEdit(QLineEdit):
@@ -110,7 +117,7 @@ class HotkeyEdit(QLineEdit):
 class TranscriptionWorker(QThread):
     """Worker thread for transcription API calls."""
 
-    finished = pyqtSignal(str)
+    finished = pyqtSignal(TranscriptionResult)
     error = pyqtSignal(str)
     status = pyqtSignal(str)
 
@@ -121,6 +128,7 @@ class TranscriptionWorker(QThread):
         self.api_key = api_key
         self.model = model
         self.prompt = prompt
+        self.inference_time_ms: int = 0
 
     def run(self):
         try:
@@ -129,8 +137,10 @@ class TranscriptionWorker(QThread):
             compressed_audio = compress_audio_for_api(self.audio_data)
 
             self.status.emit("Transcribing...")
+            start_time = time.time()
             client = get_client(self.provider, self.api_key, self.model)
             result = client.transcribe(compressed_audio, self.prompt)
+            self.inference_time_ms = int((time.time() - start_time) * 1000)
             self.finished.emit(result)
         except Exception as e:
             self.error.emit(str(e))
@@ -192,6 +202,28 @@ class SettingsDialog(QDialog):
         self.start_minimized = QCheckBox()
         self.start_minimized.setChecked(self.config.start_minimized)
         behavior_layout.addRow("Start minimized to tray:", self.start_minimized)
+
+        # Storage settings section
+        behavior_layout.addRow(QLabel(""))  # Spacer
+        storage_label = QLabel("Storage Settings")
+        storage_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+        behavior_layout.addRow(storage_label)
+
+        self.vad_enabled = QCheckBox()
+        self.vad_enabled.setChecked(self.config.vad_enabled)
+        self.vad_enabled.setToolTip(
+            "Remove silence from recordings before sending to API.\n"
+            "Reduces file size and API costs."
+        )
+        behavior_layout.addRow("Enable VAD (silence removal):", self.vad_enabled)
+
+        self.store_audio = QCheckBox()
+        self.store_audio.setChecked(self.config.store_audio)
+        self.store_audio.setToolTip(
+            "Archive audio recordings in Opus format (~24kbps).\n"
+            "Audio files are stored in ~/.config/voice-notepad-v3/audio-archive/"
+        )
+        behavior_layout.addRow("Archive audio recordings:", self.store_audio)
 
         tabs.addTab(behavior_tab, "Behavior")
 
@@ -292,6 +324,9 @@ class SettingsDialog(QDialog):
         # Hotkeys (store lowercase for consistency)
         self.config.hotkey_record_toggle = self.hotkey_toggle.text().lower()
         self.config.hotkey_stop_and_transcribe = self.hotkey_stop_transcribe.text().lower()
+        # Storage settings
+        self.config.vad_enabled = self.vad_enabled.isChecked()
+        self.config.store_audio = self.store_audio.isChecked()
         save_config(self.config)
         self.accept()
 
@@ -321,12 +356,12 @@ class MainWindow(QMainWindow):
             self.hide()
 
     def setup_ui(self):
-        """Set up the main UI."""
+        """Set up the main UI with tabs."""
         central = QWidget()
         self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
-        layout.setSpacing(12)
-        layout.setContentsMargins(16, 16, 16, 16)
+        main_layout = QVBoxLayout(central)
+        main_layout.setSpacing(8)
+        main_layout.setContentsMargins(12, 12, 12, 12)
 
         # Header with settings
         header = QHBoxLayout()
@@ -338,13 +373,16 @@ class MainWindow(QMainWindow):
         settings_btn = QPushButton("Settings")
         settings_btn.clicked.connect(self.show_settings)
         header.addWidget(settings_btn)
-        layout.addLayout(header)
+        main_layout.addLayout(header)
 
-        # Separator
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setFrameShadow(QFrame.Shadow.Sunken)
-        layout.addWidget(line)
+        # Main tabs
+        self.tabs = QTabWidget()
+
+        # Record tab
+        record_tab = QWidget()
+        layout = QVBoxLayout(record_tab)
+        layout.setSpacing(12)
+        layout.setContentsMargins(8, 12, 8, 8)
 
         # Provider and model selection
         provider_layout = QHBoxLayout()
@@ -366,16 +404,26 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(provider_layout)
 
-        # Recording status and duration
+        # Recording status, cost, and duration
         status_layout = QHBoxLayout()
         self.status_label = QLabel("Ready")
         self.status_label.setStyleSheet("color: #666;")
         status_layout.addWidget(self.status_label)
         status_layout.addStretch()
+
+        # Cost tracking display
+        self.cost_label = QLabel("")
+        self.cost_label.setStyleSheet("color: #888; font-size: 11px;")
+        status_layout.addWidget(self.cost_label)
+        status_layout.addSpacing(15)
+
         self.duration_label = QLabel("0:00")
         self.duration_label.setFont(QFont("Monospace", 12))
         status_layout.addWidget(self.duration_label)
         layout.addLayout(status_layout)
+
+        # Initialize cost display
+        self._update_cost_display()
 
         # Recording controls
         controls = QHBoxLayout()
@@ -408,7 +456,7 @@ class MainWindow(QMainWindow):
         self.pause_btn.clicked.connect(self.toggle_pause)
         controls.addWidget(self.pause_btn)
 
-        self.stop_btn = QPushButton("Stop & Transcribe")
+        self.stop_btn = QPushButton("Transcribe")
         self.stop_btn.setMinimumHeight(45)
         self.stop_btn.setEnabled(False)
         self.stop_btn.setStyleSheet("""
@@ -456,10 +504,10 @@ class MainWindow(QMainWindow):
         # Bottom buttons
         bottom = QHBoxLayout()
 
-        self.new_btn = QPushButton("New Note")
-        self.new_btn.setMinimumHeight(38)
-        self.new_btn.clicked.connect(self.new_note)
-        bottom.addWidget(self.new_btn)
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.setMinimumHeight(38)
+        self.clear_btn.clicked.connect(self.clear_transcription)
+        bottom.addWidget(self.clear_btn)
 
         self.save_btn = QPushButton("Save")
         self.save_btn.setMinimumHeight(38)
@@ -474,6 +522,26 @@ class MainWindow(QMainWindow):
         bottom.addWidget(self.copy_btn)
 
         layout.addLayout(bottom)
+
+        self.tabs.addTab(record_tab, "Record")
+
+        # History tab
+        self.history_widget = HistoryWidget()
+        self.history_widget.transcription_selected.connect(self.on_history_transcription_selected)
+        self.tabs.addTab(self.history_widget, "History")
+
+        # Cost tab
+        self.cost_widget = CostWidget()
+        self.tabs.addTab(self.cost_widget, "Cost")
+
+        # Analysis tab
+        self.analysis_widget = AnalysisWidget()
+        self.tabs.addTab(self.analysis_widget, "Analysis")
+
+        # Refresh data when switching tabs
+        self.tabs.currentChanged.connect(self.on_tab_changed)
+
+        main_layout.addWidget(self.tabs, 1)
 
     def setup_tray(self):
         """Set up system tray icon."""
@@ -532,9 +600,9 @@ class MainWindow(QMainWindow):
         copy_shortcut = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
         copy_shortcut.activated.connect(self.copy_to_clipboard)
 
-        # Ctrl+N for new note
-        new_shortcut = QShortcut(QKeySequence("Ctrl+N"), self)
-        new_shortcut.activated.connect(self.new_note)
+        # Ctrl+N to clear
+        clear_shortcut = QShortcut(QKeySequence("Ctrl+N"), self)
+        clear_shortcut.activated.connect(self.clear_transcription)
 
     def setup_global_hotkeys(self):
         """Set up global hotkeys that work even when app is not focused."""
@@ -594,6 +662,21 @@ class MainWindow(QMainWindow):
             self.word_count_label.setText(f"{words} words, {chars} characters")
         else:
             self.word_count_label.setText("")
+
+    def on_tab_changed(self, index: int):
+        """Handle tab change - refresh data in the selected tab."""
+        if index == 1:  # History tab
+            self.history_widget.refresh()
+        elif index == 2:  # Cost tab
+            self.cost_widget.refresh()
+        elif index == 3:  # Analysis tab
+            self.analysis_widget.refresh()
+
+    def on_history_transcription_selected(self, text: str):
+        """Handle transcription selected from history - put in editor."""
+        self.text_output.setMarkdown(text)
+        self.tabs.setCurrentIndex(0)  # Switch to Record tab
+        self.update_word_count()
 
     def save_to_file(self):
         """Save transcription to a file."""
@@ -734,6 +817,27 @@ class MainWindow(QMainWindow):
         self.timer.stop()
         audio_data = self.recorder.stop_recording()
 
+        # Get original audio info
+        audio_info = get_audio_info(audio_data)
+        self.last_audio_duration = audio_info["duration_seconds"]
+        self.last_vad_duration = None
+
+        # Apply VAD if enabled
+        if self.config.vad_enabled and is_vad_available():
+            self.status_label.setText("Removing silence...")
+            self.status_label.setStyleSheet("color: #007bff; font-weight: bold;")
+            try:
+                audio_data, orig_dur, vad_dur = remove_silence(audio_data)
+                self.last_vad_duration = vad_dur
+                if vad_dur < orig_dur:
+                    reduction = (1 - vad_dur / orig_dur) * 100
+                    print(f"VAD: Reduced audio from {orig_dur:.1f}s to {vad_dur:.1f}s ({reduction:.0f}% reduction)")
+            except Exception as e:
+                print(f"VAD failed, using original audio: {e}")
+
+        # Store audio data for later archiving
+        self.last_audio_data = audio_data
+
         self.record_btn.setText("Record")
         self.record_btn.setEnabled(False)
         self.pause_btn.setEnabled(False)
@@ -777,9 +881,64 @@ class MainWindow(QMainWindow):
         self.status_label.setText(status)
         self.status_label.setStyleSheet("color: #007bff; font-weight: bold;")
 
-    def on_transcription_complete(self, text: str):
+    def on_transcription_complete(self, result: TranscriptionResult):
         """Handle completed transcription."""
-        self.text_output.setMarkdown(text)
+        self.text_output.setMarkdown(result.text)
+
+        # Get provider/model info
+        provider = self.config.selected_provider
+        if provider == "gemini":
+            model = self.config.gemini_model
+        elif provider == "openai":
+            model = self.config.openai_model
+        else:
+            model = self.config.mistral_model
+
+        # Track cost if we have usage data
+        estimated_cost = 0.0
+        if result.input_tokens > 0 or result.output_tokens > 0:
+            tracker = get_tracker()
+            estimated_cost = tracker.record_usage(provider, model, result.input_tokens, result.output_tokens)
+            self._update_cost_display()
+
+        # Get inference time from worker
+        inference_time_ms = self.worker.inference_time_ms if self.worker else 0
+
+        # Optionally archive audio
+        audio_file_path = None
+        if self.config.store_audio and hasattr(self, 'last_audio_data'):
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            audio_filename = f"{timestamp}.opus"
+            audio_path = AUDIO_ARCHIVE_DIR / audio_filename
+            if archive_audio(self.last_audio_data, str(audio_path)):
+                audio_file_path = str(audio_path)
+
+        # Save to database
+        audio_duration = getattr(self, 'last_audio_duration', None)
+        vad_duration = getattr(self, 'last_vad_duration', None)
+        db = get_db()
+        db.save_transcription(
+            provider=provider,
+            model=model,
+            transcript_text=result.text,
+            audio_duration_seconds=audio_duration,
+            inference_time_ms=inference_time_ms,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            estimated_cost=estimated_cost,
+            audio_file_path=audio_file_path,
+            vad_audio_duration_seconds=vad_duration,
+        )
+
+        # Clear stored audio data
+        if hasattr(self, 'last_audio_data'):
+            del self.last_audio_data
+        if hasattr(self, 'last_audio_duration'):
+            del self.last_audio_duration
+        if hasattr(self, 'last_vad_duration'):
+            del self.last_vad_duration
+
         self.reset_ui()
         self.status_label.setText("Done!")
         self.status_label.setStyleSheet("color: #28a745; font-weight: bold;")
@@ -788,6 +947,22 @@ class MainWindow(QMainWindow):
         """Handle transcription error."""
         QMessageBox.critical(self, "Transcription Error", error)
         self.reset_ui()
+
+    def _update_cost_display(self):
+        """Update the cost display label."""
+        tracker = get_tracker()
+        today_cost = tracker.get_today_cost()
+        count = tracker.get_today_count()
+
+        if count > 0:
+            self.cost_label.setText(f"Today: ${today_cost:.4f} ({count})")
+            self.cost_label.setToolTip(
+                f"Estimated cost today: ${today_cost:.4f}\n"
+                f"Transcriptions: {count}"
+            )
+        else:
+            self.cost_label.setText("")
+            self.cost_label.setToolTip("")
 
     def reset_ui(self):
         """Reset UI to initial state."""
@@ -816,10 +991,10 @@ class MainWindow(QMainWindow):
         secs = int(duration % 60)
         self.duration_label.setText(f"{mins}:{secs:02d}")
 
-    def new_note(self):
-        """Clear for a new note."""
+    def clear_transcription(self):
+        """Clear the transcription text."""
         self.text_output.clear()
-        self.reset_ui()
+        self.word_count_label.setText("")
 
     def copy_to_clipboard(self):
         """Copy transcription to clipboard."""
