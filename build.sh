@@ -32,25 +32,32 @@ mkdir -p "$INSTALL_DIR/usr/share/icons/hicolor/128x128/apps"
 
 echo "Creating virtual environment and installing dependencies..."
 
-# Create venv in the package
-python3 -m venv "$INSTALL_DIR/opt/voice-notepad/.venv"
+# Create venv using uv with system Python (not uv-managed)
+uv venv "$INSTALL_DIR/opt/voice-notepad/.venv" --python /usr/bin/python3 --seed
 source "$INSTALL_DIR/opt/voice-notepad/.venv/bin/activate"
 
-# Install dependencies
-pip install --upgrade pip -q
-pip install -r app/requirements.txt -q
+# Install dependencies using uv
+uv pip install -r app/requirements.txt
 
 # Copy source files
 echo "Copying application files..."
 cp -r app/src "$INSTALL_DIR/opt/voice-notepad/"
 cp app/requirements.txt "$INSTALL_DIR/opt/voice-notepad/"
 
-# Create launcher script
+# Fix permissions for all installed files
+chmod -R a+rX "$INSTALL_DIR/opt/voice-notepad"
+
+# Create launcher script (uses venv python directly for KDE/Wayland compatibility)
 cat > "$INSTALL_DIR/opt/voice-notepad/voice-notepad" << 'EOF'
 #!/bin/bash
 cd /opt/voice-notepad
-source .venv/bin/activate
-exec python -m src.main "$@"
+export PATH="/usr/bin:$PATH"
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland}"
+
+SITE_PACKAGES=$(find .venv/lib -name "site-packages" -type d | head -1)
+export PYTHONPATH="$SITE_PACKAGES:$PYTHONPATH"
+
+exec .venv/bin/python -m src.main "$@"
 EOF
 chmod +x "$INSTALL_DIR/opt/voice-notepad/voice-notepad"
 
@@ -118,6 +125,23 @@ fi
 # Update desktop database
 if command -v update-desktop-database &> /dev/null; then
     update-desktop-database /usr/share/applications 2>/dev/null || true
+fi
+# Rebuild KDE cache for Plasma desktop users
+if command -v kbuildsycoca6 &> /dev/null; then
+    # Run as each logged-in user to update their KDE cache
+    for user_home in /home/*; do
+        username=$(basename "$user_home")
+        if id "$username" &>/dev/null && [ -d "$user_home/.config" ]; then
+            su - "$username" -c "kbuildsycoca6 --noincremental" 2>/dev/null || true
+        fi
+    done
+elif command -v kbuildsycoca5 &> /dev/null; then
+    for user_home in /home/*; do
+        username=$(basename "$user_home")
+        if id "$username" &>/dev/null && [ -d "$user_home/.config" ]; then
+            su - "$username" -c "kbuildsycoca5 --noincremental" 2>/dev/null || true
+        fi
+    done
 fi
 exit 0
 EOF

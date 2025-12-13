@@ -9,11 +9,9 @@ cd "$SCRIPT_DIR/app"
 if [ ! -d ".venv" ]; then
     echo "Creating virtual environment..."
     python3 -m venv .venv
-    source .venv/bin/activate
-    pip install -q --upgrade pip
-    pip install -q -r requirements.txt
-else
-    source .venv/bin/activate
+    .venv/bin/python3 -m pip install -q --upgrade pip
+    .venv/bin/python3 -m pip install -q -r requirements.txt
 fi
 
-python -m src.main "$@"
+# Use the venv python directly (more reliable than activate)
+exec .venv/bin/python3 -m src.main "$@"

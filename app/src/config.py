@@ -68,6 +68,9 @@ class Config:
     store_audio: bool = False  # Archive audio recordings
     vad_enabled: bool = True   # Enable Voice Activity Detection (silence removal)
 
+    # Audio feedback
+    beep_on_record: bool = True  # Play beep when recording starts/stops
+
     # Cleanup prompt
     cleanup_prompt: str = """Your task is to provide a cleaned transcription of the audio recorded by the user.
 - Remove filler words (um, uh, like, you know, so, well, etc.)

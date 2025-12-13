@@ -86,18 +86,24 @@ def parse_hotkey(hotkey_str: str) -> Optional[set]:
 
 
 def key_to_string(key) -> str:
-    """Convert a pynput key to a display string."""
+    """Convert a pynput key to a display string.
+
+    For unknown keys, returns 'vk:NNNN' format which can be parsed back.
+    """
     if key in KEY_DISPLAY_MAP:
         return KEY_DISPLAY_MAP[key]
     elif hasattr(key, "char") and key.char:
         return key.char.upper()
-    elif hasattr(key, "vk"):
-        # Try to identify the key by virtual key code
-        # F13-F24 might come through as vk codes
+    elif hasattr(key, "vk") and key.vk:
         vk = key.vk
-        if 124 <= vk <= 135:  # F13-F24 on some systems
+        # Windows VK codes for F13-F24: 124-135
+        if 124 <= vk <= 135:
             return f"F{vk - 111}"
-        return f"KEY_{vk}"
+        # Linux X11 keysyms for F13-F24: 65482-65493 (0xFFCA-0xFFD5)
+        if 65482 <= vk <= 65493:
+            return f"F{vk - 65469}"
+        # Store unknown keys by their vk code so we can match them later
+        return f"vk:{vk}"
     return str(key)
 
 
@@ -185,15 +191,21 @@ class GlobalHotkeyListener:
         if hasattr(key, "vk"):
             vk = key.vk
             # Map left/right modifiers to generic ones
-            if vk in (65505, 65506):  # Left/Right Shift
+            if vk in (65505, 65506):  # Left/Right Shift (X11)
                 return keyboard.Key.shift
-            if vk in (65507, 65508):  # Left/Right Ctrl
+            if vk in (65507, 65508):  # Left/Right Ctrl (X11)
                 return keyboard.Key.ctrl
-            if vk in (65513, 65514):  # Left/Right Alt
+            if vk in (65513, 65514):  # Left/Right Alt (X11)
                 return keyboard.Key.alt
-            # F13-F24 handling
+            # F13-F24 handling - Windows VK codes: 124-135
             if 124 <= vk <= 135:
                 f_num = vk - 111
+                key_name = f"f{f_num}"
+                if key_name in KEY_MAP:
+                    return KEY_MAP[key_name]
+            # F13-F24 handling - Linux X11 keysyms: 65482-65493
+            if 65482 <= vk <= 65493:
+                f_num = vk - 65469  # 65482 - 65469 = 13, so F13
                 key_name = f"f{f_num}"
                 if key_name in KEY_MAP:
                     return KEY_MAP[key_name]

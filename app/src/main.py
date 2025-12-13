@@ -63,6 +63,7 @@ from .cost_tracker import get_tracker
 from .history_widget import HistoryWidget
 from .cost_widget import CostWidget
 from .analysis_widget import AnalysisWidget
+from .audio_feedback import get_feedback
 
 
 class HotkeyEdit(QLineEdit):
@@ -225,6 +226,20 @@ class SettingsDialog(QDialog):
         )
         behavior_layout.addRow("Archive audio recordings:", self.store_audio)
 
+        # Audio feedback section
+        behavior_layout.addRow(QLabel(""))  # Spacer
+        feedback_label = QLabel("Audio Feedback")
+        feedback_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+        behavior_layout.addRow(feedback_label)
+
+        self.beep_on_record = QCheckBox()
+        self.beep_on_record.setChecked(self.config.beep_on_record)
+        self.beep_on_record.setToolTip(
+            "Play a short beep when recording starts and stops.\n"
+            "Useful for confirming hotkey actions."
+        )
+        behavior_layout.addRow("Beep on record start/stop:", self.beep_on_record)
+
         tabs.addTab(behavior_tab, "Behavior")
 
         # Hotkeys tab
@@ -327,6 +342,8 @@ class SettingsDialog(QDialog):
         # Storage settings
         self.config.vad_enabled = self.vad_enabled.isChecked()
         self.config.store_audio = self.store_audio.isChecked()
+        # Audio feedback
+        self.config.beep_on_record = self.beep_on_record.isChecked()
         save_config(self.config)
         self.accept()
 
@@ -404,6 +421,18 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(provider_layout)
 
+        # Microphone indicator
+        mic_layout = QHBoxLayout()
+        mic_icon = QLabel("🎤")
+        mic_icon.setStyleSheet("font-size: 14px;")
+        mic_layout.addWidget(mic_icon)
+        self.mic_label = QLabel()
+        self.mic_label.setStyleSheet("color: #555; font-size: 12px;")
+        mic_layout.addWidget(self.mic_label)
+        mic_layout.addStretch()
+        layout.addLayout(mic_layout)
+        self._update_mic_display()
+
         # Recording status, cost, and duration
         status_layout = QHBoxLayout()
         self.status_label = QLabel("Ready")
@@ -429,9 +458,10 @@ class MainWindow(QMainWindow):
         controls = QHBoxLayout()
         controls.setSpacing(8)
 
-        self.record_btn = QPushButton("Record")
+        self.record_btn = QPushButton("● Record")
         self.record_btn.setMinimumHeight(45)
-        self.record_btn.setStyleSheet("""
+        # Store styles for different states
+        self._record_btn_idle_style = """
             QPushButton {
                 background-color: #dc3545;
                 color: white;
@@ -443,10 +473,21 @@ class MainWindow(QMainWindow):
             QPushButton:hover {
                 background-color: #c82333;
             }
-            QPushButton:disabled {
-                background-color: #6c757d;
+        """
+        self._record_btn_recording_style = """
+            QPushButton {
+                background-color: #ff0000;
+                color: white;
+                border: 3px solid #ff6666;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 14px;
             }
-        """)
+            QPushButton:hover {
+                background-color: #cc0000;
+            }
+        """
+        self.record_btn.setStyleSheet(self._record_btn_idle_style)
         self.record_btn.clicked.connect(self.toggle_recording)
         controls.addWidget(self.record_btn)
 
@@ -603,6 +644,63 @@ class MainWindow(QMainWindow):
         # Ctrl+N to clear
         clear_shortcut = QShortcut(QKeySequence("Ctrl+N"), self)
         clear_shortcut.activated.connect(self.clear_transcription)
+
+        # Set up configurable in-focus hotkeys (F15, F16, etc.)
+        self._setup_configurable_shortcuts()
+
+    def _setup_configurable_shortcuts(self):
+        """Set up shortcuts based on user-configured hotkeys."""
+        # Remove old shortcuts if they exist
+        if hasattr(self, '_record_toggle_shortcut'):
+            self._record_toggle_shortcut.setEnabled(False)
+            self._record_toggle_shortcut.deleteLater()
+        if hasattr(self, '_stop_transcribe_shortcut'):
+            self._stop_transcribe_shortcut.setEnabled(False)
+            self._stop_transcribe_shortcut.deleteLater()
+
+        # Record toggle shortcut (e.g., F15)
+        if self.config.hotkey_record_toggle:
+            key_seq = self._hotkey_to_qt_sequence(self.config.hotkey_record_toggle)
+            if key_seq:
+                self._record_toggle_shortcut = QShortcut(key_seq, self)
+                self._record_toggle_shortcut.activated.connect(self._hotkey_record_toggle)
+
+        # Stop and transcribe shortcut (e.g., F16)
+        if self.config.hotkey_stop_and_transcribe:
+            key_seq = self._hotkey_to_qt_sequence(self.config.hotkey_stop_and_transcribe)
+            if key_seq:
+                self._stop_transcribe_shortcut = QShortcut(key_seq, self)
+                self._stop_transcribe_shortcut.activated.connect(self._hotkey_stop_and_transcribe)
+
+    def _hotkey_to_qt_sequence(self, hotkey_str: str) -> QKeySequence | None:
+        """Convert a hotkey string like 'f15' or 'ctrl+f15' to a QKeySequence."""
+        if not hotkey_str:
+            return None
+
+        # Normalize and convert to Qt format
+        parts = [p.strip().lower() for p in hotkey_str.split("+")]
+        qt_parts = []
+
+        for part in parts:
+            # Handle modifiers
+            if part == "ctrl":
+                qt_parts.append("Ctrl")
+            elif part == "alt":
+                qt_parts.append("Alt")
+            elif part == "shift":
+                qt_parts.append("Shift")
+            elif part == "super":
+                qt_parts.append("Meta")
+            # Handle function keys (f1-f24)
+            elif part.startswith("f") and part[1:].isdigit():
+                qt_parts.append(part.upper())  # F15, F16, etc.
+            else:
+                # Single character or other key
+                qt_parts.append(part.upper())
+
+        if qt_parts:
+            return QKeySequence("+".join(qt_parts))
+        return None
 
     def setup_global_hotkeys(self):
         """Set up global hotkeys that work even when app is not focused."""
@@ -789,9 +887,14 @@ class MainWindow(QMainWindow):
             if mic_idx is not None:
                 self.recorder.set_device(mic_idx)
 
+            # Play start beep
+            feedback = get_feedback()
+            feedback.enabled = self.config.beep_on_record
+            feedback.play_start_beep()
+
             self.recorder.start_recording()
-            self.record_btn.setText("Recording...")
-            self.record_btn.setEnabled(False)
+            self.record_btn.setText("● Recording")
+            self.record_btn.setStyleSheet(self._record_btn_recording_style)
             self.pause_btn.setEnabled(True)
             self.stop_btn.setEnabled(True)
             self.delete_btn.setEnabled(True)
@@ -814,6 +917,11 @@ class MainWindow(QMainWindow):
 
     def stop_and_transcribe(self):
         """Stop recording and send for transcription."""
+        # Play stop beep
+        feedback = get_feedback()
+        feedback.enabled = self.config.beep_on_record
+        feedback.play_stop_beep()
+
         self.timer.stop()
         audio_data = self.recorder.stop_recording()
 
@@ -966,8 +1074,8 @@ class MainWindow(QMainWindow):
 
     def reset_ui(self):
         """Reset UI to initial state."""
-        self.record_btn.setText("Record")
-        self.record_btn.setEnabled(True)
+        self.record_btn.setText("● Record")
+        self.record_btn.setStyleSheet(self._record_btn_idle_style)
         self.pause_btn.setText("Pause")
         self.pause_btn.setEnabled(False)
         self.stop_btn.setEnabled(False)
@@ -978,6 +1086,12 @@ class MainWindow(QMainWindow):
 
     def delete_recording(self):
         """Delete current recording."""
+        # Play stop beep when discarding
+        if self.recorder.is_recording:
+            feedback = get_feedback()
+            feedback.enabled = self.config.beep_on_record
+            feedback.play_stop_beep()
+
         self.timer.stop()
         if self.recorder.is_recording:
             self.recorder.stop_recording()
@@ -1015,6 +1129,8 @@ class MainWindow(QMainWindow):
             self.recorder.sample_rate = self.config.sample_rate
             # Re-register hotkeys with new settings
             self._register_hotkeys()
+            # Re-setup in-focus shortcuts
+            self._setup_configurable_shortcuts()
 
     def show_window(self):
         """Show and raise the window."""
