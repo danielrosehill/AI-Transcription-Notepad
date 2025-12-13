@@ -1,5 +1,6 @@
 """SQLite database for transcript history and analytics."""
 
+import csv
 import sqlite3
 import json
 from dataclasses import dataclass, asdict
@@ -11,6 +12,7 @@ from typing import Optional
 DB_DIR = Path.home() / ".config" / "voice-notepad-v3"
 DB_FILE = DB_DIR / "transcriptions.db"
 AUDIO_ARCHIVE_DIR = DB_DIR / "audio-archive"
+CSV_EXPORT_FILE = DB_DIR / "transcription_history.csv"
 
 
 @dataclass
@@ -433,6 +435,61 @@ class TranscriptionDB:
             }
             for row in cursor.fetchall()
         ]
+
+    def export_to_csv(self, filepath: Optional[Path] = None) -> Path:
+        """Export all transcriptions to a CSV file."""
+        if filepath is None:
+            filepath = CSV_EXPORT_FILE
+
+        conn = self._get_conn()
+        cursor = conn.execute("""
+            SELECT
+                timestamp,
+                provider,
+                model,
+                transcript_text,
+                audio_duration_seconds,
+                vad_audio_duration_seconds,
+                inference_time_ms,
+                input_tokens,
+                output_tokens,
+                estimated_cost,
+                word_count
+            FROM transcriptions
+            ORDER BY timestamp DESC
+        """)
+
+        with open(filepath, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                'Timestamp',
+                'Provider',
+                'Model',
+                'Transcript',
+                'Audio Duration (s)',
+                'VAD Duration (s)',
+                'Inference Time (ms)',
+                'Input Tokens',
+                'Output Tokens',
+                'Estimated Cost',
+                'Word Count'
+            ])
+            for row in cursor.fetchall():
+                writer.writerow([
+                    row['timestamp'],
+                    row['provider'],
+                    row['model'],
+                    row['transcript_text'],
+                    row['audio_duration_seconds'],
+                    row['vad_audio_duration_seconds'],
+                    row['inference_time_ms'],
+                    row['input_tokens'],
+                    row['output_tokens'],
+                    row['estimated_cost'],
+                    row['word_count']
+                ])
+
+        return filepath
 
     def close(self):
         """Close database connection."""

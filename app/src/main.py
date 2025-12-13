@@ -1082,24 +1082,50 @@ class MainWindow(QMainWindow):
 
     def _get_active_microphone_name(self) -> str:
         """Get the name of the currently active microphone."""
-        # If user has selected a specific mic
-        if self.config.selected_microphone:
+        import subprocess
+
+        # If user has selected a specific mic that's not "pulse" or "default"
+        if self.config.selected_microphone and self.config.selected_microphone not in ("pulse", "default"):
             return self.config.selected_microphone
 
-        # Otherwise determine the default that would be used
+        # Query PipeWire/PulseAudio for the actual default source
+        try:
+            # Get the default source name
+            result = subprocess.run(
+                ["pactl", "get-default-source"],
+                capture_output=True, text=True, timeout=2
+            )
+            if result.returncode == 0:
+                source_name = result.stdout.strip()
+                if source_name:
+                    # Get the description for this source
+                    desc_result = subprocess.run(
+                        ["pactl", "list", "sources"],
+                        capture_output=True, text=True, timeout=2
+                    )
+                    if desc_result.returncode == 0:
+                        # Parse the output to find the description
+                        lines = desc_result.stdout.split('\n')
+                        found_source = False
+                        for line in lines:
+                            if f"Name: {source_name}" in line:
+                                found_source = True
+                            elif found_source and "Description:" in line:
+                                description = line.split("Description:", 1)[1].strip()
+                                return description
+                    # Fallback: clean up the source name
+                    # e.g., "alsa_input.usb-Samson_Technologies_Samson_Q2U_Microphone-00.analog-stereo"
+                    # Extract the meaningful part
+                    if "usb-" in source_name:
+                        # Extract device name from USB source
+                        parts = source_name.split("usb-")[1].split("-00")[0]
+                        return parts.replace("_", " ")
+                    return source_name
+        except Exception:
+            pass
+
+        # Fallback to checking devices
         devices = self.recorder.get_input_devices()
-
-        # Check for "pulse" (PipeWire/PulseAudio default)
-        for idx, name in devices:
-            if name == "pulse":
-                return "pulse (system default)"
-
-        # Check for "default"
-        for idx, name in devices:
-            if name == "default":
-                return "default"
-
-        # Fall back to first device
         if devices:
             return devices[0][1]
 
