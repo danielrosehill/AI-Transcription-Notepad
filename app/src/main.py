@@ -566,7 +566,7 @@ class MainWindow(QMainWindow):
             self.stop_btn.setEnabled(False)
             self.delete_btn.setEnabled(False)
         self.append_btn.setEnabled(False)
-        self.tray.setIcon(self._tray_icon_idle)
+        self._set_tray_state('idle')
 
     def setup_ui(self):
         """Set up the main UI with tabs."""
@@ -1014,6 +1014,10 @@ class MainWindow(QMainWindow):
         """Set up system tray icon."""
         self.tray = QSystemTrayIcon(self)
 
+        # Track tray state for click behavior and menu updates
+        # States: 'idle', 'recording', 'stopped', 'transcribing', 'complete'
+        self._tray_state = 'idle'
+
         # Set up icons for different states
         # Idle: notepad/text editor icon (common in KDE themes)
         self._tray_icon_idle = QIcon.fromTheme(
@@ -1026,28 +1030,57 @@ class MainWindow(QMainWindow):
             "media-record",
             self.style().standardIcon(self.style().StandardPixmap.SP_DialogNoButton)
         )
+        # Stopped: pause icon (recording stopped, awaiting user decision)
+        self._tray_icon_stopped = QIcon.fromTheme(
+            "media-playback-pause",
+            QIcon.fromTheme("player-pause",
+                self.style().standardIcon(self.style().StandardPixmap.SP_MediaPause))
+        )
+        # Transcribing: process/sync icon (horizontal bar style)
+        self._tray_icon_transcribing = QIcon.fromTheme(
+            "emblem-synchronizing",
+            QIcon.fromTheme("view-refresh",
+                self.style().standardIcon(self.style().StandardPixmap.SP_BrowserReload))
+        )
+        # Complete: green tick/checkmark
+        self._tray_icon_complete = QIcon.fromTheme(
+            "emblem-ok",
+            QIcon.fromTheme("dialog-ok",
+                self.style().standardIcon(self.style().StandardPixmap.SP_DialogApplyButton))
+        )
 
         self.tray.setIcon(self._tray_icon_idle)
         self.setWindowIcon(self._tray_icon_idle)
 
-        # Tray menu
-        menu = QMenu()
+        # Tray menu - dynamic based on state
+        self._tray_menu = QMenu()
 
-        show_action = QAction("Show", self)
-        show_action.triggered.connect(self.show_window)
-        menu.addAction(show_action)
+        # Store actions as instance variables for dynamic visibility
+        self._tray_show_action = QAction("Show", self)
+        self._tray_show_action.triggered.connect(self.show_window)
 
-        record_action = QAction("Start Recording", self)
-        record_action.triggered.connect(self.toggle_recording)
-        menu.addAction(record_action)
+        self._tray_record_action = QAction("Start Recording", self)
+        self._tray_record_action.triggered.connect(self.toggle_recording)
 
-        menu.addSeparator()
+        self._tray_stop_action = QAction("Stop Recording", self)
+        self._tray_stop_action.triggered.connect(self._tray_stop_recording)
 
-        quit_action = QAction("Quit", self)
-        quit_action.triggered.connect(self.quit_app)
-        menu.addAction(quit_action)
+        self._tray_transcribe_action = QAction("Transcribe", self)
+        self._tray_transcribe_action.triggered.connect(self._tray_transcribe_stopped)
 
-        self.tray.setContextMenu(menu)
+        self._tray_delete_action = QAction("Delete Recording", self)
+        self._tray_delete_action.triggered.connect(self._tray_delete_stopped)
+
+        self._tray_resume_action = QAction("Resume Recording", self)
+        self._tray_resume_action.triggered.connect(self._tray_resume_recording)
+
+        self._tray_quit_action = QAction("Quit", self)
+        self._tray_quit_action.triggered.connect(self.quit_app)
+
+        # Build initial menu
+        self._update_tray_menu()
+
+        self.tray.setContextMenu(self._tray_menu)
         self.tray.activated.connect(self.on_tray_activated)
         self.tray.show()
 
@@ -1486,8 +1519,8 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Recording...")
             self.status_label.setStyleSheet("color: #dc3545; font-weight: bold;")
             self.timer.start(100)
-            # Update tray icon to recording state
-            self.tray.setIcon(self._tray_icon_recording)
+            # Update tray to recording state
+            self._set_tray_state('recording')
 
     def toggle_pause(self):
         """Toggle pause state."""
@@ -1582,6 +1615,9 @@ class MainWindow(QMainWindow):
         self.delete_btn.setEnabled(False)
         self.status_label.setText("Transcribing...")
         self.status_label.setStyleSheet("color: #007bff; font-weight: bold;")
+
+        # Update tray to transcribing state
+        self._set_tray_state('transcribing')
 
         # Get API key for selected provider
         provider = self.config.selected_provider
@@ -1706,10 +1742,15 @@ class MainWindow(QMainWindow):
         self.status_label.setText("Copied!")
         self.status_label.setStyleSheet("color: #28a745; font-weight: bold;")
 
+        # Show complete state (green tick) then transition to idle after 3 seconds
+        self._set_tray_state('complete')
+        QTimer.singleShot(3000, lambda: self._set_tray_state('idle') if self._tray_state == 'complete' else None)
+
     def on_transcription_error(self, error: str):
         """Handle transcription error."""
         QMessageBox.critical(self, "Transcription Error", error)
         self.reset_ui()
+        self._set_tray_state('idle')
 
     def _update_cost_display(self):
         """Update the cost display label with today's spend and trigger async balance fetch."""
@@ -1831,7 +1872,11 @@ class MainWindow(QMainWindow):
         return "No microphone found"
 
     def reset_ui(self):
-        """Reset UI to initial state."""
+        """Reset UI to initial state.
+
+        Note: Does not change tray state - caller is responsible for setting
+        appropriate tray state (idle, complete, etc.) after calling this.
+        """
         self.record_btn.setText("● Record")
         self.record_btn.setStyleSheet(self._record_btn_idle_style)
         self.record_btn.setEnabled(True)
@@ -1843,19 +1888,17 @@ class MainWindow(QMainWindow):
         self.duration_label.setText("0:00")
         self.status_label.setText("Ready")
         self.status_label.setStyleSheet("color: #666;")
-        # Restore idle tray icon
-        self.tray.setIcon(self._tray_icon_idle)
 
     def delete_recording(self):
         """Delete current recording and any accumulated segments."""
         # Play stop beep when discarding
-        if self.recorder.is_recording:
+        if self.recorder.is_recording or self.recorder.is_paused:
             feedback = get_feedback()
             feedback.enabled = self.config.beep_on_record
             feedback.play_stop_beep()
 
         self.timer.stop()
-        if self.recorder.is_recording:
+        if self.recorder.is_recording or self.recorder.is_paused:
             self.recorder.stop_recording()
         self.recorder.clear()
 
@@ -1865,6 +1908,7 @@ class MainWindow(QMainWindow):
         self._update_segment_indicator()
 
         self.reset_ui()
+        self._set_tray_state('idle')
 
     def update_duration(self):
         """Update the duration display."""
@@ -1928,12 +1972,131 @@ class MainWindow(QMainWindow):
         self.activateWindow()
 
     def on_tray_activated(self, reason):
-        """Handle tray icon activation."""
+        """Handle tray icon activation based on current state."""
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            if self.isVisible():
-                self.hide()
-            else:
+            if self._tray_state == 'recording':
+                # Clicking during recording stops it and enters stopped state
+                self._tray_stop_recording()
+            elif self._tray_state == 'stopped':
+                # In stopped state, show window so user can decide
                 self.show_window()
+            else:
+                # For idle, transcribing, complete: toggle window visibility
+                if self.isVisible():
+                    self.hide()
+                else:
+                    self.show_window()
+
+    def _set_tray_state(self, state: str):
+        """Update tray icon and menu based on state.
+
+        States: 'idle', 'recording', 'stopped', 'transcribing', 'complete'
+        """
+        self._tray_state = state
+        # Update icon
+        if state == 'idle':
+            self.tray.setIcon(self._tray_icon_idle)
+        elif state == 'recording':
+            self.tray.setIcon(self._tray_icon_recording)
+        elif state == 'stopped':
+            self.tray.setIcon(self._tray_icon_stopped)
+        elif state == 'transcribing':
+            self.tray.setIcon(self._tray_icon_transcribing)
+        elif state == 'complete':
+            self.tray.setIcon(self._tray_icon_complete)
+        # Update menu
+        self._update_tray_menu()
+
+    def _update_tray_menu(self):
+        """Rebuild tray menu based on current state."""
+        self._tray_menu.clear()
+
+        # Show action is always available
+        self._tray_menu.addAction(self._tray_show_action)
+        self._tray_menu.addSeparator()
+
+        if self._tray_state == 'idle' or self._tray_state == 'complete':
+            self._tray_menu.addAction(self._tray_record_action)
+        elif self._tray_state == 'recording':
+            self._tray_menu.addAction(self._tray_stop_action)
+        elif self._tray_state == 'stopped':
+            self._tray_menu.addAction(self._tray_transcribe_action)
+            self._tray_menu.addAction(self._tray_resume_action)
+            self._tray_menu.addAction(self._tray_delete_action)
+        # transcribing state: no recording actions available
+
+        self._tray_menu.addSeparator()
+        self._tray_menu.addAction(self._tray_quit_action)
+
+    def _tray_stop_recording(self):
+        """Stop recording from tray click - enters stopped state for user decision."""
+        if not self.recorder.is_recording:
+            return
+
+        # Stop recording but hold the audio
+        self.timer.stop()
+
+        # Play stop beep
+        feedback = get_feedback()
+        feedback.enabled = self.config.beep_on_record
+        feedback.play_stop_beep()
+
+        # Pause the recorder (keeps audio data) instead of stopping
+        self.recorder.pause_recording()
+
+        # Update UI
+        self.pause_btn.setText("Resume")
+        self.record_btn.setText("● Stopped")
+        self.record_btn.setStyleSheet(self._record_btn_recording_style.replace("#dc3545", "#ffc107"))
+        self.status_label.setText("Stopped - choose action")
+        self.status_label.setStyleSheet("color: #ffc107; font-weight: bold;")
+
+        # Set tray to stopped state
+        self._set_tray_state('stopped')
+
+        # Show notification
+        self.tray.showMessage(
+            "Recording Stopped",
+            "Click Transcribe or Delete from tray menu, or use main window.",
+            QSystemTrayIcon.MessageIcon.Information,
+            3000,
+        )
+
+    def _tray_transcribe_stopped(self):
+        """Transcribe the stopped recording from tray menu."""
+        if self._tray_state != 'stopped':
+            return
+
+        # Resume recording briefly then stop and transcribe
+        # This triggers the normal transcription flow
+        if self.recorder.is_paused:
+            self.recorder.resume_recording()
+        self.stop_and_transcribe()
+
+    def _tray_delete_stopped(self):
+        """Delete the stopped recording from tray menu."""
+        if self._tray_state != 'stopped':
+            return
+        self.delete_recording()
+
+    def _tray_resume_recording(self):
+        """Resume recording from stopped state via tray menu."""
+        if self._tray_state != 'stopped':
+            return
+
+        if self.recorder.is_paused:
+            self.recorder.resume_recording()
+
+        # Restore recording UI
+        self.pause_btn.setText("Pause")
+        self.record_btn.setText("● Recording")
+        self.record_btn.setStyleSheet(self._record_btn_recording_style)
+        self.status_label.setText("Recording...")
+        self.status_label.setStyleSheet("color: #dc3545; font-weight: bold;")
+        self.timer.start(100)
+
+        # Set tray to recording state
+        self._set_tray_state('recording')
 
     def quit_app(self):
         """Quit the application."""
