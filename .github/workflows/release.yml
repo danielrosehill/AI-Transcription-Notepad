@@ -52,19 +52,14 @@ jobs:
       - name: Add uv to PATH
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Build Debian package
-        run: ./build.sh ${{ needs.prepare.outputs.version }}
+      - name: Build all Linux packages
+        run: ./build.sh --all ${{ needs.prepare.outputs.version }}
 
-      - name: Build AppImage
-        run: ./build-appimage.sh ${{ needs.prepare.outputs.version }}
-
-      - name: Build Tarball
-        run: ./build-tarball.sh ${{ needs.prepare.outputs.version }}
-
-      - name: Generate checksums
+      - name: Rename checksums for release
         run: |
           cd dist
-          sha256sum *.deb *.AppImage *.tar.gz > SHA256SUMS-linux.txt
+          # all.sh generates voice-notepad-VERSION-SHA256SUMS.txt, rename for release
+          mv voice-notepad-*-SHA256SUMS.txt SHA256SUMS-linux.txt || true
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -99,8 +94,11 @@ jobs:
 
       - name: Create Windows icon
         run: |
+          # Ensure assets directory exists
+          New-Item -ItemType Directory -Force -Path assets
           python -c "
           from PIL import Image, ImageDraw
+          import os
           # Create a simple microphone icon
           sizes = [16, 32, 48, 64, 128, 256]
           images = []
@@ -117,7 +115,8 @@ jobs:
               draw.rectangle([cx-2, cy+r//2, cx+2, cy+r], fill='#dc3545')
               draw.arc([cx-r, cy+r//2, cx+r, cy+r*2], 0, 180, fill='#dc3545', width=max(1, size//16))
               images.append(img)
-          images[0].save('voice-notepad.ico', format='ICO', sizes=[(s,s) for s in sizes], append_images=images[1:])
+          images[0].save('assets/voice-notepad.ico', format='ICO', sizes=[(s,s) for s in sizes], append_images=images[1:])
+          print('Icon created: assets/voice-notepad.ico')
           "
         shell: pwsh
 
@@ -126,7 +125,7 @@ jobs:
           pyinstaller --name "Voice Notepad" `
             --windowed `
             --onedir `
-            --icon=voice-notepad.ico `
+            --icon=assets/voice-notepad.ico `
             --add-data "app/src;src" `
             --hidden-import=pynput.keyboard._win32 `
             --hidden-import=pynput.mouse._win32 `
@@ -137,17 +136,34 @@ jobs:
             app/src/main.py
         shell: pwsh
 
-      - name: Create ZIP archive
+      - name: Build Windows Installer with Inno Setup
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.4
+        with:
+          path: scripts/build/windows-installer.iss
+        env:
+          APP_VERSION: ${{ needs.prepare.outputs.version }}
+
+      - name: Create ZIP archive (portable version)
         run: |
           $version = "${{ needs.prepare.outputs.version }}"
-          Compress-Archive -Path "dist/Voice Notepad" -DestinationPath "dist/Voice-Notepad-${version}-windows-x64.zip"
+          Compress-Archive -Path "dist/Voice Notepad" -DestinationPath "dist/Voice-Notepad-${version}-windows-x64-portable.zip"
         shell: pwsh
 
-      - name: Generate checksum
+      - name: Generate checksums
         run: |
           cd dist
-          $hash = Get-FileHash "Voice-Notepad-${{ needs.prepare.outputs.version }}-windows-x64.zip" -Algorithm SHA256
-          "$($hash.Hash)  Voice-Notepad-${{ needs.prepare.outputs.version }}-windows-x64.zip" | Out-File -Encoding ASCII SHA256SUMS-windows.txt
+          $files = @(
+            "Voice-Notepad-${{ needs.prepare.outputs.version }}-windows-x64-setup.exe",
+            "Voice-Notepad-${{ needs.prepare.outputs.version }}-windows-x64-portable.zip"
+          )
+          $checksums = @()
+          foreach ($file in $files) {
+            if (Test-Path $file) {
+              $hash = Get-FileHash $file -Algorithm SHA256
+              $checksums += "$($hash.Hash)  $file"
+            }
+          }
+          $checksums | Out-File -Encoding ASCII SHA256SUMS-windows.txt
         shell: pwsh
 
       - name: Upload Windows artifacts
@@ -155,7 +171,8 @@ jobs:
         with:
           name: windows-packages
           path: |
-            dist/*.zip
+            dist/*-setup.exe
+            dist/*-portable.zip
             dist/SHA256SUMS-windows.txt
 
   # Create GitHub Release
@@ -199,7 +216,17 @@ jobs:
             | **Linux (Debian/Ubuntu)** | `voice-notepad_${{ needs.prepare.outputs.version }}_amd64.deb` | Install with `sudo dpkg -i` |
             | **Linux (Universal)** | `Voice_Notepad-${{ needs.prepare.outputs.version }}-x86_64.AppImage` | Run directly, works on any distro |
             | **Linux (Portable)** | `voice-notepad-${{ needs.prepare.outputs.version }}-linux-x86_64.tar.gz` | Extract and run |
-            | **Windows** | `Voice-Notepad-${{ needs.prepare.outputs.version }}-windows-x64.zip` | Extract and run `Voice Notepad.exe` |
+            | **Windows (Installer)** | `Voice-Notepad-${{ needs.prepare.outputs.version }}-windows-x64-setup.exe` | **Recommended** - Run installer, creates Start Menu shortcut |
+            | **Windows (Portable)** | `Voice-Notepad-${{ needs.prepare.outputs.version }}-windows-x64-portable.zip` | Extract anywhere and run |
+
+            ### Windows Security Note
+
+            Windows may show a SmartScreen warning for unsigned applications downloaded from the internet.
+            This is normal for open-source software without code signing certificates.
+
+            To proceed: Click **"More info"** → **"Run anyway"**
+
+            You can verify the download using the SHA256 checksums below.
 
             ### Requirements
 
@@ -221,7 +248,8 @@ jobs:
             dist/*.deb
             dist/*.AppImage
             dist/*.tar.gz
-            dist/*.zip
+            dist/*-setup.exe
+            dist/*-portable.zip
             dist/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

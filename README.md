@@ -4,7 +4,7 @@
 [![Windows](https://img.shields.io/badge/Windows-0078D6?style=flat-square&logo=windows&logoColor=white)](https://github.com/danielrosehill/Voice-Notepad/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 
-**Download:** [AppImage](https://github.com/danielrosehill/Voice-Notepad/releases) • [Windows EXE](https://github.com/danielrosehill/Voice-Notepad/releases) • [Debian .deb](https://github.com/danielrosehill/Voice-Notepad/releases) • [Tarball](https://github.com/danielrosehill/Voice-Notepad/releases)
+**Download:** [AppImage](https://github.com/danielrosehill/Voice-Notepad/releases) • [Windows Installer](https://github.com/danielrosehill/Voice-Notepad/releases) • [Debian .deb](https://github.com/danielrosehill/Voice-Notepad/releases) • [Tarball](https://github.com/danielrosehill/Voice-Notepad/releases)
 
 ---
 
@@ -21,18 +21,27 @@ Most voice-to-text apps use a two-step process: first transcribe with ASR, then 
 - **Faster turnaround**: One API call instead of two
 - **Lower cost**: No separate ASR charges
 
-This is a focused tool for the growing category of audio-capable multimodal models. If you want complex prompt engineering or traditional ASR pipelines, look elsewhere. If you want clean transcripts from your voice with minimal friction, this is it.
+This is a focused tool for the growing category of audio-capable multimodal models.
 
 ## Supported Providers & Models
 
-| Provider | Models | Notes |
-|----------|--------|-------|
-| **OpenRouter** *(recommended)* | `google/gemini-2.5-flash`, `google/gemini-2.5-flash-lite`, `google/gemini-2.0-flash-001`, `openai/gpt-4o-audio-preview`, `mistralai/voxtral-small-24b-2507` | Single API key for all models, accurate cost tracking |
-| **Google Gemini** | `gemini-flash-latest`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-2.5-pro` | Direct API access |
-| **OpenAI** | `gpt-4o-audio-preview`, `gpt-4o-mini-audio-preview` | GPT-4o with native audio |
-| **Mistral** | `voxtral-small-latest`, `voxtral-mini-latest` | Voxtral speech models |
+| Provider | Model |
+|----------|-------|
+| ![OpenRouter](https://img.shields.io/badge/OpenRouter-6366f1?style=flat-square) | `google/gemini-2.5-flash` |
+| ![OpenRouter](https://img.shields.io/badge/OpenRouter-6366f1?style=flat-square) | `google/gemini-2.5-flash-lite` |
+| ![OpenRouter](https://img.shields.io/badge/OpenRouter-6366f1?style=flat-square) | `google/gemini-2.0-flash-001` |
+| ![OpenRouter](https://img.shields.io/badge/OpenRouter-6366f1?style=flat-square) | `openai/gpt-4o-audio-preview` |
+| ![OpenRouter](https://img.shields.io/badge/OpenRouter-6366f1?style=flat-square) | `mistralai/voxtral-small-24b-2507` |
+| ![Google](https://img.shields.io/badge/Google_(Gemini)-4285F4?style=flat-square&logo=google&logoColor=white) | `gemini-flash-latest` |
+| ![Google](https://img.shields.io/badge/Google_(Gemini)-4285F4?style=flat-square&logo=google&logoColor=white) | `gemini-2.5-flash` |
+| ![Google](https://img.shields.io/badge/Google_(Gemini)-4285F4?style=flat-square&logo=google&logoColor=white) | `gemini-2.5-flash-lite` |
+| ![Google](https://img.shields.io/badge/Google_(Gemini)-4285F4?style=flat-square&logo=google&logoColor=white) | `gemini-2.5-pro` |
+| ![OpenAI](https://img.shields.io/badge/OpenAI-412991?style=flat-square&logo=openai&logoColor=white) | `gpt-4o-audio-preview` |
+| ![OpenAI](https://img.shields.io/badge/OpenAI-412991?style=flat-square&logo=openai&logoColor=white) | `gpt-4o-mini-audio-preview` |
+| ![Mistral](https://img.shields.io/badge/Mistral-FF7000?style=flat-square) | `voxtral-small-latest` |
+| ![Mistral](https://img.shields.io/badge/Mistral-FF7000?style=flat-square) | `voxtral-mini-latest` |
 
-OpenRouter is recommended because it gives you access to multiple providers through one API key, plus accurate per-key cost tracking.
+**OpenRouter** is recommended—single API key for all models with accurate per-key cost tracking.
 
 ## Features
 
@@ -53,13 +62,37 @@ OpenRouter is recommended because it gives you access to multiple providers thro
 ![Cost and Analysis](screenshots/1_3_0/composite-2.png)
 *Cost tracking and Analysis tabs*
 
+## How Much Does Multimodal ASR Cost?
+
+Multimodal transcription is remarkably cost-effective. Here's real usage data from Voice Notepad:
+
+![Voice Notepad Analysis](screenshots/costs/4.png)
+*114 transcriptions, 11,496 words, $0.14 total cost—about $0.001 per transcription*
+
+![OpenRouter API Usage](screenshots/costs/2.png)
+*OpenRouter API key usage showing $0.14 total spend*
+
+![OpenRouter Activity](screenshots/costs/3.png)
+*Per-request costs: $0.001–0.0015 per transcription using Gemini 2.5 Flash*
+
+At roughly **one-tenth of a cent per transcription**, multimodal ASR through models like Gemini 2.5 Flash is cheaper than most dedicated speech-to-text services—and you get intelligent cleanup included.
+
 ## Installation
 
 ### Pre-built Packages
 
 Download from [Releases](https://github.com/danielrosehill/Voice-Notepad/releases):
-- **Linux**: AppImage (universal), .deb (Debian/Ubuntu), tarball
-- **Windows**: Portable .exe
+
+**Linux:**
+- **AppImage** — Universal, run on any distro
+- **.deb** — Debian/Ubuntu, install with `sudo dpkg -i`
+- **Tarball** — Extract and run anywhere
+
+**Windows:**
+- **Installer (.exe)** — Recommended. Creates Start Menu shortcut, easy uninstall
+- **Portable (.zip)** — Extract anywhere and run directly
+
+> **Windows SmartScreen Note:** You may see a "Windows protected your PC" warning. This is normal for open-source software without code signing certificates. Click **"More info"** → **"Run anyway"** to proceed. Verify downloads with the SHA256 checksums in the release.
 
 ### From Source
 
