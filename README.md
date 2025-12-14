@@ -60,6 +60,7 @@ This single-pass approach:
 - **One-shot transcription + cleanup**: Audio is sent with a cleanup prompt to multimodal models, eliminating the need for separate ASR and LLM passes
 - **Multiple AI providers**: Gemini, OpenAI, and Mistral (Voxtral)
 - **Audio compression**: Automatic downsampling to 16kHz mono before upload (reduces file size, matches Gemini's internal format)
+- **Automatic Gain Control (AGC)**: Normalizes audio levels for consistent transcription accuracy in sub-optimal recording conditions
 - **Markdown rendering**: Transcriptions display with rendered markdown formatting (toggle to view/edit source)
 - **System tray integration**: Minimizes to tray for quick access
 - **Microphone selection**: Choose your preferred input device

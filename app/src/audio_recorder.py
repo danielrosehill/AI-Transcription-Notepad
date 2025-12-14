@@ -3,7 +3,7 @@
 import io
 import wave
 import threading
-from typing import Optional
+from typing import Optional, Callable
 import pyaudio
 
 
@@ -26,6 +26,10 @@ class AudioRecorder:
         self.is_paused = False
         self._record_thread: Optional[threading.Thread] = None
         self._device_index: Optional[int] = None
+        self._lock = threading.Lock()
+        # Callback for error notifications (mic disconnect, etc.)
+        self.on_error: Optional[Callable[[str], None]] = None
+        self._error_occurred = False
 
     def get_input_devices(self) -> list[tuple[int, str]]:
         """Get list of available input devices."""
@@ -73,39 +77,90 @@ class AudioRecorder:
         except ValueError:
             return False
 
-    def start_recording(self) -> None:
-        """Start recording audio."""
-        if self.is_recording:
-            return
+    def is_device_available(self, device_index: Optional[int] = None) -> bool:
+        """Check if the specified device is still available."""
+        if device_index is None:
+            device_index = self._device_index
+        if device_index is None:
+            return True  # Default device assumed available
 
-        self.frames = []
+        try:
+            info = self.audio.get_device_info_by_index(device_index)
+            return info.get("maxInputChannels", 0) > 0
+        except Exception:
+            return False
+
+    def start_recording(self) -> bool:
+        """Start recording audio.
+
+        Returns:
+            True if recording started successfully, False on error.
+        """
+        if self.is_recording:
+            return True
+
+        # Check if device is available before starting
+        if self._device_index is not None and not self.is_device_available(self._device_index):
+            if self.on_error:
+                self.on_error("Microphone disconnected or unavailable")
+            return False
+
+        with self._lock:
+            self.frames = []
+            self._error_occurred = False
+
         self.is_recording = True
         self.is_paused = False
 
         # Find a working sample rate
         self.actual_sample_rate = self._get_supported_sample_rate(self._device_index)
 
-        self.stream = self.audio.open(
-            format=self.FORMAT,
-            channels=self.CHANNELS,
-            rate=self.actual_sample_rate,
-            input=True,
-            input_device_index=self._device_index,
-            frames_per_buffer=self.CHUNK,
-        )
+        try:
+            self.stream = self.audio.open(
+                format=self.FORMAT,
+                channels=self.CHANNELS,
+                rate=self.actual_sample_rate,
+                input=True,
+                input_device_index=self._device_index,
+                frames_per_buffer=self.CHUNK,
+            )
+        except Exception as e:
+            self.is_recording = False
+            if self.on_error:
+                self.on_error(f"Failed to open microphone: {e}")
+            return False
 
-        self._record_thread = threading.Thread(target=self._record_loop)
+        self._record_thread = threading.Thread(target=self._record_loop, daemon=True)
         self._record_thread.start()
+        return True
 
     def _record_loop(self) -> None:
         """Recording loop running in separate thread."""
+        consecutive_errors = 0
+        max_consecutive_errors = 5
+
         while self.is_recording:
             if not self.is_paused and self.stream:
                 try:
                     data = self.stream.read(self.CHUNK, exception_on_overflow=False)
-                    self.frames.append(data)
-                except Exception:
-                    break
+                    with self._lock:
+                        self.frames.append(data)
+                    consecutive_errors = 0  # Reset on success
+                except OSError as e:
+                    # OSError often indicates device disconnect
+                    consecutive_errors += 1
+                    if consecutive_errors >= max_consecutive_errors:
+                        self._error_occurred = True
+                        if self.on_error:
+                            self.on_error("Microphone disconnected during recording")
+                        break
+                except Exception as e:
+                    consecutive_errors += 1
+                    if consecutive_errors >= max_consecutive_errors:
+                        self._error_occurred = True
+                        if self.on_error:
+                            self.on_error(f"Recording error: {e}")
+                        break
 
     def pause_recording(self) -> None:
         """Pause recording."""
@@ -142,14 +197,20 @@ class AudioRecorder:
 
     def clear(self) -> None:
         """Clear recorded audio."""
-        self.frames = []
+        with self._lock:
+            self.frames = []
 
     def get_duration(self) -> float:
         """Get current recording duration in seconds."""
-        if not self.frames:
-            return 0.0
-        total_samples = len(self.frames) * self.CHUNK
+        with self._lock:
+            if not self.frames:
+                return 0.0
+            total_samples = len(self.frames) * self.CHUNK
         return total_samples / self.actual_sample_rate
+
+    def had_error(self) -> bool:
+        """Check if an error occurred during recording."""
+        return self._error_occurred
 
     def cleanup(self) -> None:
         """Clean up audio resources."""

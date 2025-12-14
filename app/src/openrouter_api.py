@@ -1,11 +1,16 @@
 """OpenRouter API client for credits, balance, and usage tracking."""
 
 import httpx
+import threading
+import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Callable
 
 
 OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
+
+# Cache settings
+CACHE_TTL_SECONDS = 60  # How long to cache balance/credits
 
 
 @dataclass
@@ -102,6 +107,15 @@ class OpenRouterAPI:
     def __init__(self, api_key: str):
         self.api_key = api_key
         self._client: Optional[httpx.Client] = None
+        self._lock = threading.Lock()
+        # Cache for credits
+        self._credits_cache: Optional[OpenRouterCredits] = None
+        self._credits_cache_time: float = 0
+        # Cache for key info
+        self._key_info_cache: Optional[KeyInfo] = None
+        self._key_info_cache_time: float = 0
+        # Background fetch state
+        self._fetch_in_progress = False
 
     def _get_client(self) -> httpx.Client:
         """Get HTTP client, creating if needed."""
@@ -112,17 +126,26 @@ class OpenRouterAPI:
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json",
                 },
-                timeout=30.0,
+                timeout=10.0,  # Reduced timeout for responsiveness
             )
         return self._client
 
-    def get_credits(self) -> Optional[OpenRouterCredits]:
+    def get_credits(self, use_cache: bool = True) -> Optional[OpenRouterCredits]:
         """
         Fetch current credit balance from OpenRouter.
 
+        Args:
+            use_cache: If True, return cached value if available and fresh
+
         Returns None if the request fails.
-        Note: Values are cached and may be up to 60 seconds stale.
+        Note: Values are cached for up to 60 seconds.
         """
+        # Check cache first
+        if use_cache and self._credits_cache is not None:
+            age = time.time() - self._credits_cache_time
+            if age < CACHE_TTL_SECONDS:
+                return self._credits_cache
+
         try:
             client = self._get_client()
             response = client.get("/credits")
@@ -130,13 +153,53 @@ class OpenRouterAPI:
             data = response.json()
 
             credits_data = data.get("data", {})
-            return OpenRouterCredits(
+            credits = OpenRouterCredits(
                 total_credits=credits_data.get("total_credits", 0.0),
                 total_usage=credits_data.get("total_usage", 0.0),
             )
+
+            # Update cache
+            with self._lock:
+                self._credits_cache = credits
+                self._credits_cache_time = time.time()
+
+            return credits
         except Exception as e:
             print(f"Failed to fetch OpenRouter credits: {e}")
-            return None
+            # Return stale cache if available
+            return self._credits_cache
+
+    def get_credits_async(self, callback: Callable[[Optional[OpenRouterCredits]], None]):
+        """
+        Fetch credits in background thread and call callback with result.
+
+        This prevents blocking the UI while fetching balance.
+        """
+        # Return cached value immediately if fresh
+        if self._credits_cache is not None:
+            age = time.time() - self._credits_cache_time
+            if age < CACHE_TTL_SECONDS:
+                callback(self._credits_cache)
+                return
+
+        # Don't start multiple fetches
+        with self._lock:
+            if self._fetch_in_progress:
+                # Return stale cache while fetch is in progress
+                callback(self._credits_cache)
+                return
+            self._fetch_in_progress = True
+
+        def fetch():
+            try:
+                result = self.get_credits(use_cache=False)
+                callback(result)
+            finally:
+                with self._lock:
+                    self._fetch_in_progress = False
+
+        thread = threading.Thread(target=fetch, daemon=True)
+        thread.start()
 
     def get_generation_usage(self, generation_id: str) -> Optional[GenerationUsage]:
         """

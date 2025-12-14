@@ -54,7 +54,7 @@ from .config import (
 )
 from .audio_recorder import AudioRecorder
 from .transcription import get_client, TranscriptionResult
-from .audio_processor import compress_audio_for_api, archive_audio, get_audio_info
+from .audio_processor import compress_audio_for_api, archive_audio, get_audio_info, combine_wav_segments
 from .markdown_widget import MarkdownTextWidget
 from .database import get_db, AUDIO_ARCHIVE_DIR
 from .vad_processor import remove_silence, is_vad_available
@@ -131,21 +131,50 @@ class TranscriptionWorker(QThread):
     finished = pyqtSignal(TranscriptionResult)
     error = pyqtSignal(str)
     status = pyqtSignal(str)
+    # Signal for VAD results: (processed_audio, original_duration, vad_duration)
+    vad_complete = pyqtSignal(float, float)
 
-    def __init__(self, audio_data: bytes, provider: str, api_key: str, model: str, prompt: str):
+    def __init__(
+        self,
+        audio_data: bytes,
+        provider: str,
+        api_key: str,
+        model: str,
+        prompt: str,
+        vad_enabled: bool = False,
+    ):
         super().__init__()
         self.audio_data = audio_data
         self.provider = provider
         self.api_key = api_key
         self.model = model
         self.prompt = prompt
+        self.vad_enabled = vad_enabled
         self.inference_time_ms: int = 0
+        self.original_duration: float | None = None
+        self.vad_duration: float | None = None
 
     def run(self):
         try:
+            audio_data = self.audio_data
+
+            # Apply VAD if enabled (now in background thread!)
+            if self.vad_enabled and is_vad_available():
+                self.status.emit("Removing silence...")
+                try:
+                    audio_data, orig_dur, vad_dur = remove_silence(audio_data)
+                    self.original_duration = orig_dur
+                    self.vad_duration = vad_dur
+                    self.vad_complete.emit(orig_dur, vad_dur)
+                    if vad_dur < orig_dur:
+                        reduction = (1 - vad_dur / orig_dur) * 100
+                        print(f"VAD: Reduced audio from {orig_dur:.1f}s to {vad_dur:.1f}s ({reduction:.0f}% reduction)")
+                except Exception as e:
+                    print(f"VAD failed, using original audio: {e}")
+
             # Compress audio to 16kHz mono before sending
             self.status.emit("Compressing audio...")
-            compressed_audio = compress_audio_for_api(self.audio_data)
+            compressed_audio = compress_audio_for_api(audio_data)
 
             self.status.emit("Transcribing...")
             start_time = time.time()
@@ -474,12 +503,20 @@ class SettingsDialog(QDialog):
 class MainWindow(QMainWindow):
     """Main application window."""
 
+    # Signal for handling mic errors from background thread
+    mic_error = pyqtSignal(str)
+    # Signal for balance updates from background thread
+    balance_updated = pyqtSignal(object)  # OpenRouterCredits or None
+
     def __init__(self):
         super().__init__()
         self.config = load_env_keys(load_config())
         self.recorder = AudioRecorder(self.config.sample_rate)
+        self.recorder.on_error = self._on_recorder_error
         self.worker: TranscriptionWorker | None = None
         self.recording_duration = 0.0
+        self.accumulated_segments: list[bytes] = []  # For append mode
+        self.accumulated_duration: float = 0.0
 
         self.setWindowTitle("Voice Notepad")
         self.setMinimumSize(480, 550)
@@ -491,9 +528,45 @@ class MainWindow(QMainWindow):
         self.setup_shortcuts()
         self.setup_global_hotkeys()
 
+        # Connect mic error signal (for thread-safe error handling)
+        self.mic_error.connect(self._handle_mic_error)
+        # Connect balance update signal (for async balance fetch)
+        self.balance_updated.connect(self._on_balance_received)
+
         # Start minimized if configured
         if self.config.start_minimized:
             self.hide()
+
+    def _on_recorder_error(self, error_msg: str):
+        """Called from recorder thread when an error occurs."""
+        # Emit signal to handle on main thread
+        self.mic_error.emit(error_msg)
+
+    def _handle_mic_error(self, error_msg: str):
+        """Handle microphone error on main thread."""
+        self.timer.stop()
+        self.status_label.setText(f"⚠️ {error_msg}")
+        self.status_label.setStyleSheet("color: #dc3545; font-weight: bold;")
+        self.tray.showMessage(
+            "Voice Notepad",
+            error_msg,
+            QSystemTrayIcon.MessageIcon.Warning,
+            3000,
+        )
+        # Reset UI but keep any recorded audio
+        self.record_btn.setText("● Record")
+        self.record_btn.setStyleSheet(self._record_btn_idle_style)
+        self.record_btn.setEnabled(True)
+        self.pause_btn.setEnabled(False)
+        # Keep transcribe enabled if we have audio
+        if self.recorder.frames or self.accumulated_segments:
+            self.stop_btn.setEnabled(True)
+            self.delete_btn.setEnabled(True)
+        else:
+            self.stop_btn.setEnabled(False)
+            self.delete_btn.setEnabled(False)
+        self.append_btn.setEnabled(False)
+        self.tray.setIcon(self._tray_icon_idle)
 
     def setup_ui(self):
         """Set up the main UI with tabs."""
@@ -755,6 +828,11 @@ class MainWindow(QMainWindow):
         self.duration_label = QLabel("0:00")
         self.duration_label.setFont(QFont("Monospace", 12))
         status_layout.addWidget(self.duration_label)
+
+        self.segment_label = QLabel("")
+        self.segment_label.setStyleSheet("color: #17a2b8; font-weight: bold;")
+        status_layout.addWidget(self.segment_label)
+
         layout.addLayout(status_layout)
 
         # Recording controls
@@ -799,6 +877,29 @@ class MainWindow(QMainWindow):
         self.pause_btn.setEnabled(False)
         self.pause_btn.clicked.connect(self.toggle_pause)
         controls.addWidget(self.pause_btn)
+
+        self.append_btn = QPushButton("Append")
+        self.append_btn.setMinimumHeight(45)
+        self.append_btn.setEnabled(False)
+        self.append_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #17a2b8;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #138496;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+                color: #aaa;
+            }
+        """)
+        self.append_btn.clicked.connect(self.append_recording)
+        controls.addWidget(self.append_btn)
 
         self.stop_btn = QPushButton("Transcribe")
         self.stop_btn.setMinimumHeight(45)
@@ -1360,9 +1461,10 @@ class MainWindow(QMainWindow):
     def toggle_recording(self):
         """Start or stop recording."""
         if not self.recorder.is_recording:
-            # Clear previous transcription when starting new recording
-            self.text_output.clear()
-            self.word_count_label.setText("")
+            # Only clear text if no accumulated segments (new recording session)
+            if not self.accumulated_segments:
+                self.text_output.clear()
+                self.word_count_label.setText("")
 
             # Set microphone from config
             mic_idx = self.get_selected_microphone_index()
@@ -1378,6 +1480,7 @@ class MainWindow(QMainWindow):
             self.record_btn.setText("● Recording")
             self.record_btn.setStyleSheet(self._record_btn_recording_style)
             self.pause_btn.setEnabled(True)
+            self.append_btn.setEnabled(True)
             self.stop_btn.setEnabled(True)
             self.delete_btn.setEnabled(True)
             self.status_label.setText("Recording...")
@@ -1399,6 +1502,49 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Paused")
             self.status_label.setStyleSheet("color: #ffc107; font-weight: bold;")
 
+    def append_recording(self):
+        """Stop current recording, save segment, and start a new recording."""
+        if not self.recorder.is_recording:
+            return
+
+        # Stop current recording and get audio data
+        self.timer.stop()
+        audio_data = self.recorder.stop_recording()
+
+        # Get duration of this segment
+        audio_info = get_audio_info(audio_data)
+        segment_duration = audio_info["duration_seconds"]
+
+        # Store the segment
+        self.accumulated_segments.append(audio_data)
+        self.accumulated_duration += segment_duration
+
+        # Update segment indicator
+        self._update_segment_indicator()
+
+        # Play a quick beep to indicate segment saved
+        feedback = get_feedback()
+        feedback.enabled = self.config.beep_on_record
+        feedback.play_stop_beep()
+
+        # Immediately start a new recording
+        self.recorder.start_recording()
+        self.timer.start(100)
+
+        # Brief status update
+        self.status_label.setText(f"Clip saved! Recording...")
+        self.status_label.setStyleSheet("color: #dc3545; font-weight: bold;")
+
+    def _update_segment_indicator(self):
+        """Update the segment count display."""
+        count = len(self.accumulated_segments)
+        if count > 0:
+            total_mins = int(self.accumulated_duration // 60)
+            total_secs = int(self.accumulated_duration % 60)
+            self.segment_label.setText(f"({count} clips, {total_mins}:{total_secs:02d})")
+        else:
+            self.segment_label.setText("")
+
     def stop_and_transcribe(self):
         """Stop recording and send for transcription."""
         # Play stop beep
@@ -1409,30 +1555,29 @@ class MainWindow(QMainWindow):
         self.timer.stop()
         audio_data = self.recorder.stop_recording()
 
+        # If we have accumulated segments, add current recording and combine all
+        if self.accumulated_segments:
+            self.accumulated_segments.append(audio_data)
+            self.status_label.setText("Combining clips...")
+            self.status_label.setStyleSheet("color: #007bff; font-weight: bold;")
+            audio_data = combine_wav_segments(self.accumulated_segments)
+            # Clear accumulated segments after combining
+            self.accumulated_segments = []
+            self.accumulated_duration = 0.0
+            self._update_segment_indicator()
+
         # Get original audio info
         audio_info = get_audio_info(audio_data)
         self.last_audio_duration = audio_info["duration_seconds"]
         self.last_vad_duration = None
 
-        # Apply VAD if enabled
-        if self.config.vad_enabled and is_vad_available():
-            self.status_label.setText("Removing silence...")
-            self.status_label.setStyleSheet("color: #007bff; font-weight: bold;")
-            try:
-                audio_data, orig_dur, vad_dur = remove_silence(audio_data)
-                self.last_vad_duration = vad_dur
-                if vad_dur < orig_dur:
-                    reduction = (1 - vad_dur / orig_dur) * 100
-                    print(f"VAD: Reduced audio from {orig_dur:.1f}s to {vad_dur:.1f}s ({reduction:.0f}% reduction)")
-            except Exception as e:
-                print(f"VAD failed, using original audio: {e}")
-
-        # Store audio data for later archiving
+        # Store audio data for later archiving (VAD now happens in worker thread)
         self.last_audio_data = audio_data
 
         self.record_btn.setText("Record")
         self.record_btn.setEnabled(False)
         self.pause_btn.setEnabled(False)
+        self.append_btn.setEnabled(False)
         self.stop_btn.setEnabled(False)
         self.delete_btn.setEnabled(False)
         self.status_label.setText("Transcribing...")
@@ -1462,20 +1607,30 @@ class MainWindow(QMainWindow):
             self.reset_ui()
             return
 
-        # Start transcription worker
+        # Start transcription worker (VAD + compression + transcription all in background)
         cleanup_prompt = build_cleanup_prompt(self.config)
         self.worker = TranscriptionWorker(
-            audio_data, provider, api_key, model, cleanup_prompt
+            audio_data,
+            provider,
+            api_key,
+            model,
+            cleanup_prompt,
+            vad_enabled=self.config.vad_enabled,
         )
         self.worker.finished.connect(self.on_transcription_complete)
         self.worker.error.connect(self.on_transcription_error)
         self.worker.status.connect(self.on_worker_status)
+        self.worker.vad_complete.connect(self.on_vad_complete)
         self.worker.start()
 
     def on_worker_status(self, status: str):
         """Handle worker status updates."""
         self.status_label.setText(status)
         self.status_label.setStyleSheet("color: #007bff; font-weight: bold;")
+
+    def on_vad_complete(self, orig_dur: float, vad_dur: float):
+        """Handle VAD processing complete - store duration for database."""
+        self.last_vad_duration = vad_dur
 
     def on_transcription_complete(self, result: TranscriptionResult):
         """Handle completed transcription."""
@@ -1557,53 +1712,66 @@ class MainWindow(QMainWindow):
         self.reset_ui()
 
     def _update_cost_display(self):
-        """Update the cost display label with today's spend and OpenRouter balance."""
+        """Update the cost display label with today's spend and trigger async balance fetch."""
         db = get_db()
         today = db.get_cost_today()
         today_cost = today['total_cost']
         count = today['count']
 
-        # Build display text
-        tooltip_parts = []
-        today_text = ""
-        balance_text = ""
+        # Store for balance callback
+        self._today_cost = today_cost
+        self._today_count = count
 
-        # Today's cost (rounded to nearest cent)
+        # Build today's cost text immediately (no blocking)
+        today_text = ""
         if count > 0:
             today_text = f"Today: ${today_cost:.2f}"
-            tooltip_parts.append(f"Spent today: ${today_cost:.2f}")
-            tooltip_parts.append(f"Transcriptions: {count}")
 
-        # Get OpenRouter balance if available
+        # Show today's cost immediately
+        self.cost_label.setText(today_text)
+        self.cost_label.setToolTip(f"Spent today: ${today_cost:.2f}\nTranscriptions: {count}" if count > 0 else "")
+
+        # Trigger async balance fetch for OpenRouter (non-blocking)
         if self.config.openrouter_api_key and self.config.selected_provider == "openrouter":
             try:
                 from .openrouter_api import get_openrouter_api
                 api = get_openrouter_api(self.config.openrouter_api_key)
-                credits = api.get_credits()
-                if credits:
-                    balance = credits.balance
-                    # Format balance: cents if < $1, dollars if >= $1
-                    if balance < 1.0:
-                        cents = int(round(balance * 100))
-                        balance_display = f"({cents} cents)"
-                    else:
-                        balance_display = f"(${balance:.1f})"
-                    # Style with distinctive background
-                    balance_text = f'<span style="background-color: rgba(100, 149, 237, 0.3); padding: 1px 4px; border-radius: 3px;">{balance_display}</span>'
-                    tooltip_parts.append(f"\nOpenRouter Balance: ${balance:.2f}")
-                    tooltip_parts.append(f"Credits: ${credits.total_credits:.2f}")
-                    tooltip_parts.append(f"Usage: ${credits.total_usage:.2f}")
+                # Async fetch - callback will update display when ready
+                api.get_credits_async(lambda credits: self.balance_updated.emit(credits))
             except Exception:
-                pass  # Silently fail if balance fetch fails
+                pass
 
-        # Combine today's cost and balance
-        if today_text or balance_text:
-            parts = [p for p in [today_text, balance_text] if p]
-            self.cost_label.setText("  ".join(parts))
-            self.cost_label.setToolTip("\n".join(tooltip_parts))
+    def _on_balance_received(self, credits):
+        """Handle balance update from async fetch (called on main thread via signal)."""
+        if credits is None:
+            return
+
+        # Rebuild display with balance info
+        today_text = ""
+        tooltip_parts = []
+
+        if hasattr(self, '_today_count') and self._today_count > 0:
+            today_text = f"Today: ${self._today_cost:.2f}"
+            tooltip_parts.append(f"Spent today: ${self._today_cost:.2f}")
+            tooltip_parts.append(f"Transcriptions: {self._today_count}")
+
+        balance = credits.balance
+        # Format balance: cents if < $1, dollars if >= $1
+        if balance < 1.0:
+            cents = int(round(balance * 100))
+            balance_display = f"({cents} cents)"
         else:
-            self.cost_label.setText("")
-            self.cost_label.setToolTip("")
+            balance_display = f"(${balance:.1f})"
+        # Style with distinctive background
+        balance_text = f'<span style="background-color: rgba(100, 149, 237, 0.3); padding: 1px 4px; border-radius: 3px;">{balance_display}</span>'
+        tooltip_parts.append(f"\nOpenRouter Balance: ${balance:.2f}")
+        tooltip_parts.append(f"Credits: ${credits.total_credits:.2f}")
+        tooltip_parts.append(f"Usage: ${credits.total_usage:.2f}")
+
+        # Update display
+        parts = [p for p in [today_text, balance_text] if p]
+        self.cost_label.setText("  ".join(parts))
+        self.cost_label.setToolTip("\n".join(tooltip_parts))
 
     def _update_mic_display(self):
         """Update the microphone display label."""
@@ -1669,6 +1837,7 @@ class MainWindow(QMainWindow):
         self.record_btn.setEnabled(True)
         self.pause_btn.setText("Pause")
         self.pause_btn.setEnabled(False)
+        self.append_btn.setEnabled(False)
         self.stop_btn.setEnabled(False)
         self.delete_btn.setEnabled(False)
         self.duration_label.setText("0:00")
@@ -1678,7 +1847,7 @@ class MainWindow(QMainWindow):
         self.tray.setIcon(self._tray_icon_idle)
 
     def delete_recording(self):
-        """Delete current recording."""
+        """Delete current recording and any accumulated segments."""
         # Play stop beep when discarding
         if self.recorder.is_recording:
             feedback = get_feedback()
@@ -1689,6 +1858,12 @@ class MainWindow(QMainWindow):
         if self.recorder.is_recording:
             self.recorder.stop_recording()
         self.recorder.clear()
+
+        # Clear accumulated segments
+        self.accumulated_segments = []
+        self.accumulated_duration = 0.0
+        self._update_segment_indicator()
+
         self.reset_ui()
 
     def update_duration(self):

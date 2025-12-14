@@ -18,13 +18,16 @@ Voice-Notepad-V3/
 │   ├── src/               # Python source files
 │   └── requirements.txt   # Python dependencies
 ├── planning/              # Planning notes and API docs
-├── build.sh               # Build .deb package
-├── build-appimage.sh      # Build AppImage
-├── build-tarball.sh       # Build portable tarball
-├── build-all.sh           # Build all formats
-├── build-install.sh       # Build .deb and install
-├── install.sh             # Install/upgrade from .deb
-├── release.sh             # Version bump + screenshots + build
+├── scripts/
+│   └── build/             # Build scripts
+│       ├── deb.sh         # Build .deb package
+│       ├── appimage.sh    # Build AppImage
+│       ├── tarball.sh     # Build portable tarball
+│       ├── all.sh         # Build all formats
+│       ├── install.sh     # Install .deb from dist/
+│       ├── release.sh     # Version bump + screenshots + build
+│       └── screenshots.sh # Take release screenshots
+├── build.sh               # Master build entry point
 ├── run.sh                 # Run for development
 └── dist/                  # Built packages (gitignored)
 ```
@@ -127,12 +130,38 @@ The default cleanup prompt instructs the AI to:
 5. Add subheadings for lengthy transcriptions
 6. Return output as markdown
 
-### Audio Processing
+### Audio Processing Pipeline
 
-Audio is compressed before upload:
-- Downsampled to 16kHz mono (matches Gemini's internal format)
-- Converted to appropriate format for each provider
-- Reduces file size and upload time
+Audio goes through a multi-stage pipeline before transcription:
+
+1. **Recording** (`audio_recorder.py`)
+   - Captures at device's native sample rate (typically 48kHz)
+   - Automatic sample rate negotiation with device
+   - Error handling for microphone disconnection during recording
+
+2. **Automatic Gain Control (AGC)** (`audio_processor.py`)
+   - Normalizes audio levels for consistent transcription accuracy
+   - Target peak: -3 dBFS (leaves headroom while ensuring good signal)
+   - Minimum threshold: -40 dBFS (avoids amplifying noise in silent recordings)
+   - Maximum gain: +20 dB (prevents over-amplification of very quiet audio)
+   - Only boosts quiet audio—never attenuates loud audio
+
+3. **Voice Activity Detection (VAD)** (`vad_processor.py`)
+   - Silero VAD removes silence segments before API upload
+   - Reduces file size and API costs
+   - See VAD section below for technical parameters
+
+4. **Compression** (`audio_processor.py`)
+   - Downsampled to 16kHz mono (matches Gemini's internal format)
+   - Converted to WAV for API upload
+   - Optional Opus archival for storage efficiency
+
+**AGC Configuration Constants:**
+```python
+AGC_TARGET_PEAK_DBFS = -3.0   # Target peak level
+AGC_MIN_PEAK_DBFS = -40.0     # Skip AGC if audio is quieter (noise floor)
+AGC_MAX_GAIN_DB = 20.0        # Maximum boost to apply
+```
 
 ## Features
 
@@ -143,12 +172,14 @@ Audio is compressed before upload:
 - [x] **OpenRouter balance**: Live credit balance in status bar and Cost tab
 - [x] **Transcript history**: SQLite database stores all transcriptions with metadata
 - [x] **VAD (Voice Activity Detection)**: Strips silence before API upload (reduces cost)
+- [x] **Automatic Gain Control (AGC)**: Normalizes audio levels for consistent transcription accuracy
 - [x] **Audio archival**: Optional Opus archival (~24kbps, very small files)
 - [x] **History tab**: Browse, search, and reuse past transcriptions
 - [x] **Cost tab**: Balance, spending (hourly/daily/weekly/monthly), model breakdown
 - [x] **Analysis tab**: Model performance metrics (inference time, chars/sec)
 - [x] **Models tab**: Browse available models by provider with tier indicators
 - [x] **Tabbed interface**: Record, History, Cost, Analysis, Models, and About tabs
+- [x] **Append mode**: Record multiple clips and combine them before transcription
 
 ### Planned
 
@@ -160,86 +191,69 @@ Audio is compressed before upload:
 
 ## Building & Packaging
 
+All build operations are accessed through a single master script: `./build.sh`
+
 ### Quick Reference
 
-| Script | Purpose |
-|--------|---------|
-| `./build.sh` | Build Debian package only |
-| `./build-appimage.sh` | Build AppImage only |
-| `./build-tarball.sh` | Build portable tarball only |
-| `./build-all.sh` | Build all formats + checksums |
-| `./install.sh` | Install latest .deb from dist/ |
-| `./build-install.sh` | Build .deb and install |
-| `./release.sh` | Bump version + screenshots + build |
+| Command | Purpose |
+|---------|---------|
+| `./build.sh` | Show help and available commands |
+| `./build.sh --deb` | Build Debian package |
+| `./build.sh --appimage` | Build AppImage |
+| `./build.sh --tarball` | Build portable tarball |
+| `./build.sh --all` | Build all formats + checksums |
+| `./build.sh --install` | Install latest .deb from dist/ |
+| `./build.sh --dev` | Fast dev build + install |
+| `./build.sh --release` | Bump version + screenshots + build all |
 
-### Multi-Format Release Build
+### Package Builds
+
 ```bash
-./build-all.sh [VERSION]
+./build.sh --deb [VERSION]       # Build Debian package
+./build.sh --appimage [VERSION]  # Build AppImage
+./build.sh --tarball [VERSION]   # Build portable tarball
+./build.sh --all [VERSION]       # Build all formats + checksums
 ```
-Builds all distribution formats:
+
+Output files:
 - `dist/voice-notepad_VERSION_amd64.deb` - Debian/Ubuntu package
-- `dist/Voice_Notepad-VERSION-x86_64.AppImage` - Universal Linux (runs anywhere)
+- `dist/Voice_Notepad-VERSION-x86_64.AppImage` - Universal Linux
 - `dist/voice-notepad-VERSION-linux-x86_64.tar.gz` - Portable archive
 - `dist/voice-notepad-VERSION-SHA256SUMS.txt` - Checksums
 
-Options:
+### Development Workflow
+
 ```bash
-./build-all.sh 1.3.0              # Build all formats
-./build-all.sh --deb              # Only Debian
-./build-all.sh --appimage         # Only AppImage
-./build-all.sh --tarball          # Only tarball
-./build-all.sh 1.3.0 --checksums  # Specific format + checksums
+./build.sh --dev              # Fast build + install (skips compression)
+./build.sh --deb --fast       # Build .deb without compression
+./build.sh --install          # Install latest .deb from dist/
 ```
 
-### Release Script
+### Release Workflow
+
 ```bash
-./release.sh [major|minor|patch] [--deb-only]
+./build.sh --release              # Patch release (1.3.0 -> 1.3.1)
+./build.sh --release minor        # Minor release (1.3.0 -> 1.4.0)
+./build.sh --release major        # Major release (1.3.0 -> 2.0.0)
+./build.sh --release-deb          # Patch release, .deb only
+./build.sh --screenshots          # Take screenshots only
 ```
-Full release workflow:
-1. Bumps version in `pyproject.toml` and `build.sh`
+
+Release workflow:
+1. Bumps version in `pyproject.toml`
 2. Takes screenshots
-3. Builds packages (all formats, or deb-only with `--deb-only`)
+3. Builds packages (all formats, or deb-only with `--release-deb`)
 
-Examples:
-```bash
-./release.sh              # Patch release, all formats
-./release.sh minor        # Minor release, all formats
-./release.sh --deb-only   # Patch release, Debian only (personal use)
-```
+### Build Script Details
 
-### Individual Build Scripts
-
-**Debian (.deb)**
-```bash
-./build.sh [VERSION] [--fast]
-```
-- `--fast`: Skip compression for faster dev builds
-
-**AppImage**
-```bash
-./build-appimage.sh [VERSION]
-```
-- Downloads `appimagetool` automatically if needed
-- Self-contained, runs on any Linux distribution
-
-**Tarball**
-```bash
-./build-tarball.sh [VERSION]
-```
-- Includes `install.sh` for optional system integration
-- Portable, can be extracted and run anywhere
-
-### Install/Upgrade
-```bash
-./install.sh
-```
-Installs the latest .deb package from `dist/` (requires sudo).
-
-### Build and Install
-```bash
-./build-install.sh [VERSION]
-```
-Builds .deb and installs in one step.
+Individual build scripts are located in `scripts/build/`:
+- `deb.sh` - Debian package with venv caching
+- `appimage.sh` - AppImage (downloads appimagetool automatically)
+- `tarball.sh` - Portable tarball with install/uninstall scripts
+- `all.sh` - Orchestrates all builds + checksums
+- `install.sh` - Installs .deb (requires sudo)
+- `release.sh` - Version bump + screenshots + build
+- `screenshots.sh` - Take UI screenshots
 
 ### Package Details
 

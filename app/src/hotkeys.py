@@ -5,8 +5,15 @@ On Wayland, this works via XWayland compatibility layer.
 """
 
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, Optional
 from pynput import keyboard
+
+
+# Debounce settings
+DEBOUNCE_INTERVAL_MS = 100  # Minimum time between hotkey triggers (prevents rapid-fire)
+MAX_CALLBACK_THREADS = 2  # Max concurrent callback executions
 
 
 # Mapping of key names to pynput Key objects
@@ -118,6 +125,10 @@ class GlobalHotkeyListener:
         self.active_hotkeys: set = set()  # Track which hotkeys are currently "active" (pressed)
         self.listener: Optional[keyboard.Listener] = None
         self._lock = threading.Lock()
+        # Debouncing: track last trigger time per hotkey
+        self._last_trigger_time: Dict[str, float] = {}
+        # Thread pool for callbacks (prevents thread explosion)
+        self._executor = ThreadPoolExecutor(max_workers=MAX_CALLBACK_THREADS, thread_name_prefix="hotkey")
 
     def register(
         self,
@@ -181,6 +192,17 @@ class GlobalHotkeyListener:
             self.listener = None
         self.pressed_keys.clear()
         self.active_hotkeys.clear()
+        # Shutdown thread pool gracefully
+        self._executor.shutdown(wait=False)
+
+    def _should_debounce(self, name: str) -> bool:
+        """Check if this hotkey should be debounced (triggered too recently)."""
+        now = time.time() * 1000  # Convert to milliseconds
+        last_time = self._last_trigger_time.get(name, 0)
+        if now - last_time < DEBOUNCE_INTERVAL_MS:
+            return True
+        self._last_trigger_time[name] = now
+        return False
 
     def _on_press(self, key):
         """Handle key press events."""
@@ -197,8 +219,14 @@ class GlobalHotkeyListener:
                         self.active_hotkeys.add(name)
                         callback = self.callbacks.get(name)
                         if callback:
-                            # Call callback in a separate thread to avoid blocking
-                            threading.Thread(target=callback, daemon=True).start()
+                            # Debounce check (outside lock to avoid contention)
+                            if not self._should_debounce(name):
+                                # Use thread pool instead of spawning new threads
+                                try:
+                                    self._executor.submit(callback)
+                                except RuntimeError:
+                                    # Executor shut down, ignore
+                                    pass
 
     def _on_release(self, key):
         """Handle key release events."""
@@ -218,8 +246,12 @@ class GlobalHotkeyListener:
                 self.active_hotkeys.discard(name)
                 release_callback = self.release_callbacks.get(name)
                 if release_callback:
-                    # Call release callback in a separate thread
-                    threading.Thread(target=release_callback, daemon=True).start()
+                    # Use thread pool for release callbacks too
+                    try:
+                        self._executor.submit(release_callback)
+                    except RuntimeError:
+                        # Executor shut down, ignore
+                        pass
 
     def _normalize_key(self, key):
         """Normalize a key for consistent comparison."""
