@@ -259,6 +259,7 @@ PROMPT_COMPONENTS = [
 FORMAT_TEMPLATES = {
     "general": "",  # No additional instructions, uses base cleanup only
     "email": "Format the output as an email with an appropriate greeting and sign-off.",
+    "prompt": "Format the output as clear, well-organized instructions for an AI development assistant. Use imperative voice, organize tasks logically, and ensure instructions are unambiguous and actionable.",
     "todo": "Format as a to-do list with checkbox items (- [ ] task). Use action verbs and be concise.",
     "grocery": "Format as a grocery list. Group items by category (produce, dairy, meat, pantry, etc.) if there are multiple items.",
     "meeting_notes": "Format as meeting notes with clear sections, bullet points for key points, and a separate 'Action Items' section at the end.",
@@ -269,6 +270,7 @@ FORMAT_TEMPLATES = {
 FORMAT_DISPLAY_NAMES = {
     "general": "General",
     "email": "Email",
+    "prompt": "Development Prompt",
     "todo": "To-Do List",
     "grocery": "Grocery List",
     "meeting_notes": "Meeting Notes",

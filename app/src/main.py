@@ -1199,6 +1199,79 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self.prompt_options_frame)
 
+        # Quick format selector buttons
+        format_quick_select_layout = QHBoxLayout()
+        format_quick_select_layout.setSpacing(8)
+
+        format_label = QLabel("Format:")
+        format_label.setStyleSheet("font-weight: bold; color: #495057;")
+        format_quick_select_layout.addWidget(format_label)
+
+        # Create button group for mutual exclusivity
+        self.format_button_group = QButtonGroup(self)
+
+        # General button (default)
+        self.general_format_btn = QPushButton("General")
+        self.general_format_btn.setCheckable(True)
+        self.general_format_btn.setMinimumHeight(32)
+        self.general_format_btn.clicked.connect(lambda: self._set_quick_format("general"))
+        self.format_button_group.addButton(self.general_format_btn)
+        format_quick_select_layout.addWidget(self.general_format_btn)
+
+        # Email button
+        self.email_format_btn = QPushButton("Email")
+        self.email_format_btn.setCheckable(True)
+        self.email_format_btn.setMinimumHeight(32)
+        self.email_format_btn.clicked.connect(lambda: self._set_quick_format("email"))
+        self.format_button_group.addButton(self.email_format_btn)
+        format_quick_select_layout.addWidget(self.email_format_btn)
+
+        # Prompt button
+        self.prompt_format_btn = QPushButton("Prompt")
+        self.prompt_format_btn.setCheckable(True)
+        self.prompt_format_btn.setMinimumHeight(32)
+        self.prompt_format_btn.clicked.connect(lambda: self._set_quick_format("prompt"))
+        self.format_button_group.addButton(self.prompt_format_btn)
+        format_quick_select_layout.addWidget(self.prompt_format_btn)
+
+        format_quick_select_layout.addStretch()
+
+        # Style the format buttons
+        format_button_style = """
+            QPushButton {
+                background-color: #e9ecef;
+                color: #495057;
+                border: 2px solid #ced4da;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 4px 16px;
+            }
+            QPushButton:hover {
+                background-color: #dee2e6;
+                border-color: #adb5bd;
+            }
+            QPushButton:checked {
+                background-color: #007bff;
+                color: white;
+                border-color: #007bff;
+            }
+        """
+        self.general_format_btn.setStyleSheet(format_button_style)
+        self.email_format_btn.setStyleSheet(format_button_style)
+        self.prompt_format_btn.setStyleSheet(format_button_style)
+
+        # Set initial button state based on config
+        if self.config.format_preset == "email":
+            self.email_format_btn.setChecked(True)
+        elif self.config.format_preset == "prompt":
+            self.prompt_format_btn.setChecked(True)
+        else:
+            self.general_format_btn.setChecked(True)
+
+        layout.addLayout(format_quick_select_layout)
+        layout.addSpacing(8)
+
         # Recording status and duration
         status_layout = QHBoxLayout()
         self.status_label = QLabel("Ready")
@@ -1919,6 +1992,22 @@ class MainWindow(QMainWindow):
         save_config(self.config)
         self._update_email_settings_visibility()
 
+        # Sync quick format buttons
+        if format_key == "general":
+            self.general_format_btn.setChecked(True)
+        elif format_key == "email":
+            self.email_format_btn.setChecked(True)
+        elif format_key == "prompt":
+            self.prompt_format_btn.setChecked(True)
+        else:
+            # If another format is selected from dropdown (todo, grocery, etc.),
+            # uncheck all quick buttons
+            self.format_button_group.setExclusive(False)
+            self.general_format_btn.setChecked(False)
+            self.email_format_btn.setChecked(False)
+            self.prompt_format_btn.setChecked(False)
+            self.format_button_group.setExclusive(True)
+
     def _on_formality_changed(self, button):
         """Handle formality radio button change."""
         formality_key = button.property("formality_key")
@@ -1943,6 +2032,28 @@ class MainWindow(QMainWindow):
         """Show email settings only when format is 'email'."""
         is_email = self.config.format_preset == "email"
         self.email_settings_frame.setVisible(is_email)
+
+    def _set_quick_format(self, format_key: str):
+        """Handle quick format button clicks."""
+        # Update the config
+        self.config.format_preset = format_key
+        save_config(self.config)
+
+        # Sync the format dropdown in the advanced settings
+        idx = self.format_combo.findData(format_key)
+        if idx >= 0:
+            self.format_combo.setCurrentIndex(idx)
+
+        # Update email settings visibility
+        self._update_email_settings_visibility()
+
+        # Update button states (should already be handled by QButtonGroup, but ensure sync)
+        if format_key == "general":
+            self.general_format_btn.setChecked(True)
+        elif format_key == "email":
+            self.email_format_btn.setChecked(True)
+        elif format_key == "prompt":
+            self.prompt_format_btn.setChecked(True)
 
     def get_selected_microphone_index(self):
         """Get the index of the configured microphone.
