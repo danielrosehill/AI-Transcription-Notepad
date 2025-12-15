@@ -15,6 +15,7 @@
 
 ---
 
+
 ![alt text](graphics/vibe-coding-disclosure.png)
 
 ## Why Voice Notepad?
@@ -83,14 +84,26 @@ Single API key for multiple models with accurate per-key cost tracking.
 
 ## Features
 
+### Core Capabilities
 - **One-shot transcription + cleanup**: Audio goes directly to multimodal models—no separate ASR step
-- **Global hotkeys**: Record from anywhere, even when minimized (F14-F20 recommended for macro keys)
+- **Live recording + file transcription**: Record with your mic or upload audio files (MP3, WAV, OGG, M4A, FLAC)
+- **Global hotkeys**: Record from anywhere, even when minimized (F14-F20 recommended)
 - **Voice Activity Detection**: Strips silence before upload to reduce costs
 - **Automatic Gain Control**: Normalizes audio levels for consistent results
-- **Cost tracking**: Monitor daily/weekly/monthly API spend (most accurate with OpenRouter)
-- **Transcript history**: SQLite database stores all transcriptions with searchable metadata
-- **Markdown output**: Clean, formatted text with optional source editing
-- **Audio archival**: Optional Opus archival of recordings for reference
+
+### Organization & Tracking
+- **Transcript history**: SQLite database with **full-text search (FTS5)** for instant queries
+- **Cost tracking**: Monitor API spend with OpenRouter showing actual key-specific costs
+- **Database maintenance**: VACUUM optimization, storage statistics, delete all history
+- **Analytics**: Model performance comparison, inference time tracking
+
+### Customization
+- **Cleanup prompt options**: 9+ customizable cleanup rules
+- **Format presets**: Email, todo list, meeting notes, blog post, documentation
+- **Audio archival**: Optional Opus archival (~24kbps, very small files)
+- **Markdown output**: Clean, formatted text with live preview
+
+**[Complete Feature Documentation](FEATURES.md)** — Detailed guide to all features, settings, and capabilities.
 
 ## Screenshots
 
@@ -163,7 +176,9 @@ MISTRAL_API_KEY=your_key
 
 ## Documentation
 
-📖 **[User Manual (PDF)](docs/manuals/Voice-Notepad-User-Manual-v1.pdf)** — Full documentation including hotkey configuration, cost tracking details, and advanced settings.
+- **[Feature Guide (FEATURES.md)](FEATURES.md)** — Complete feature documentation with technical details
+- **[User Manual (PDF)](docs/manuals/Voice-Notepad-User-Manual-v1.pdf)** — Full guide including hotkey configuration and advanced settings
+- **[Changelog (CHANGELOG.md)](CHANGELOG.md)** — Version history and release notes
 
 ## Related Resources
 
