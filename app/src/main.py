@@ -50,7 +50,7 @@ from PyQt6.QtGui import QIcon, QAction, QFont, QClipboard, QShortcut, QKeySequen
 from .config import (
     Config, load_config, save_config, load_env_keys,
     GEMINI_MODELS, OPENAI_MODELS, MISTRAL_MODELS, OPENROUTER_MODELS,
-    MODEL_TIERS, PROMPT_COMPONENTS, build_cleanup_prompt,
+    MODEL_TIERS, FOUNDATION_PROMPT_COMPONENTS, OPTIONAL_PROMPT_COMPONENTS, build_cleanup_prompt,
     FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES, FORMALITY_DISPLAY_NAMES, VERBOSITY_DISPLAY_NAMES, EMAIL_SIGNOFFS,
 )
 from .audio_recorder import AudioRecorder
@@ -72,6 +72,7 @@ from .history_widget import HistoryWidget
 from .cost_widget import CostWidget
 from .analysis_widget import AnalysisWidget
 from .models_widget import ModelsWidget
+from .formats_widget import FormatsWidget
 from .about_widget import AboutWidget
 from .mic_test_widget import MicTestWidget
 from .audio_feedback import get_feedback
@@ -1075,11 +1076,25 @@ class MainWindow(QMainWindow):
         prompt_options_layout.setSpacing(8)
         prompt_options_layout.setContentsMargins(8, 8, 8, 8)
 
-        # System prompt checkboxes in a two-column grid
+        # Foundation layer (always applied) - display as informational text
+        foundation_label = QLabel("<b>Foundation Cleanup (Always Applied):</b>")
+        foundation_label.setStyleSheet("font-size: 11px; color: #495057; margin-bottom: 2px;")
+        prompt_options_layout.addWidget(foundation_label)
+
+        foundation_items = QLabel("• " + "<br>• ".join(FOUNDATION_PROMPT_COMPONENTS))
+        foundation_items.setStyleSheet("font-size: 10px; color: #6c757d; padding-left: 8px; margin-bottom: 8px;")
+        foundation_items.setWordWrap(True)
+        prompt_options_layout.addWidget(foundation_items)
+
+        # Optional enhancements checkboxes (Layer 2)
+        optional_label = QLabel("<b>Optional Enhancements:</b>")
+        optional_label.setStyleSheet("font-size: 11px; color: #495057; margin-top: 4px; margin-bottom: 4px;")
+        prompt_options_layout.addWidget(optional_label)
+
         checkbox_grid = QGridLayout()
         checkbox_grid.setSpacing(4)
         self.prompt_checkboxes = {}
-        for i, (field_name, _, ui_description) in enumerate(PROMPT_COMPONENTS):
+        for i, (field_name, _, ui_description) in enumerate(OPTIONAL_PROMPT_COMPONENTS):
             checkbox = QCheckBox(ui_description)
             checkbox.setStyleSheet("font-size: 11px;")
             checkbox.setChecked(getattr(self.config, field_name, False))
@@ -1226,15 +1241,39 @@ class MainWindow(QMainWindow):
         self.format_button_group.addButton(self.email_format_btn)
         format_quick_select_layout.addWidget(self.email_format_btn)
 
-        # Prompt button
-        self.prompt_format_btn = QPushButton("Prompt")
-        self.prompt_format_btn.setCheckable(True)
-        self.prompt_format_btn.setMinimumHeight(32)
-        self.prompt_format_btn.clicked.connect(lambda: self._set_quick_format("prompt"))
-        self.format_button_group.addButton(self.prompt_format_btn)
-        format_quick_select_layout.addWidget(self.prompt_format_btn)
+        # AI Prompt button
+        self.ai_prompt_format_btn = QPushButton("AI Prompt")
+        self.ai_prompt_format_btn.setCheckable(True)
+        self.ai_prompt_format_btn.setMinimumHeight(32)
+        self.ai_prompt_format_btn.clicked.connect(lambda: self._set_quick_format("ai_prompt"))
+        self.format_button_group.addButton(self.ai_prompt_format_btn)
+        format_quick_select_layout.addWidget(self.ai_prompt_format_btn)
+
+        # Dev Prompt button
+        self.dev_prompt_format_btn = QPushButton("Dev Prompt")
+        self.dev_prompt_format_btn.setCheckable(True)
+        self.dev_prompt_format_btn.setMinimumHeight(32)
+        self.dev_prompt_format_btn.clicked.connect(lambda: self._set_quick_format("dev_prompt"))
+        self.format_button_group.addButton(self.dev_prompt_format_btn)
+        format_quick_select_layout.addWidget(self.dev_prompt_format_btn)
+
+        # To-Do button
+        self.todo_format_btn = QPushButton("To-Do")
+        self.todo_format_btn.setCheckable(True)
+        self.todo_format_btn.setMinimumHeight(32)
+        self.todo_format_btn.clicked.connect(lambda: self._set_quick_format("todo"))
+        self.format_button_group.addButton(self.todo_format_btn)
+        format_quick_select_layout.addWidget(self.todo_format_btn)
 
         format_quick_select_layout.addStretch()
+
+        # Add label pointing to Formats tab
+        more_formats_label = QLabel('<a href="#formats" style="color: #007bff; text-decoration: none;">More formats →</a>')
+        more_formats_label.setTextFormat(Qt.TextFormat.RichText)
+        more_formats_label.setToolTip("Click to open the Formats tab for more format options")
+        more_formats_label.linkActivated.connect(lambda: self.tabs.setCurrentIndex(6))  # Switch to Formats tab
+        more_formats_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        format_quick_select_layout.addWidget(more_formats_label)
 
         # Style the format buttons
         format_button_style = """
@@ -1244,8 +1283,8 @@ class MainWindow(QMainWindow):
                 border: 2px solid #ced4da;
                 border-radius: 6px;
                 font-weight: bold;
-                font-size: 13px;
-                padding: 4px 16px;
+                font-size: 12px;
+                padding: 4px 12px;
             }
             QPushButton:hover {
                 background-color: #dee2e6;
@@ -1259,13 +1298,19 @@ class MainWindow(QMainWindow):
         """
         self.general_format_btn.setStyleSheet(format_button_style)
         self.email_format_btn.setStyleSheet(format_button_style)
-        self.prompt_format_btn.setStyleSheet(format_button_style)
+        self.ai_prompt_format_btn.setStyleSheet(format_button_style)
+        self.dev_prompt_format_btn.setStyleSheet(format_button_style)
+        self.todo_format_btn.setStyleSheet(format_button_style)
 
         # Set initial button state based on config
         if self.config.format_preset == "email":
             self.email_format_btn.setChecked(True)
-        elif self.config.format_preset == "prompt":
-            self.prompt_format_btn.setChecked(True)
+        elif self.config.format_preset == "ai_prompt":
+            self.ai_prompt_format_btn.setChecked(True)
+        elif self.config.format_preset == "dev_prompt":
+            self.dev_prompt_format_btn.setChecked(True)
+        elif self.config.format_preset == "todo":
+            self.todo_format_btn.setChecked(True)
         else:
             self.general_format_btn.setChecked(True)
 
@@ -1536,6 +1581,10 @@ class MainWindow(QMainWindow):
         # Models tab
         self.models_widget = ModelsWidget()
         self.tabs.addTab(self.models_widget, "Models")
+
+        # Formats tab
+        self.formats_widget = FormatsWidget(self.config)
+        self.tabs.addTab(self.formats_widget, "Formats")
 
         # Mic Test tab
         self.mic_test_widget = MicTestWidget()
@@ -1834,14 +1883,16 @@ class MainWindow(QMainWindow):
 
     def on_tab_changed(self, index: int):
         """Handle tab change - refresh data in the selected tab."""
-        # Tabs: 0=Record, 1=File, 2=History, 3=Cost, 4=Analysis, 5=Models, 6=Mic Test, 7=About
+        # Tabs: 0=Record, 1=File, 2=History, 3=Cost, 4=Analysis, 5=Models, 6=Formats, 7=Mic Test, 8=About
         if index == 2:  # History tab
             self.history_widget.refresh()
         elif index == 3:  # Cost tab
             self.cost_widget.refresh()
         elif index == 4:  # Analysis tab
             self.analysis_widget.refresh()
-        # File (1), Models (5), Mic Test (6), About (7) don't need refresh
+        elif index == 6:  # Formats tab
+            self.formats_widget.refresh()
+        # File (1), Models (5), Mic Test (7), About (8) don't need refresh
 
     def on_history_transcription_selected(self, text: str):
         """Handle transcription selected from history - put in editor."""
@@ -1992,20 +2043,30 @@ class MainWindow(QMainWindow):
         save_config(self.config)
         self._update_email_settings_visibility()
 
+        # Refresh Formats tab if it's visible
+        if hasattr(self, 'formats_widget'):
+            self.formats_widget.refresh()
+
         # Sync quick format buttons
         if format_key == "general":
             self.general_format_btn.setChecked(True)
         elif format_key == "email":
             self.email_format_btn.setChecked(True)
-        elif format_key == "prompt":
-            self.prompt_format_btn.setChecked(True)
+        elif format_key == "ai_prompt":
+            self.ai_prompt_format_btn.setChecked(True)
+        elif format_key == "dev_prompt":
+            self.dev_prompt_format_btn.setChecked(True)
+        elif format_key == "todo":
+            self.todo_format_btn.setChecked(True)
         else:
-            # If another format is selected from dropdown (todo, grocery, etc.),
+            # If another format is selected from dropdown or Formats tab,
             # uncheck all quick buttons
             self.format_button_group.setExclusive(False)
             self.general_format_btn.setChecked(False)
             self.email_format_btn.setChecked(False)
-            self.prompt_format_btn.setChecked(False)
+            self.ai_prompt_format_btn.setChecked(False)
+            self.dev_prompt_format_btn.setChecked(False)
+            self.todo_format_btn.setChecked(False)
             self.format_button_group.setExclusive(True)
 
     def _on_formality_changed(self, button):
@@ -2047,13 +2108,21 @@ class MainWindow(QMainWindow):
         # Update email settings visibility
         self._update_email_settings_visibility()
 
+        # Refresh Formats tab if it's visible
+        if hasattr(self, 'formats_widget'):
+            self.formats_widget.refresh()
+
         # Update button states (should already be handled by QButtonGroup, but ensure sync)
         if format_key == "general":
             self.general_format_btn.setChecked(True)
         elif format_key == "email":
             self.email_format_btn.setChecked(True)
-        elif format_key == "prompt":
-            self.prompt_format_btn.setChecked(True)
+        elif format_key == "ai_prompt":
+            self.ai_prompt_format_btn.setChecked(True)
+        elif format_key == "dev_prompt":
+            self.dev_prompt_format_btn.setChecked(True)
+        elif format_key == "todo":
+            self.todo_format_btn.setChecked(True)
 
     def get_selected_microphone_index(self):
         """Get the index of the configured microphone.
