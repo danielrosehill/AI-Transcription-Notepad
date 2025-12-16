@@ -320,6 +320,93 @@ FORMAT_TEMPLATES = {
         "category": "creative",
         "description": "Unstructured blog research notes",
     },
+    # NEW FORMATS - Business & Technical
+    "bug_report": {
+        "instruction": "Format as a software bug report with clear sections: Summary, Steps to Reproduce, Expected Behavior, Actual Behavior, Environment Details, and Additional Context.",
+        "adherence": "Use technical precision. Include all mentioned error messages verbatim. Structure reproduction steps as numbered list. Categorize severity if mentioned.",
+        "category": "work",
+        "description": "Software bug report with technical details",
+    },
+    "internal_memo": {
+        "instruction": "Format as an internal company memo with: TO, FROM, DATE, SUBJECT, and body with clear sections and action items if applicable.",
+        "adherence": "Use professional but direct tone. Keep concise. Highlight key decisions or action items. Use proper memo formatting conventions.",
+        "category": "work",
+        "description": "Internal company memorandum",
+    },
+    "sop": {
+        "instruction": "Format as a Standard Operating Procedure (SOP) with: Purpose, Scope, Procedure (numbered steps), Safety/Compliance notes if relevant, and References if mentioned.",
+        "adherence": "Use imperative voice for procedure steps. Each step must be clear and actionable. Include warnings or cautions if safety is mentioned. Maintain consistent step numbering.",
+        "category": "documentation",
+        "description": "Standard Operating Procedure document",
+    },
+    "system_prompt": {
+        "instruction": "Format as a system prompt for an AI assistant. Write in third-person, defining the assistant's role, capabilities, constraints, and behavioral guidelines. Use declarative statements about what the assistant 'is' or 'does'.",
+        "adherence": "Use third-person perspective (e.g., 'You are...', 'The assistant should...'). Define role clearly. Specify constraints and boundaries. Include behavioral guidelines. Be comprehensive but concise. Avoid user-facing language.",
+        "category": "work",
+        "description": "AI system prompt (third-person, defining behavior)",
+    },
+    "api_doc": {
+        "instruction": "Format as API documentation with endpoint details, parameters, request/response examples, and usage notes.",
+        "adherence": "Use consistent structure for each endpoint. Include HTTP methods, URL patterns, parameter tables, example requests/responses in code blocks. Note authentication requirements.",
+        "category": "documentation",
+        "description": "API endpoint documentation",
+    },
+    "changelog": {
+        "instruction": "Format as a software changelog with version numbers, release dates, and categorized changes (Added, Changed, Fixed, Removed, Deprecated).",
+        "adherence": "Follow Keep a Changelog format. Use markdown headers for versions. Group changes by category. Use bullet points. Include dates in YYYY-MM-DD format.",
+        "category": "documentation",
+        "description": "Software release changelog",
+    },
+    "project_plan": {
+        "instruction": "Format as a project plan with: Overview, Goals/Objectives, Timeline/Milestones, Resources, Deliverables, and Risks if mentioned.",
+        "adherence": "Use clear hierarchical structure. Present timeline as table or structured list. Highlight critical milestones. Be specific about deliverables and success criteria.",
+        "category": "work",
+        "description": "Project planning document",
+    },
+    # Content Creation
+    "social_post": {
+        "instruction": "Format as a social media post optimized for engagement. Keep concise, use line breaks for readability, include hashtags if mentioned, and maintain conversational tone.",
+        "adherence": "Respect platform character limits if specified. Use emoji strategically if mentioned. Structure for scanability. Include call-to-action if present.",
+        "category": "creative",
+        "description": "Social media post (Twitter, LinkedIn, etc.)",
+    },
+    "press_release": {
+        "instruction": "Format as a press release with: compelling headline, dateline, lead paragraph (who/what/when/where/why), body paragraphs, boilerplate, and media contact.",
+        "adherence": "Follow AP style. Front-load most newsworthy information. Use quotations if mentioned. Maintain objective tone. Include standard press release structure.",
+        "category": "work",
+        "description": "Corporate press release",
+    },
+    "newsletter": {
+        "instruction": "Format as an email newsletter with: engaging subject line, greeting, main content sections with headers, and clear call-to-action.",
+        "adherence": "Use scannable sections with headers. Include brief intro paragraph. Maintain conversational but professional tone. End with clear CTA and sign-off.",
+        "category": "creative",
+        "description": "Email newsletter content",
+    },
+    # Fun/Experimental
+    "shakespearean": {
+        "instruction": "Rewrite the transcription in Shakespearean English style, using Early Modern English vocabulary, thou/thee pronouns, and poetic phrasing while preserving the core meaning.",
+        "adherence": "Use Elizabethan vocabulary and syntax. Apply thee/thou/thy appropriately. Add poetic flourishes. Maintain iambic rhythm where natural. Preserve original meaning despite stylistic transformation.",
+        "category": "experimental",
+        "description": "Shakespearean English style (fun)",
+    },
+    "medieval": {
+        "instruction": "Rewrite in Medieval/Middle English style as if written by a medieval scribe or chronicler, using archaic vocabulary and formal historical narrative style.",
+        "adherence": "Use medieval English vocabulary (e.g., 'hath', 'doth', 'verily', 'forsooth'). Adopt formal chronicle-style narration. Add period-appropriate phrasing. Maintain clarity despite archaic style.",
+        "category": "experimental",
+        "description": "Medieval English style (fun)",
+    },
+    "pirate_speak": {
+        "instruction": "Rewrite in pirate vernacular with nautical terms, 'arr', 'me hearty', and swashbuckling language while keeping the content recognizable.",
+        "adherence": "Use pirate slang ('arr', 'matey', 'scallywag', etc.). Add nautical metaphors. Replace pronouns with pirate equivalents ('me' instead of 'my'). Keep energetic and playful tone.",
+        "category": "experimental",
+        "description": "Pirate speak style (fun)",
+    },
+    "formal_academic": {
+        "instruction": "Rewrite in formal academic style suitable for scholarly publication, with proper citations structure if sources are mentioned, elevated vocabulary, and passive voice where appropriate.",
+        "adherence": "Use formal academic register. Employ technical vocabulary. Structure arguments logically. Use passive voice judiciously. Add 'According to...' structures if sources mentioned. Maintain objectivity.",
+        "category": "experimental",
+        "description": "Formal academic writing style",
+    },
 }
 
 # Display names for format presets (for UI)
@@ -328,6 +415,7 @@ FORMAT_DISPLAY_NAMES = {
     "email": "Email",
     "ai_prompt": "AI Prompt",
     "dev_prompt": "Development Prompt",
+    "system_prompt": "System Prompt",
     "todo": "To-Do List",
     "grocery": "Grocery List",
     "meeting_notes": "Meeting Notes",
@@ -335,8 +423,21 @@ FORMAT_DISPLAY_NAMES = {
     "readme": "README",
     "tech_docs": "Technical Documentation",
     "reference_doc": "Reference Doc",
+    "api_doc": "API Documentation",
+    "sop": "SOP (Standard Operating Procedure)",
+    "changelog": "Changelog",
     "blog_outline": "Blog Outline",
     "blog_notes": "Blog Notes",
+    "bug_report": "Bug Report",
+    "internal_memo": "Internal Memo",
+    "project_plan": "Project Plan",
+    "social_post": "Social Media Post",
+    "press_release": "Press Release",
+    "newsletter": "Newsletter",
+    "shakespearean": "Shakespearean Style",
+    "medieval": "Medieval Style",
+    "pirate_speak": "Pirate Speak",
+    "formal_academic": "Formal Academic",
 }
 
 # Format categories for organization in Formats tab
@@ -346,6 +447,7 @@ FORMAT_CATEGORIES = {
     "documentation": "Documentation",
     "creative": "Creative & Content",
     "lists": "Lists & Planning",
+    "experimental": "Fun & Experimental",
 }
 
 # Formality level templates

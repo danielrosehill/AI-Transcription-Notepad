@@ -1249,6 +1249,14 @@ class MainWindow(QMainWindow):
         self.format_button_group.addButton(self.ai_prompt_format_btn)
         format_quick_select_layout.addWidget(self.ai_prompt_format_btn)
 
+        # System Prompt button
+        self.system_prompt_format_btn = QPushButton("System Prompt")
+        self.system_prompt_format_btn.setCheckable(True)
+        self.system_prompt_format_btn.setMinimumHeight(32)
+        self.system_prompt_format_btn.clicked.connect(lambda: self._set_quick_format("system_prompt"))
+        self.format_button_group.addButton(self.system_prompt_format_btn)
+        format_quick_select_layout.addWidget(self.system_prompt_format_btn)
+
         # Dev Prompt button
         self.dev_prompt_format_btn = QPushButton("Dev Prompt")
         self.dev_prompt_format_btn.setCheckable(True)
@@ -1299,6 +1307,7 @@ class MainWindow(QMainWindow):
         self.general_format_btn.setStyleSheet(format_button_style)
         self.email_format_btn.setStyleSheet(format_button_style)
         self.ai_prompt_format_btn.setStyleSheet(format_button_style)
+        self.system_prompt_format_btn.setStyleSheet(format_button_style)
         self.dev_prompt_format_btn.setStyleSheet(format_button_style)
         self.todo_format_btn.setStyleSheet(format_button_style)
 
@@ -1307,6 +1316,8 @@ class MainWindow(QMainWindow):
             self.email_format_btn.setChecked(True)
         elif self.config.format_preset == "ai_prompt":
             self.ai_prompt_format_btn.setChecked(True)
+        elif self.config.format_preset == "system_prompt":
+            self.system_prompt_format_btn.setChecked(True)
         elif self.config.format_preset == "dev_prompt":
             self.dev_prompt_format_btn.setChecked(True)
         elif self.config.format_preset == "todo":
@@ -2054,6 +2065,8 @@ class MainWindow(QMainWindow):
             self.email_format_btn.setChecked(True)
         elif format_key == "ai_prompt":
             self.ai_prompt_format_btn.setChecked(True)
+        elif format_key == "system_prompt":
+            self.system_prompt_format_btn.setChecked(True)
         elif format_key == "dev_prompt":
             self.dev_prompt_format_btn.setChecked(True)
         elif format_key == "todo":
@@ -2065,6 +2078,7 @@ class MainWindow(QMainWindow):
             self.general_format_btn.setChecked(False)
             self.email_format_btn.setChecked(False)
             self.ai_prompt_format_btn.setChecked(False)
+            self.system_prompt_format_btn.setChecked(False)
             self.dev_prompt_format_btn.setChecked(False)
             self.todo_format_btn.setChecked(False)
             self.format_button_group.setExclusive(True)
@@ -2119,6 +2133,8 @@ class MainWindow(QMainWindow):
             self.email_format_btn.setChecked(True)
         elif format_key == "ai_prompt":
             self.ai_prompt_format_btn.setChecked(True)
+        elif format_key == "system_prompt":
+            self.system_prompt_format_btn.setChecked(True)
         elif format_key == "dev_prompt":
             self.dev_prompt_format_btn.setChecked(True)
         elif format_key == "todo":
