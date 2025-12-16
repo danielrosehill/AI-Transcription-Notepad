@@ -77,7 +77,8 @@ from .audio_feedback import get_feedback
 from .file_transcription_widget import FileTranscriptionWidget
 from .mic_naming_ai import MicrophoneNamingAI
 from .prompt_options_dialog import PromptOptionsDialog
-from .prompt_stack_widget import PromptStackWidget
+from .format_manager_dialog import FormatManagerDialog
+from .stack_manager_dialog import StackManagerDialog
 
 
 class HotkeyEdit(QLineEdit):
@@ -433,13 +434,13 @@ class MainWindow(QMainWindow):
         # Update tier button states based on current model
         self._update_tier_buttons()
 
-        # Prompt Configuration Button (opens modal dialog)
+        # System Prompt Configuration Button (opens modal dialog)
         prompt_config_layout = QHBoxLayout()
 
-        configure_prompt_btn = QPushButton("⚙ Configure Prompt...")
+        configure_prompt_btn = QPushButton("⚙ Configure System Prompt...")
         configure_prompt_btn.setMinimumHeight(34)
         configure_prompt_btn.setToolTip(
-            "Configure detailed prompt options:\n"
+            "Configure detailed system prompt options:\n"
             "• Optional enhancements (filler words, punctuation, etc.)\n"
             "• Format settings and tone\n"
             "• Verbosity reduction\n"
@@ -471,7 +472,7 @@ class MainWindow(QMainWindow):
         prompt_config_layout.addStretch()
         layout.addLayout(prompt_config_layout)
 
-        # Prompt Stack Section (new multi-select system)
+        # Prompt Stacks Section
         prompt_stack_header = QHBoxLayout()
         prompt_stack_label = QLabel("Advanced: Prompt Stacks")
         prompt_stack_label.setStyleSheet("font-weight: bold; font-size: 12px; color: #495057;")
@@ -485,32 +486,28 @@ class MainWindow(QMainWindow):
 
         prompt_stack_header.addSpacing(10)
 
-        # Toggle button
-        self.prompt_stack_toggle = QPushButton("▼")
-        self.prompt_stack_toggle.setFixedSize(24, 24)
-        self.prompt_stack_toggle.setStyleSheet("""
+        # Manage Stacks button
+        manage_stacks_btn = QPushButton("⚙️ Manage Stacks...")
+        manage_stacks_btn.setFixedHeight(28)
+        manage_stacks_btn.setStyleSheet("""
             QPushButton {
-                border: none;
-                background: transparent;
-                font-size: 14px;
-                color: #6c757d;
+                background-color: #f8f9fa;
+                color: #495057;
+                border: 1px solid #ced4da;
+                border-radius: 4px;
+                font-size: 11px;
+                padding: 4px 12px;
             }
             QPushButton:hover {
-                color: #495057;
+                background-color: #e9ecef;
+                border-color: #adb5bd;
             }
         """)
-        self.prompt_stack_toggle.clicked.connect(self._toggle_prompt_stack_section)
-        prompt_stack_header.addWidget(self.prompt_stack_toggle)
+        manage_stacks_btn.clicked.connect(self._open_stack_manager)
+        prompt_stack_header.addWidget(manage_stacks_btn)
 
         prompt_stack_header.addStretch()
         layout.addLayout(prompt_stack_header)
-
-        # Collapsible prompt stack widget
-        from .config import CONFIG_DIR
-        self.prompt_stack_widget = PromptStackWidget(CONFIG_DIR, self)
-        self.prompt_stack_widget.setVisible(False)  # Start collapsed
-        self.prompt_stack_widget.elements_changed.connect(self._on_prompt_elements_changed)
-        layout.addWidget(self.prompt_stack_widget)
 
         # Quick format selector buttons
         format_quick_select_layout = QHBoxLayout()
@@ -573,10 +570,10 @@ class MainWindow(QMainWindow):
 
         format_quick_select_layout.addStretch()
 
-        # Add expand/collapse button for all formats
-        self.all_formats_toggle = QPushButton("▶ All Formats")
-        self.all_formats_toggle.setFixedHeight(32)
-        self.all_formats_toggle.setStyleSheet("""
+        # Manage Formats button
+        manage_formats_btn = QPushButton("⚙️ Manage Formats...")
+        manage_formats_btn.setFixedHeight(32)
+        manage_formats_btn.setStyleSheet("""
             QPushButton {
                 background-color: #f8f9fa;
                 color: #495057;
@@ -591,8 +588,8 @@ class MainWindow(QMainWindow):
                 border-color: #adb5bd;
             }
         """)
-        self.all_formats_toggle.clicked.connect(self._toggle_all_formats_section)
-        format_quick_select_layout.addWidget(self.all_formats_toggle)
+        manage_formats_btn.clicked.connect(self._open_format_manager)
+        format_quick_select_layout.addWidget(manage_formats_btn)
 
         # Style the format buttons
         format_button_style = """
@@ -637,12 +634,6 @@ class MainWindow(QMainWindow):
             self.general_format_btn.setChecked(True)
 
         layout.addLayout(format_quick_select_layout)
-
-        # Collapsible all formats widget
-        from .formats_widget import FormatsWidget
-        self.formats_widget = FormatsWidget(self.config)
-        self.formats_widget.setVisible(False)  # Start collapsed
-        layout.addWidget(self.formats_widget)
 
         layout.addSpacing(8)
 
@@ -1339,7 +1330,6 @@ class MainWindow(QMainWindow):
         """Open the prompt options configuration dialog."""
         dialog = PromptOptionsDialog(self.config, self)
         dialog.settings_changed.connect(self._update_prompt_indicator)
-        dialog.settings_changed.connect(lambda: self.formats_widget.refresh() if hasattr(self, 'formats_widget') else None)
         dialog.exec()
 
     def _update_prompt_indicator(self):
@@ -1357,26 +1347,19 @@ class MainWindow(QMainWindow):
         else:
             self.prompt_indicator_label.setText(f"{enabled_count} enhancements enabled")
 
-    def _toggle_prompt_stack_section(self):
-        """Toggle visibility of prompt stack section."""
-        visible = not self.prompt_stack_widget.isVisible()
-        self.prompt_stack_widget.setVisible(visible)
-        self.prompt_stack_toggle.setText("▼" if visible else "▶")
+    def _open_format_manager(self):
+        """Open the format management dialog."""
+        from .config import CONFIG_DIR
+        dialog = FormatManagerDialog(self.config, self)
+        dialog.formats_changed.connect(self._update_prompt_indicator)
+        dialog.exec()
 
-    def _toggle_all_formats_section(self):
-        """Toggle visibility of all formats section."""
-        visible = not self.formats_widget.isVisible()
-        self.formats_widget.setVisible(visible)
-        self.all_formats_toggle.setText(("▼ " if visible else "▶ ") + "All Formats")
-        if visible:
-            # Refresh formats when opening
-            self.formats_widget.refresh()
-
-    def _on_prompt_elements_changed(self, element_keys: list):
-        """Handle changes to selected prompt elements from the stack widget."""
-        # Store the selected elements in config
-        self.config.prompt_stack_elements = element_keys
-        save_config(self.config)
+    def _open_stack_manager(self):
+        """Open the stack management dialog."""
+        from .config import CONFIG_DIR
+        dialog = StackManagerDialog(CONFIG_DIR, self)
+        dialog.stacks_changed.connect(self._update_prompt_indicator)
+        dialog.exec()
 
     def _on_use_prompt_stacks_changed(self):
         """Handle enable/disable of prompt stack system."""
@@ -1388,10 +1371,6 @@ class MainWindow(QMainWindow):
         # Update the config
         self.config.format_preset = format_key
         save_config(self.config)
-
-        # Refresh Formats tab if it's visible
-        if hasattr(self, 'formats_widget'):
-            self.formats_widget.refresh()
 
     def get_selected_microphone_index(self):
         """Get the index of the configured microphone.

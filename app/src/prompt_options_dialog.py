@@ -26,7 +26,7 @@ class PromptOptionsDialog(QDialog):
     def __init__(self, config: Config, parent=None):
         super().__init__(parent)
         self.config = config
-        self.setWindowTitle("Prompt Configuration")
+        self.setWindowTitle("System Prompt Configuration")
         self.setModal(True)
         self.setMinimumWidth(600)
         self.setMinimumHeight(500)

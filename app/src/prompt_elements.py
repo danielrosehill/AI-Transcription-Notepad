@@ -327,6 +327,24 @@ def save_custom_stack(stack: PromptStack, config_dir: Path):
         json.dump(data, f, indent=2)
 
 
+def delete_stack(stack_name: str, config_dir: Path):
+    """Delete a custom prompt stack."""
+    stacks_file = config_dir / "prompt_stacks.json"
+
+    if not stacks_file.exists():
+        return
+
+    with open(stacks_file) as f:
+        data = json.load(f)
+
+    # Remove the stack
+    data["stacks"] = [s for s in data["stacks"] if s["name"] != stack_name]
+
+    # Save
+    with open(stacks_file, "w") as f:
+        json.dump(data, f, indent=2)
+
+
 def load_custom_stacks(config_dir: Path) -> List[PromptStack]:
     """Load custom prompt stacks from disk."""
     stacks_file = config_dir / "prompt_stacks.json"
