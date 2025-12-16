@@ -38,6 +38,7 @@ nav:
     - Basic Usage: usage.md
     - Features: features.md
     - Keyboard Shortcuts: shortcuts.md
+    - Hotkey Setup: hotkey-setup.md
   - Technical:
     - Audio Pipeline: audio-pipeline.md
     - Multimodal vs ASR: multimodal-vs-asr.md

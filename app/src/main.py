@@ -1979,20 +1979,16 @@ class MainWindow(QMainWindow):
         - F17: Transcribe cached audio only
         - F18: Clear cache/delete recording
         - F19: Append (start new recording to append to cache)
+
+        NOTE: Pause key is intentionally NOT registered as pynput can receive
+        spurious Key.pause events on some systems (e.g., mouse clicks being
+        misinterpreted as pause key presses).
         """
         # Unregister all existing hotkeys first
         for name in ["pause_toggle", "f16_tap", "f17_transcribe", "f18_delete", "f19_append"]:
             self.hotkey_listener.unregister(name)
 
-        # Register hotkeys
-        # Pause: Start recording (press 1) or Stop & Transcribe (press 2)
-        self.hotkey_listener.register(
-            "pause_toggle",
-            "pause",
-            lambda: QTimer.singleShot(0, self._hotkey_record_or_transcribe)
-        )
-
-        # F16: Tap (same as Pause toggle)
+        # F16: Tap (toggle recording)
         self.hotkey_listener.register(
             "f16_tap",
             "f16",
@@ -2019,15 +2015,6 @@ class MainWindow(QMainWindow):
             "f19",
             lambda: QTimer.singleShot(0, self._hotkey_append)
         )
-
-    def _hotkey_record_or_transcribe(self):
-        """Handle Pause: Press 1 = Start recording, Press 2 = Stop & Transcribe."""
-        if self.recorder.is_recording:
-            # Already recording, so stop and transcribe
-            self.stop_and_transcribe()
-        else:
-            # Not recording, so start recording
-            self.toggle_recording()
 
     def _hotkey_toggle_recording(self):
         """Handle F15/F16: Toggle recording on/off (caches audio when stopped)."""

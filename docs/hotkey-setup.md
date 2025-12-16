@@ -1,6 +1,11 @@
 # Hotkey Setup Guide
 
-Voice Notepad uses global hotkeys (F15-F19) that work system-wide, even when the app is minimized. Most standard keyboards don't have F15+ keys, but you can easily remap any key or button to emit these keycodes using **Input Remapper**.
+Voice Notepad uses global hotkeys (F15-F19) that work system-wide, even when the app is minimized. Most standard keyboards don't have F15+ keys, but you can easily remap any key or button to emit these keycodes.
+
+!!! tip "Recommended Tool: Input Remapper"
+    We highly recommend **[Input Remapper](https://github.com/sezanzeb/input-remapper)** for setting up hotkeys on Linux. It's a powerful, open-source tool that works with any input device including foot pedals, macro keypads, and extra mouse buttons.
+
+**[Download PDF Guide](manuals/hotkey-setup-guide.pdf)** - Visual step-by-step walkthrough
 
 This guide shows two approaches:
 1. **Remap to Pause key** - Use an existing keyboard key that Voice Notepad can detect
