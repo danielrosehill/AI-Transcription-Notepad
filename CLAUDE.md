@@ -177,7 +177,7 @@ AGC_MAX_GAIN_DB = 20.0        # Maximum boost to apply
 - [x] **Global hotkeys**: System-wide keyboard shortcuts (F14-F20 recommended)
 - [x] **Cost tracking**: Actual costs via OpenRouter API, estimates for other providers
 - [x] **OpenRouter balance**: Live credit balance in status bar and Cost tab
-- [x] **Transcript history**: SQLite database stores all transcriptions with metadata
+- [x] **Transcript history**: MongoDB-compatible database (Mongita) stores all transcriptions with metadata
 - [x] **VAD (Voice Activity Detection)**: Strips silence before API upload (reduces cost)
 - [x] **Automatic Gain Control (AGC)**: Normalizes audio levels for consistent transcription accuracy
 - [x] **Audio archival**: Optional Opus archival (~24kbps, very small files)
@@ -185,8 +185,10 @@ AGC_MAX_GAIN_DB = 20.0        # Maximum boost to apply
 - [x] **Cost tab**: Balance, spending (hourly/daily/weekly/monthly), model breakdown
 - [x] **Analysis tab**: Model performance metrics (inference time, chars/sec)
 - [x] **Models tab**: Browse available models by provider with tier indicators
-- [x] **Tabbed interface**: Record, History, Cost, Analysis, Models, and About tabs
+- [x] **Tabbed interface**: Record, History, Cost, Analysis, Models, Prompt Stacks, and About tabs
 - [x] **Append mode**: Record multiple clips and combine them before transcription
+- [x] **Prompt Stacks**: Layered prompt system for complex workflows (meeting notes + action items, technical docs, etc.)
+- [x] **Dev mode indicator**: Development version shows "(DEV)" in window title for visual distinction
 
 ### Planned
 
@@ -327,6 +329,79 @@ The database tracks per-transcription metrics:
 - `prompt_text_length` - System prompt length sent to API
 
 **Note:** Only OpenRouter provides accurate key-specific cost data. Other providers show estimates based on token pricing which may not reflect actual billing.
+
+## Database Architecture
+
+Voice Notepad uses **Mongita**, a pure Python implementation of MongoDB, for local data storage. This provides a document-based database that's more flexible than traditional SQL databases.
+
+### Why MongoDB/Mongita?
+
+- **Document Storage**: Natural fit for storing transcriptions with nested metadata
+- **Schema Flexibility**: Easy to add new fields without migrations
+- **Pure Python**: No external database server required (all data stored locally)
+- **MongoDB Compatible**: Uses standard MongoDB query syntax
+- **Full-Text Search**: Built-in text search capabilities
+
+### Database Location
+
+All data is stored locally at `~/.config/voice-notepad-v3/mongita/`
+
+### Collections
+
+- **`transcriptions`**: Stores all transcript records with metadata (provider, model, tokens, cost, etc.)
+- **`prompt_stacks`**: Stores saved prompt combinations for reuse
+
+### Source Files
+
+- `database_mongo.py` - MongoDB database interface (replaces old `database.py`)
+- Legacy SQLite data is automatically migrated on first run
+
+### Document Structure
+
+Each transcription document contains:
+```python
+{
+    "timestamp": str,
+    "provider": str,
+    "model": str,
+    "transcript_text": str,
+    "audio_duration_seconds": float,
+    "inference_time_ms": int,
+    "input_tokens": int,
+    "output_tokens": int,
+    "estimated_cost": float,
+    "text_length": int,
+    "word_count": int,
+    "audio_file_path": str (optional),
+    "vad_audio_duration_seconds": float (optional),
+    "prompt_text_length": int,
+    "source": str ("recording" or "file"),
+    "source_path": str (optional)
+}
+```
+
+## Prompt Stacks
+
+Prompt Stacks allow you to layer multiple AI instructions for complex transcription scenarios. Each stack is a collection of prompts that get combined with the base cleanup prompt.
+
+### Use Cases
+
+- **Meeting Notes + Action Items**: Transcribe and automatically extract action items
+- **Technical Documentation + Code**: Extract code snippets while formatting as markdown
+- **Multi-Language**: Transcribe and translate simultaneously
+- **Custom Workflows**: Build specialized prompts for recurring tasks
+
+### Features
+
+- Create and save named prompt stacks
+- Combine multiple prompts that stack together
+- Import/export as JSON for sharing
+- Apply to any transcription (recording or file upload)
+
+### Source Files
+
+- `prompt_stack_widget.py` - Prompt Stacks tab UI
+- `prompt_elements.py` - Prompt building utilities
 
 ## Voice Activity Detection (VAD)
 

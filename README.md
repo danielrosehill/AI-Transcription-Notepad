@@ -30,7 +30,15 @@ Voice Notepad records audio and sends it directly to multimodal models with a cl
 
 Global hotkeys let you record from anywhere, even when the app is minimized. Voice Activity Detection strips silence before upload to reduce costs, and Automatic Gain Control normalizes audio levels for consistent results.
 
-All transcriptions are saved to a local SQLite database with full-text search. The Cost tab monitors API spend, with OpenRouter showing actual key-specific costs. The Analysis tab compares model performance and inference times.
+### Database & Storage
+
+All transcriptions are saved to a **MongoDB-compatible database** (using Mongita, a pure Python MongoDB implementation). This provides flexible document storage with full-text search capabilities. Data is stored locally at `~/.config/voice-notepad-v3/mongita/`.
+
+The Cost tab monitors API spend, with OpenRouter showing actual key-specific costs. The Analysis tab compares model performance and inference times.
+
+### Prompt Management
+
+**Prompt Stacks** let you layer multiple AI instructions for complex transcription scenarios. Create and save reusable prompt combinations that stack together with the base cleanup prompt. Perfect for specialized workflows like meeting notes with action items, technical documentation with code extraction, or multi-language transcription with translation.
 
 Cleanup prompts are customizable with format presets for email, todo lists, meeting notes, blog posts, and documentation. Audio archival saves recordings in Opus format at about 24kbps.
 

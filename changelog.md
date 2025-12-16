@@ -5,6 +5,41 @@ All notable changes to Voice Notepad will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2025-12-16
+
+### Added
+- **MongoDB Architecture**: Migrated from SQLite to Mongita (pure Python MongoDB implementation)
+  - MongoDB-compatible document database for flexible data storage
+  - Better support for complex nested data structures
+  - Maintains full compatibility with existing features
+  - Data stored at `~/.config/voice-notepad-v3/mongita/`
+  - Automatic migration from SQLite (preserves all existing transcriptions)
+- **Prompt Stacks**: Layered prompt system for complex transcription workflows
+  - Create and save reusable prompt combinations
+  - Stack multiple AI instructions with the base cleanup prompt
+  - Perfect for specialized workflows (meeting notes + action items, technical docs + code extraction, etc.)
+  - Dedicated Prompt Stacks tab in main UI
+  - Import/export prompt stacks as JSON
+- **Dev Mode Visual Indicator**: Development version shows "(DEV)" in window title
+  - Easily distinguish dev version from packaged release
+  - Enabled via `VOICE_NOTEPAD_DEV_MODE` environment variable
+- **Dev Launcher Scripts**: Install separate launcher for development version
+  - `install-dev-launcher.sh` - Creates "Voice Notepad V3 (Dev)" menu entry
+  - `uninstall-dev-launcher.sh` - Removes dev launcher
+  - Coexists with packaged version without conflicts
+
+### Changed
+- Database backend switched from SQLite to Mongita
+- All database queries updated for MongoDB compatibility
+- Export functionality now uses MongoDB aggregation pipeline
+
+### Technical
+- New `database_mongo.py` module replacing `database.py`
+- Added `mongita` dependency to requirements
+- Prompt stack storage integrated with MongoDB collections
+- Database collections: `transcriptions`, `prompt_stacks`
+- Dev mode detection in `main.py` for window title customization
+
 ## [1.5.0] - 2025-12-15
 
 ### Added
