@@ -1,5 +1,7 @@
 # Voice Notepad
 
+![alt text](screenshots/manual/3.png)
+
 A desktop application for voice recording with AI-powered transcription and cleanup. Uses multimodal AI models to transcribe audio and clean it up in a single pass, eliminating the traditional two-step ASR + LLM approach.
 
 ![Voice Notepad Screenshot](screenshots/manual/2.png)
