@@ -14,7 +14,6 @@ from .config import (
     GEMINI_MODELS, OPENAI_MODELS, MISTRAL_MODELS, OPENROUTER_MODELS,
     MODEL_TIERS,
 )
-from .formats_widget import FormatsWidget
 from .mic_test_widget import MicTestWidget
 from PyQt6.QtCore import QSize
 from PyQt6.QtGui import QIcon
@@ -818,7 +817,6 @@ class SettingsWidget(QWidget):
         self.tabs.addTab(ModelSelectionWidget(self.config), "Model Selection")
         self.tabs.addTab(APIKeysWidget(self.config), "API Keys")
         self.tabs.addTab(AudioMicWidget(self.config, self.recorder), "Audio & Mic")
-        self.tabs.addTab(FormatsWidget(self.config), "Output Formats")
         self.tabs.addTab(BehaviorWidget(self.config), "Behavior")
         self.tabs.addTab(PersonalizationWidget(self.config), "Personalization")
         self.tabs.addTab(HotkeysWidget(self.config), "Hotkeys")
@@ -828,10 +826,7 @@ class SettingsWidget(QWidget):
 
     def refresh(self):
         """Refresh all sub-widgets."""
-        # Refresh formats widget specifically
-        formats_widget = self.tabs.widget(3)  # Output Formats tab (was 2, now 3 after adding Model Selection)
-        if hasattr(formats_widget, 'refresh'):
-            formats_widget.refresh()
+        pass  # No specific refresh needed
 
 
 class SettingsDialog(QDialog):

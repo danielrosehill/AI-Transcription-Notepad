@@ -132,6 +132,7 @@ class Config:
     # Audio feedback
     beep_on_record: bool = True  # Play beep when recording starts/stops
     beep_on_clipboard: bool = True  # Play beep when text copied to clipboard
+    quiet_mode: bool = False  # Suppress all beeps (overrides above settings when True)
 
     # Prompt customization options (checkboxes) - Layer 2 only
     # Foundation layer (fillers, punctuation, paragraph spacing) is always applied
@@ -176,6 +177,9 @@ class Config:
     # NEW: Prompt stack system (multi-select elements)
     prompt_stack_elements: list = field(default_factory=list)  # List of selected element keys
     use_prompt_stacks: bool = False  # Whether to use prompt stacks instead of legacy format system
+
+    # Favorite formats for quick buttons in main UI
+    favorite_formats: list = field(default_factory=lambda: ["general", "email", "todo", "ai_prompt"])
 
 
 def load_config() -> Config:
@@ -300,11 +304,11 @@ FOUNDATION_PROMPT_SECTIONS = {
         ],
     },
 
-    # Section 6: Meta instructions
+    # Section 6: Meta instructions (including verbal directives)
     "meta_instructions": {
         "heading": "Meta Instructions",
         "instructions": [
-            "When the user provides verbal instructions to modify the transcript (such as \"scratch that\", \"don't include that in the transcript\", \"ignore what I just said\", or similar directives), act upon these instructions by removing or modifying the content as directed.",
+            "When the user provides verbal instructions to modify the transcript (such as \"scratch that\", \"don't include that in the transcript\", \"ignore what I just said\", \"new paragraph\", or similar directives), act upon these instructions by removing or modifying the content as directed.",
             "Do not include these meta-instructions themselves in the final output.",
         ],
     },
@@ -356,6 +360,24 @@ FOUNDATION_PROMPT_SECTIONS = {
             "Clarify confusing or illogical phrasing while preserving all details and original meaning.",
         ],
     },
+
+    # Section 12: Subheadings for structure
+    "subheadings": {
+        "heading": "Subheadings",
+        "instructions": [
+            "For lengthy transcriptions with distinct sections or topics, add markdown subheadings (## Heading) to organize the content.",
+            "Only add subheadings when the content naturally breaks into separate sections; do not force structure on short or single-topic transcriptions.",
+        ],
+    },
+
+    # Section 13: Markdown formatting
+    "markdown_formatting": {
+        "heading": "Markdown Formatting",
+        "instructions": [
+            "Use markdown formatting where appropriate to enhance readability: **bold** for emphasis, *italics* for terms or titles, bullet lists for multiple items, numbered lists for sequences or steps.",
+            "Apply formatting judiciously based on content type—technical content benefits from code formatting, lists benefit from bullet points, important terms benefit from emphasis.",
+        ],
+    },
 }
 
 
@@ -376,23 +398,10 @@ FOUNDATION_PROMPT_COMPONENTS = get_foundation_prompt_list()
 
 # Layer 2: Optional formatting enhancements (checkboxes)
 # These enhance output without changing format adherence
+# Note: Follow instructions, subheadings, and markdown formatting have been moved
+# to the foundation prompt (always applied) as of v1.8
 # Each tuple: (config_field, instruction_text, description_for_ui)
 OPTIONAL_PROMPT_COMPONENTS = [
-    (
-        "prompt_follow_instructions",
-        "If the user makes any verbal instructions during the recording (such as \"don't include this\" or \"new paragraph\"), follow those instructions",
-        "Follow verbal instructions (\"don't include this\"...)"
-    ),
-    (
-        "prompt_add_subheadings",
-        "Add markdown subheadings (## Heading) if it's a lengthy transcription with distinct sections",
-        "Add subheadings for long transcriptions"
-    ),
-    (
-        "prompt_markdown_formatting",
-        "Use markdown formatting where appropriate (bold, lists, etc.)",
-        "Use markdown formatting (bold, lists...)"
-    ),
     (
         "prompt_remove_unintentional_dialogue",
         "If you detect dialogue that appears to be unintentional (e.g., someone else speaking to the user during the recording), only remove it if you can infer with high certainty that it was accidental. If uncertain, keep the dialogue in the transcription.",

@@ -51,7 +51,7 @@ from PyQt6.QtWidgets import QCompleter
 from .config import (
     Config, load_config, save_config, load_env_keys, CONFIG_DIR,
     GEMINI_MODELS, OPENAI_MODELS, MISTRAL_MODELS, OPENROUTER_MODELS,
-    MODEL_TIERS, FOUNDATION_PROMPT_COMPONENTS, OPTIONAL_PROMPT_COMPONENTS, build_cleanup_prompt,
+    MODEL_TIERS, build_cleanup_prompt,
     FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES, FORMALITY_DISPLAY_NAMES, VERBOSITY_DISPLAY_NAMES, EMAIL_SIGNOFFS,
 )
 from .audio_recorder import AudioRecorder
@@ -76,12 +76,9 @@ from .about_widget import AboutDialog
 from .audio_feedback import get_feedback
 from .file_transcription_widget import FileTranscriptionWidget
 from .mic_naming_ai import MicrophoneNamingAI
-from .prompt_options_dialog import PromptOptionsDialog
-from .format_manager_dialog import FormatManagerDialog
 from .prompt_library import PromptLibrary, build_prompt_from_config
-from .prompt_library_widget import PromptLibraryWidget
 from .favorites_bar import FavoritesBar
-from .stack_manager_dialog import StackManagerDialog
+from .prompt_editor_window import PromptEditorWindow
 from .rewrite_dialog import RewriteDialog
 
 
@@ -426,19 +423,19 @@ class MainWindow(QMainWindow):
         layout.setSpacing(12)
         layout.setContentsMargins(8, 12, 8, 8)
 
-        # System Prompt Configuration Button (opens modal dialog)
+        # Prompt Editor button (opens unified prompt configuration window)
         prompt_config_layout = QHBoxLayout()
 
-        configure_prompt_btn = QPushButton("⚙ Configure System Prompt...")
-        configure_prompt_btn.setMinimumHeight(34)
-        configure_prompt_btn.setToolTip(
-            "Configure detailed system prompt options:\n"
-            "• Optional enhancements (filler words, punctuation, etc.)\n"
-            "• Format settings and tone\n"
-            "• Verbosity reduction\n"
-            "• Email signature settings"
+        prompt_editor_btn = QPushButton("⚙ Prompt Editor...")
+        prompt_editor_btn.setMinimumHeight(34)
+        prompt_editor_btn.setToolTip(
+            "Open the unified Prompt Editor to configure:\n"
+            "• Foundation prompt settings\n"
+            "• Format favorites (quick buttons)\n"
+            "• Prompt stacks\n"
+            "• Tone and style options"
         )
-        configure_prompt_btn.setStyleSheet("""
+        prompt_editor_btn.setStyleSheet("""
             QPushButton {
                 background-color: #f8f9fa;
                 color: #495057;
@@ -452,54 +449,11 @@ class MainWindow(QMainWindow):
                 border-color: #adb5bd;
             }
         """)
-        configure_prompt_btn.clicked.connect(self._open_prompt_options_dialog)
-        prompt_config_layout.addWidget(configure_prompt_btn)
-
-        # Indicator showing active enhancements
-        self.prompt_indicator_label = QLabel()
-        self.prompt_indicator_label.setStyleSheet("color: #6c757d; font-size: 11px;")
-        self._update_prompt_indicator()
-        prompt_config_layout.addWidget(self.prompt_indicator_label)
+        prompt_editor_btn.clicked.connect(self._open_prompt_editor)
+        prompt_config_layout.addWidget(prompt_editor_btn)
 
         prompt_config_layout.addStretch()
         layout.addLayout(prompt_config_layout)
-
-        # Prompt Stacks Section
-        prompt_stack_header = QHBoxLayout()
-        prompt_stack_label = QLabel("Advanced: Prompt Stacks")
-        prompt_stack_label.setStyleSheet("font-weight: bold; font-size: 12px; color: #495057;")
-        prompt_stack_header.addWidget(prompt_stack_label)
-
-        # Enable/disable checkbox
-        self.use_prompt_stacks_checkbox = QCheckBox("Enable")
-        self.use_prompt_stacks_checkbox.setChecked(self.config.use_prompt_stacks)
-        self.use_prompt_stacks_checkbox.stateChanged.connect(self._on_use_prompt_stacks_changed)
-        prompt_stack_header.addWidget(self.use_prompt_stacks_checkbox)
-
-        prompt_stack_header.addSpacing(10)
-
-        # Manage Stacks button
-        manage_stacks_btn = QPushButton("⚙️ Manage Stacks...")
-        manage_stacks_btn.setFixedHeight(28)
-        manage_stacks_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f8f9fa;
-                color: #495057;
-                border: 1px solid #ced4da;
-                border-radius: 4px;
-                font-size: 11px;
-                padding: 4px 12px;
-            }
-            QPushButton:hover {
-                background-color: #e9ecef;
-                border-color: #adb5bd;
-            }
-        """)
-        manage_stacks_btn.clicked.connect(self._open_stack_manager)
-        prompt_stack_header.addWidget(manage_stacks_btn)
-
-        prompt_stack_header.addStretch()
-        layout.addLayout(prompt_stack_header)
 
         # Quick format selector with help text
         format_section_layout = QVBoxLayout()
@@ -519,7 +473,7 @@ class MainWindow(QMainWindow):
         # Supports up to 20 user-configurable favorites
         self.favorites_bar = FavoritesBar(CONFIG_DIR)
         self.favorites_bar.prompt_selected.connect(self._on_prompt_selected_from_bar)
-        self.favorites_bar.manage_clicked.connect(self._open_prompts_tab)
+        self.favorites_bar.manage_clicked.connect(self._open_prompt_editor)
 
         # Set initial selection based on config
         if self.config.format_preset:
@@ -824,18 +778,17 @@ class MainWindow(QMainWindow):
 
         status_bar.addStretch()
 
-        # Beep sounds toggle (right)
-        self.beep_checkbox = QCheckBox("🔔 Beep Sounds")
-        self.beep_checkbox.setStyleSheet("color: #888; font-size: 10px;")
-        self.beep_checkbox.setToolTip(
-            "Enable/disable audio beeps for recording start/stop and clipboard copy.\n"
-            "This controls all beep sounds in the application."
+        # Quiet Mode toggle (right)
+        self.quiet_mode_checkbox = QCheckBox("🔇 Quiet Mode")
+        self.quiet_mode_checkbox.setStyleSheet("color: #888; font-size: 10px;")
+        self.quiet_mode_checkbox.setToolTip(
+            "Suppress all audio beeps while in Quiet Mode.\n"
+            "Your default beep settings (in Settings → Behavior) are preserved.\n"
+            "Uncheck to restore normal beep behavior."
         )
-        # Checked if either beep setting is enabled
-        beeps_enabled = self.config.beep_on_record or self.config.beep_on_clipboard
-        self.beep_checkbox.setChecked(beeps_enabled)
-        self.beep_checkbox.toggled.connect(self._on_beep_toggle_changed)
-        status_bar.addWidget(self.beep_checkbox)
+        self.quiet_mode_checkbox.setChecked(self.config.quiet_mode)
+        self.quiet_mode_checkbox.toggled.connect(self._on_quiet_mode_changed)
+        status_bar.addWidget(self.quiet_mode_checkbox)
 
         layout.addLayout(status_bar)
 
@@ -854,11 +807,8 @@ class MainWindow(QMainWindow):
         self.history_widget.transcription_selected.connect(self.on_history_transcription_selected)
         self.tabs.addTab(self.history_widget, "📝 History")
 
-        # Prompt Library tab
-        self.prompt_library_widget = PromptLibraryWidget(CONFIG_DIR)
-        self.prompt_library_widget.favorites_changed.connect(self._on_favorites_changed)
-        self.prompt_library_widget.prompt_selected.connect(self._on_prompt_library_selection)
-        self.tabs.addTab(self.prompt_library_widget, "Prompt")
+        # Prompt Editor window (opened via button, not a tab)
+        self.prompt_editor_window = None
 
         # Dialogs (opened via menu, not tabs)
         self.settings_dialog = None
@@ -1198,164 +1148,55 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(2000, lambda: self.status_label.setText("Ready"))
                 QTimer.singleShot(2000, lambda: self.status_label.setStyleSheet("color: #666;"))
 
-    def _open_prompt_options_dialog(self):
-        """Open the prompt options configuration dialog."""
-        dialog = PromptOptionsDialog(self.config, self)
-        dialog.settings_changed.connect(self._update_prompt_indicator)
-        dialog.exec()
+    def _open_prompt_editor(self):
+        """Open the unified Prompt Editor window."""
+        if self.prompt_editor_window is None:
+            self.prompt_editor_window = PromptEditorWindow(
+                self.config, CONFIG_DIR, self
+            )
+            self.prompt_editor_window.favorites_changed.connect(self._on_favorites_changed)
 
-    def _update_prompt_indicator(self):
-        """Update the indicator showing active prompt enhancements."""
-        # Count enabled optional enhancements
-        enabled_count = sum(
-            1 for field_name, _, _ in OPTIONAL_PROMPT_COMPONENTS
-            if getattr(self.config, field_name, False)
-        )
+        self.prompt_editor_window.show()
+        self.prompt_editor_window.raise_()
+        self.prompt_editor_window.activateWindow()
 
-        if enabled_count == 0:
-            self.prompt_indicator_label.setText("")
-        elif enabled_count == 1:
-            self.prompt_indicator_label.setText("1 enhancement enabled")
-        else:
-            self.prompt_indicator_label.setText(f"{enabled_count} enhancements enabled")
+    def _on_quiet_mode_changed(self, checked: bool):
+        """Handle Quiet Mode checkbox toggle.
 
-    def _open_format_manager(self):
-        """Open the format management dialog."""
-        from .config import CONFIG_DIR
-        dialog = FormatManagerDialog(self.config, self)
-        dialog.formats_changed.connect(self._update_prompt_indicator)
-        dialog.exec()
-
-    def _open_stack_manager(self):
-        """Open the stack management dialog."""
-        from .config import CONFIG_DIR
-        dialog = StackManagerDialog(CONFIG_DIR, self)
-        dialog.stacks_changed.connect(self._update_prompt_indicator)
-        dialog.exec()
-
-    def _on_use_prompt_stacks_changed(self):
-        """Handle enable/disable of prompt stack system."""
-        self.config.use_prompt_stacks = self.use_prompt_stacks_checkbox.isChecked()
-        save_config(self.config)
-
-        # Update format button selection
-        if self.config.use_prompt_stacks:
-            # Check the Custom button
-            self.custom_format_btn.setChecked(True)
-        else:
-            # Revert to the configured format preset
-            if self.config.format_preset == "verbatim":
-                self.verbatim_format_btn.setChecked(True)
-            elif self.config.format_preset == "email":
-                self.email_format_btn.setChecked(True)
-            elif self.config.format_preset == "ai_prompt":
-                self.ai_prompt_format_btn.setChecked(True)
-            elif self.config.format_preset == "system_prompt":
-                self.system_prompt_format_btn.setChecked(True)
-            elif self.config.format_preset == "dev_prompt":
-                self.dev_prompt_format_btn.setChecked(True)
-            elif self.config.format_preset == "tech_docs":
-                self.tech_docs_format_btn.setChecked(True)
-            elif self.config.format_preset == "todo":
-                self.todo_format_btn.setChecked(True)
-            elif self.config.format_preset == "social_post":
-                self.social_post_format_btn.setChecked(True)
-            else:
-                self.general_format_btn.setChecked(True)
-
-    def _on_beep_toggle_changed(self, checked: bool):
-        """Handle beep sounds checkbox toggle.
-
-        This is a unified toggle that controls all beep sounds in the application.
-        Updates both beep_on_record and beep_on_clipboard settings together.
+        Quiet Mode suppresses all beeps without changing the default beep settings.
+        When unchecked, beeps will play according to Settings → Behavior preferences.
         """
-        self.config.beep_on_record = checked
-        self.config.beep_on_clipboard = checked
+        self.config.quiet_mode = checked
         save_config(self.config)
-
-        # Also update the audio feedback instance immediately
-        feedback = get_feedback()
-        feedback.enabled = checked
 
     def _set_quick_format(self, format_key: str):
-        """Handle quick format button clicks.
-
-        For 'verbatim' format, also configures optional enhancements to minimal settings.
-        """
+        """Handle quick format button clicks."""
         # Update the config and current prompt ID
         self.config.format_preset = format_key
         self.current_prompt_id = format_key
 
-        # Disable custom mode when selecting a preset format
+        # Disable prompt stacks mode when selecting a preset format
         if self.config.use_prompt_stacks:
             self.config.use_prompt_stacks = False
-            if hasattr(self, 'use_prompt_stacks_checkbox'):
-                self.use_prompt_stacks_checkbox.setChecked(False)
 
-        # If verbatim is selected, configure minimal optional enhancements
+        # If verbatim is selected, disable optional enhancements
         if format_key == "verbatim":
-            # Enable only "follow verbal instructions"
-            self.config.prompt_follow_instructions = True
-
-            # Disable all other optional enhancements
-            self.config.prompt_add_subheadings = False
-            self.config.prompt_markdown_formatting = False
             self.config.prompt_remove_unintentional_dialogue = False
             self.config.prompt_enhancement_enabled = False
 
-            # Update the prompt indicator to reflect changes
-            self._update_prompt_indicator()
-
         save_config(self.config)
 
-    def _on_favorites_changed(self):
-        """Handle changes to favorites in the prompt library."""
+    def _on_favorites_changed(self, favorites=None):
+        """Handle changes to favorites in the prompt library or editor."""
         # Refresh the favorites bar if we have one
         if hasattr(self, 'favorites_bar'):
             self.favorites_bar.update_library()
-
-    def _on_prompt_library_selection(self, prompt_id: str):
-        """Handle prompt selection from the Prompt Library tab."""
-        self.current_prompt_id = prompt_id
-        self.config.format_preset = prompt_id
-        save_config(self.config)
-
-        # Update the favorites bar if we have one
-        if hasattr(self, 'favorites_bar'):
-            self.favorites_bar.set_selected_prompt_id(prompt_id)
 
     def _on_prompt_selected_from_bar(self, prompt_id: str):
         """Handle prompt selection from the favorites bar."""
         self.current_prompt_id = prompt_id
         self.config.format_preset = prompt_id
         save_config(self.config)
-
-    def _open_prompts_tab(self):
-        """Open the Prompts tab for managing prompt configurations."""
-        if hasattr(self, 'tabs'):
-            for i in range(self.tabs.count()):
-                if self.tabs.tabText(i) == "Prompts":
-                    self.tabs.setCurrentIndex(i)
-                    break
-
-    def _on_custom_format_clicked(self):
-        """Handle Custom button click - open Prompt Stacks tab."""
-        # Check the Custom button since it was just clicked
-        self.custom_format_btn.setChecked(True)
-
-        # Enable prompt stacks mode
-        self.config.use_prompt_stacks = True
-        if hasattr(self, 'use_prompt_stacks_checkbox'):
-            self.use_prompt_stacks_checkbox.setChecked(True)
-        save_config(self.config)
-
-        # Switch to Prompt Stacks tab
-        if hasattr(self, 'tabs'):
-            # Find the Prompt Stacks tab index
-            for i in range(self.tabs.count()):
-                if self.tabs.tabText(i) == "Prompt Stacks":
-                    self.tabs.setCurrentIndex(i)
-                    break
 
     def get_selected_microphone_index(self):
         """Get the index of the configured microphone.
@@ -1411,9 +1252,9 @@ class MainWindow(QMainWindow):
             if mic_idx is not None:
                 self.recorder.set_device(mic_idx)
 
-            # Play start beep
+            # Play start beep (unless in Quiet Mode)
             feedback = get_feedback()
-            feedback.enabled = self.config.beep_on_record
+            feedback.enabled = self.config.beep_on_record and not self.config.quiet_mode
             feedback.play_start_beep()
 
             self.recorder.start_recording()
@@ -1449,9 +1290,9 @@ class MainWindow(QMainWindow):
         if not self.recorder.is_recording:
             return
 
-        # Play stop beep
+        # Play stop beep (unless in Quiet Mode)
         feedback = get_feedback()
-        feedback.enabled = self.config.beep_on_record
+        feedback.enabled = self.config.beep_on_record and not self.config.quiet_mode
         feedback.play_stop_beep()
 
         self.timer.stop()
@@ -1590,9 +1431,9 @@ class MainWindow(QMainWindow):
         """
         # If currently recording, stop it first
         if self.recorder.is_recording:
-            # Play stop beep
+            # Play stop beep (unless in Quiet Mode)
             feedback = get_feedback()
-            feedback.enabled = self.config.beep_on_record
+            feedback.enabled = self.config.beep_on_record and not self.config.quiet_mode
             feedback.play_stop_beep()
 
             self.timer.stop()
@@ -1776,9 +1617,9 @@ class MainWindow(QMainWindow):
         # Auto-copy to clipboard (using wl-copy for Wayland)
         self._copy_to_clipboard_wayland(result.text)
 
-        # Play clipboard beep
+        # Play clipboard beep (unless in Quiet Mode)
         feedback = get_feedback()
-        feedback.enabled = self.config.beep_on_clipboard
+        feedback.enabled = self.config.beep_on_clipboard and not self.config.quiet_mode
         feedback.play_clipboard_beep()
 
         self.reset_ui()
@@ -1978,10 +1819,10 @@ class MainWindow(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        # Play stop beep when discarding
+        # Play stop beep when discarding (unless in Quiet Mode)
         if self.recorder.is_recording or self.recorder.is_paused:
             feedback = get_feedback()
-            feedback.enabled = self.config.beep_on_record
+            feedback.enabled = self.config.beep_on_record and not self.config.quiet_mode
             feedback.play_stop_beep()
 
         self.timer.stop()
@@ -2253,8 +2094,8 @@ class MainWindow(QMainWindow):
         # Create dialog if it doesn't exist
         if self.settings_dialog is None:
             self.settings_dialog = SettingsDialog(self.config, self.recorder, self)
-            # Connect to settings_closed signal to sync beep checkbox
-            self.settings_dialog.settings_closed.connect(self._sync_beep_checkbox)
+            # Connect to settings_closed signal to sync quiet mode checkbox
+            self.settings_dialog.settings_closed.connect(self._sync_quiet_mode_checkbox)
 
         # Refresh and show
         self.settings_dialog.refresh()
@@ -2262,17 +2103,17 @@ class MainWindow(QMainWindow):
         self.settings_dialog.raise_()
         self.settings_dialog.activateWindow()
 
-    def _sync_beep_checkbox(self):
-        """Sync the beep checkbox state with current config.
+    def _sync_quiet_mode_checkbox(self):
+        """Sync the quiet mode checkbox state with current config.
 
-        Called when settings dialog is closed to ensure the main UI
-        reflects any changes made in settings.
+        Called when settings dialog is closed. Currently quiet_mode is not
+        editable in Settings, but this ensures consistency if config is
+        modified externally.
         """
-        beeps_enabled = self.config.beep_on_record or self.config.beep_on_clipboard
         # Block signals to prevent triggering the toggle handler
-        self.beep_checkbox.blockSignals(True)
-        self.beep_checkbox.setChecked(beeps_enabled)
-        self.beep_checkbox.blockSignals(False)
+        self.quiet_mode_checkbox.blockSignals(True)
+        self.quiet_mode_checkbox.setChecked(self.config.quiet_mode)
+        self.quiet_mode_checkbox.blockSignals(False)
 
     def show_analytics(self):
         """Show analytics dialog."""
