@@ -286,7 +286,7 @@ class PromptConfigCategory(str, Enum):
 # Display names for user-facing categories
 PROMPT_CONFIG_CATEGORY_NAMES = {
     PromptConfigCategory.FOUNDATIONAL: "Foundational",
-    PromptConfigCategory.STYLISTIC: "Stylistic",
+    PromptConfigCategory.STYLISTIC: "Format",
     PromptConfigCategory.PROMPTS: "Prompts",
     PromptConfigCategory.TODO_LISTS: "To-Do Lists",
     PromptConfigCategory.BLOG: "Blog",

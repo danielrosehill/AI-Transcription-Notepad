@@ -525,23 +525,41 @@ class DatabaseWidget(QWidget):
 
     def _clear_history(self):
         """Clear all transcription history."""
-        reply = QMessageBox.question(
+        from .database_mongo import get_db
+
+        db = get_db()
+        total_count = db.get_total_count()
+
+        if total_count == 0:
+            QMessageBox.information(
+                self,
+                "No History",
+                "There are no transcriptions to delete.",
+            )
+            return
+
+        reply = QMessageBox.warning(
             self,
-            "Clear History",
-            "Are you sure you want to delete all transcription history? This cannot be undone.",
+            "Delete All History",
+            f"Are you sure you want to delete ALL {total_count} transcriptions?\n\n"
+            "This will permanently delete:\n"
+            "• All transcript text\n"
+            "• All archived audio files\n"
+            "• All metadata and statistics\n\n"
+            "THIS CANNOT BE UNDONE!",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.No,
         )
 
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                from .database_mongo import get_db
-                db = get_db()
-                result = db["transcriptions"].delete_many({})
+                deleted_count = db.delete_all()
+                db.vacuum()
                 QMessageBox.information(
                     self,
                     "History Cleared",
-                    f"Deleted {result.deleted_count} transcriptions."
+                    f"Successfully deleted {deleted_count} transcriptions.\n\n"
+                    "Database has been optimized to reclaim disk space.",
                 )
             except Exception as e:
                 QMessageBox.critical(self, "Clear Failed", f"Error: {e}")

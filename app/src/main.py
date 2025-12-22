@@ -279,7 +279,7 @@ class MainWindow(QMainWindow):
         if os.environ.get("VOICE_NOTEPAD_DEV_MODE") == "1":
             title += " (DEV)"
         self.setWindowTitle(title)
-        self.setMinimumSize(620, 600)
+        self.setMinimumSize(620, 700)
         self.resize(self.config.window_width, self.config.window_height)
 
         self.setup_ui()
@@ -398,21 +398,197 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(header)
 
-        # Status indicator (tally light)
-        self.status_indicator = QLabel("● READY")
-        self.status_indicator.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_indicator.setStyleSheet("""
+        # Persistent control bar (visible across all tabs)
+        control_bar = QHBoxLayout()
+        control_bar.setSpacing(8)
+
+        # Status section (left side)
+        self.status_label = QLabel("● Ready")
+        self.status_label.setStyleSheet("""
             QLabel {
-                background-color: #f8f9fa;
                 color: #6c757d;
-                padding: 8px 16px;
-                border-radius: 4px;
                 font-weight: bold;
                 font-size: 13px;
-                border: 2px solid #dee2e6;
+                padding: 0 8px;
             }
         """)
-        main_layout.addWidget(self.status_indicator)
+        control_bar.addWidget(self.status_label)
+
+        self.duration_label = QLabel("0:00")
+        self.duration_label.setFont(QFont("Monospace", 12))
+        self.duration_label.setStyleSheet("padding: 0 4px;")
+        control_bar.addWidget(self.duration_label)
+
+        self.segment_label = QLabel("")
+        self.segment_label.setStyleSheet("color: #17a2b8; font-weight: bold; padding: 0 4px;")
+        control_bar.addWidget(self.segment_label)
+
+        control_bar.addStretch()
+
+        # Recording controls (right side)
+        self.record_btn = QPushButton("● Record")
+        self.record_btn.setMinimumHeight(36)
+        self.record_btn.setToolTip(
+            "Start a new recording.\n"
+            "Clears any cached audio and begins fresh."
+        )
+        self._record_btn_idle_style = """
+            QPushButton {
+                background-color: #dc3545;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 0 12px;
+            }
+            QPushButton:hover {
+                background-color: #c82333;
+            }
+        """
+        self._record_btn_recording_style = """
+            QPushButton {
+                background-color: #ff0000;
+                color: white;
+                border: 3px solid #ff6666;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 0 12px;
+            }
+            QPushButton:hover {
+                background-color: #cc0000;
+            }
+        """
+        self.record_btn.setStyleSheet(self._record_btn_idle_style)
+        self.record_btn.clicked.connect(self.toggle_recording)
+        control_bar.addWidget(self.record_btn)
+
+        self.pause_btn = QPushButton("Pause")
+        self.pause_btn.setMinimumHeight(36)
+        self.pause_btn.setEnabled(False)
+        self.pause_btn.setToolTip(
+            "Pause/resume the current recording.\n"
+            "Only available while recording is active."
+        )
+        self.pause_btn.clicked.connect(self.toggle_pause)
+        control_bar.addWidget(self.pause_btn)
+
+        self.append_btn = QPushButton("Append")
+        self.append_btn.setMinimumHeight(36)
+        self.append_btn.setEnabled(False)
+        self.append_btn.setToolTip(
+            "Record additional audio and combine with cached audio.\n"
+            "Useful for recording in segments - all clips are transcribed together."
+        )
+        self.append_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #17a2b8;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 0 12px;
+            }
+            QPushButton:hover {
+                background-color: #138496;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+                color: #aaa;
+            }
+        """)
+        self.append_btn.clicked.connect(self.append_to_transcription)
+        control_bar.addWidget(self.append_btn)
+
+        self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setMinimumHeight(36)
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.setToolTip(
+            "Stop recording and cache audio without transcribing.\n"
+            "You can then Append more clips, Transcribe, or Delete."
+        )
+        self.stop_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ffc107;
+                color: black;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 0 12px;
+            }
+            QPushButton:hover {
+                background-color: #e0a800;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+                color: #aaa;
+            }
+        """)
+        self.stop_btn.clicked.connect(self.handle_stop_button)
+        control_bar.addWidget(self.stop_btn)
+
+        self.transcribe_btn = QPushButton("Transcribe")
+        self.transcribe_btn.setMinimumHeight(36)
+        self.transcribe_btn.setEnabled(False)
+        self.transcribe_btn.setToolTip(
+            "Transcribe audio to text.\n"
+            "• While recording: Stops and transcribes immediately\n"
+            "• After stopping: Transcribes cached audio"
+        )
+        self._transcribe_btn_idle_style = """
+            QPushButton {
+                background-color: #28a745;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 0 12px;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+                color: #aaa;
+            }
+        """
+        self._transcribe_btn_recording_style = """
+            QPushButton {
+                background-color: #ffc107;
+                color: black;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 0 12px;
+            }
+            QPushButton:hover {
+                background-color: #e0a800;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+                color: #aaa;
+            }
+        """
+        self.transcribe_btn.setStyleSheet(self._transcribe_btn_idle_style)
+        self.transcribe_btn.clicked.connect(self.stop_and_transcribe)
+        control_bar.addWidget(self.transcribe_btn)
+
+        self.delete_btn = QPushButton("Delete")
+        self.delete_btn.setMinimumHeight(36)
+        self.delete_btn.setEnabled(False)
+        self.delete_btn.setToolTip(
+            "Discard all cached audio without transcribing.\n"
+            "Use this to abandon a recording without sending it to the API."
+        )
+        self.delete_btn.clicked.connect(self.delete_recording)
+        control_bar.addWidget(self.delete_btn)
+
+        main_layout.addLayout(control_bar)
 
         # Main tabs
         self.tabs = QTabWidget()
@@ -481,189 +657,6 @@ class MainWindow(QMainWindow):
 
         format_section_layout.addWidget(self.favorites_bar)
         layout.addLayout(format_section_layout)
-
-        layout.addSpacing(8)
-
-        # Recording status and duration
-        status_layout = QHBoxLayout()
-        self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("color: #666;")
-        status_layout.addWidget(self.status_label)
-        status_layout.addStretch()
-
-        self.duration_label = QLabel("0:00")
-        self.duration_label.setFont(QFont("Monospace", 12))
-        status_layout.addWidget(self.duration_label)
-
-        self.segment_label = QLabel("")
-        self.segment_label.setStyleSheet("color: #17a2b8; font-weight: bold;")
-        status_layout.addWidget(self.segment_label)
-
-        layout.addLayout(status_layout)
-
-        # Recording controls
-        controls = QHBoxLayout()
-        controls.setSpacing(8)
-
-        self.record_btn = QPushButton("● Record")
-        self.record_btn.setMinimumHeight(45)
-        self.record_btn.setToolTip(
-            "Start a new recording.\n"
-            "Clears any cached audio and begins fresh."
-        )
-        # Store styles for different states
-        self._record_btn_idle_style = """
-            QPushButton {
-                background-color: #dc3545;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #c82333;
-            }
-        """
-        self._record_btn_recording_style = """
-            QPushButton {
-                background-color: #ff0000;
-                color: white;
-                border: 3px solid #ff6666;
-                border-radius: 6px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #cc0000;
-            }
-        """
-        self.record_btn.setStyleSheet(self._record_btn_idle_style)
-        self.record_btn.clicked.connect(self.toggle_recording)
-        controls.addWidget(self.record_btn)
-
-        self.pause_btn = QPushButton("Pause")
-        self.pause_btn.setMinimumHeight(45)
-        self.pause_btn.setEnabled(False)
-        self.pause_btn.setToolTip(
-            "Pause/resume the current recording.\n"
-            "Only available while recording is active."
-        )
-        self.pause_btn.clicked.connect(self.toggle_pause)
-        controls.addWidget(self.pause_btn)
-
-        self.append_btn = QPushButton("Append")
-        self.append_btn.setMinimumHeight(45)
-        self.append_btn.setEnabled(False)
-        self.append_btn.setToolTip(
-            "Record additional audio and combine with cached audio.\n"
-            "Useful for recording in segments - all clips are transcribed together."
-        )
-        self.append_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #17a2b8;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #138496;
-            }
-            QPushButton:disabled {
-                background-color: #6c757d;
-                color: #aaa;
-            }
-        """)
-        self.append_btn.clicked.connect(self.append_to_transcription)
-        controls.addWidget(self.append_btn)
-
-        self.stop_btn = QPushButton("Stop")
-        self.stop_btn.setMinimumHeight(45)
-        self.stop_btn.setEnabled(False)
-        self.stop_btn.setToolTip(
-            "Stop recording and cache audio without transcribing.\n"
-            "You can then Append more clips, Transcribe, or Delete."
-        )
-        self.stop_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ffc107;
-                color: black;
-                border: none;
-                border-radius: 6px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #e0a800;
-            }
-            QPushButton:disabled {
-                background-color: #6c757d;
-                color: #aaa;
-            }
-        """)
-        self.stop_btn.clicked.connect(self.handle_stop_button)
-        controls.addWidget(self.stop_btn)
-
-        self.transcribe_btn = QPushButton("Transcribe")
-        self.transcribe_btn.setMinimumHeight(45)
-        self.transcribe_btn.setEnabled(False)
-        self.transcribe_btn.setToolTip(
-            "Transcribe audio to text.\n"
-            "• While recording: Stops and transcribes immediately\n"
-            "• After stopping: Transcribes cached audio"
-        )
-        # Store styles for different states (yellow while recording, green when cached)
-        self._transcribe_btn_idle_style = """
-            QPushButton {
-                background-color: #28a745;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #218838;
-            }
-            QPushButton:disabled {
-                background-color: #6c757d;
-                color: #aaa;
-            }
-        """
-        self._transcribe_btn_recording_style = """
-            QPushButton {
-                background-color: #ffc107;
-                color: black;
-                border: none;
-                border-radius: 6px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #e0a800;
-            }
-            QPushButton:disabled {
-                background-color: #6c757d;
-                color: #aaa;
-            }
-        """
-        self.transcribe_btn.setStyleSheet(self._transcribe_btn_idle_style)
-        self.transcribe_btn.clicked.connect(self.stop_and_transcribe)
-        controls.addWidget(self.transcribe_btn)
-
-        self.delete_btn = QPushButton("Delete")
-        self.delete_btn.setMinimumHeight(45)
-        self.delete_btn.setEnabled(False)
-        self.delete_btn.setToolTip(
-            "Discard all cached audio without transcribing.\n"
-            "Use this to abandon a recording without sending it to the API."
-        )
-        self.delete_btn.clicked.connect(self.delete_recording)
-        controls.addWidget(self.delete_btn)
-
-        layout.addLayout(controls)
 
         # Text output area with markdown rendering
         self.text_output = MarkdownTextWidget()
@@ -2165,75 +2158,60 @@ class MainWindow(QMainWindow):
         States: 'idle', 'recording', 'stopped', 'transcribing', 'complete'
         """
         self._tray_state = state
-        # Update icon
+        # Update icon and status label
         if state == 'idle':
             self.tray.setIcon(self._tray_icon_idle)
-            self.status_indicator.setText("● READY")
-            self.status_indicator.setStyleSheet("""
+            self.status_label.setText("● Ready")
+            self.status_label.setStyleSheet("""
                 QLabel {
-                    background-color: #f8f9fa;
                     color: #6c757d;
-                    padding: 8px 16px;
-                    border-radius: 4px;
                     font-weight: bold;
                     font-size: 13px;
-                    border: 2px solid #dee2e6;
+                    padding: 0 8px;
                 }
             """)
         elif state == 'recording':
             self.tray.setIcon(self._tray_icon_recording)
-            self.status_indicator.setText("● RECORDING")
-            self.status_indicator.setStyleSheet("""
+            self.status_label.setText("● Recording")
+            self.status_label.setStyleSheet("""
                 QLabel {
-                    background-color: #f8d7da;
                     color: #dc3545;
-                    padding: 8px 16px;
-                    border-radius: 4px;
                     font-weight: bold;
                     font-size: 13px;
-                    border: 2px solid #dc3545;
+                    padding: 0 8px;
                 }
             """)
         elif state == 'stopped':
             self.tray.setIcon(self._tray_icon_stopped)
-            self.status_indicator.setText("⏸ PAUSED")
-            self.status_indicator.setStyleSheet("""
+            self.status_label.setText("⏸ Stopped")
+            self.status_label.setStyleSheet("""
                 QLabel {
-                    background-color: #fff3cd;
                     color: #ffc107;
-                    padding: 8px 16px;
-                    border-radius: 4px;
                     font-weight: bold;
                     font-size: 13px;
-                    border: 2px solid #ffc107;
+                    padding: 0 8px;
                 }
             """)
         elif state == 'transcribing':
             self.tray.setIcon(self._tray_icon_transcribing)
-            self.status_indicator.setText("⟳ TRANSCRIBING")
-            self.status_indicator.setStyleSheet("""
+            self.status_label.setText("⟳ Transcribing")
+            self.status_label.setStyleSheet("""
                 QLabel {
-                    background-color: #cfe2ff;
                     color: #007bff;
-                    padding: 8px 16px;
-                    border-radius: 4px;
                     font-weight: bold;
                     font-size: 13px;
-                    border: 2px solid #007bff;
+                    padding: 0 8px;
                 }
             """)
         elif state == 'complete':
             self.tray.setIcon(self._tray_icon_complete)
-            self.status_indicator.setText("✓ COMPLETE")
-            self.status_indicator.setStyleSheet("""
+            self.status_label.setText("✓ Complete")
+            self.status_label.setStyleSheet("""
                 QLabel {
-                    background-color: #d1e7dd;
                     color: #28a745;
-                    padding: 8px 16px;
-                    border-radius: 4px;
                     font-weight: bold;
                     font-size: 13px;
-                    border: 2px solid #28a745;
+                    padding: 0 8px;
                 }
             """)
         # Update menu
