@@ -1,6 +1,6 @@
 """History tab widget for browsing and retrieving past transcriptions."""
 
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -21,6 +21,28 @@ from PyQt6.QtGui import QFont
 from .database_mongo import get_db, TranscriptionRecord
 from .audio_feedback import get_feedback
 from .config import Config
+
+
+def format_relative_time(timestamp_str: str) -> str:
+    """Format timestamp as relative time (Today, Yesterday, X days ago, or date)."""
+    try:
+        dt = datetime.fromisoformat(timestamp_str)
+        dt_date = dt.date()
+        today = date.today()
+        delta = (today - dt_date).days
+
+        if delta == 0:
+            # Today - show "Today at HH:MM"
+            return f"Today at {dt.strftime('%H:%M')}"
+        elif delta == 1:
+            return "Yesterday"
+        elif delta <= 7:
+            return f"{delta} days ago"
+        else:
+            # Older - show date only
+            return dt.strftime("%b %d, %Y")
+    except (ValueError, TypeError):
+        return timestamp_str[:16] if timestamp_str else "Unknown"
 
 
 class TranscriptItem(QFrame):
@@ -54,50 +76,15 @@ class TranscriptItem(QFrame):
         layout.setSpacing(6)
         layout.setContentsMargins(10, 8, 10, 8)
 
-        # Header row: timestamp and model
+        # Header row: relative timestamp and copy button
         header = QHBoxLayout()
 
-        # Parse and format timestamp
-        try:
-            dt = datetime.fromisoformat(self.record.timestamp)
-            time_str = dt.strftime("%b %d, %Y at %H:%M")
-        except (ValueError, TypeError):
-            time_str = self.record.timestamp[:16] if self.record.timestamp else "Unknown"
-
+        time_str = format_relative_time(self.record.timestamp)
         time_label = QLabel(time_str)
         time_label.setStyleSheet("color: #666; font-size: 11px;")
         header.addWidget(time_label)
 
         header.addStretch()
-
-        # Model name (shortened)
-        model_name = self.record.model.split("/")[-1] if "/" in self.record.model else self.record.model
-        if len(model_name) > 25:
-            model_name = model_name[:22] + "..."
-        model_label = QLabel(model_name)
-        model_label.setStyleSheet("color: #888; font-size: 10px;")
-        header.addWidget(model_label)
-
-        layout.addLayout(header)
-
-        # Preview text (first ~120 chars)
-        preview_text = self.record.transcript_text.replace("\n", " ").strip()
-        if len(preview_text) > 120:
-            preview_text = preview_text[:117] + "..."
-
-        preview = QLabel(preview_text)
-        preview.setWordWrap(True)
-        preview.setStyleSheet("color: #333; font-size: 12px;")
-        layout.addWidget(preview)
-
-        # Footer row: word count and copy button
-        footer = QHBoxLayout()
-
-        word_count = QLabel(f"{self.record.word_count} words")
-        word_count.setStyleSheet("color: #999; font-size: 10px;")
-        footer.addWidget(word_count)
-
-        footer.addStretch()
 
         copy_btn = QPushButton("Copy")
         copy_btn.setFixedSize(60, 26)
@@ -118,9 +105,19 @@ class TranscriptItem(QFrame):
             }
         """)
         copy_btn.clicked.connect(self._on_copy_clicked)
-        footer.addWidget(copy_btn)
+        header.addWidget(copy_btn)
 
-        layout.addLayout(footer)
+        layout.addLayout(header)
+
+        # Preview text (first ~120 chars)
+        preview_text = self.record.transcript_text.replace("\n", " ").strip()
+        if len(preview_text) > 120:
+            preview_text = preview_text[:117] + "..."
+
+        preview = QLabel(preview_text)
+        preview.setWordWrap(True)
+        preview.setStyleSheet("color: #333; font-size: 12px;")
+        layout.addWidget(preview)
 
     def _on_copy_clicked(self):
         self.copy_clicked.emit(self.record.transcript_text)
@@ -440,14 +437,9 @@ class HistoryWidget(QWidget):
         # Update preview
         self.preview_text.setPlainText(record.transcript_text)
 
-        # Update preview info
-        try:
-            dt = datetime.fromisoformat(record.timestamp)
-            time_str = dt.strftime("%b %d, %Y at %H:%M")
-        except (ValueError, TypeError):
-            time_str = record.timestamp[:16] if record.timestamp else "Unknown"
-
-        self.preview_info.setText(f"{time_str} • {record.word_count} words • {record.model}")
+        # Update preview info with relative time
+        time_str = format_relative_time(record.timestamp)
+        self.preview_info.setText(f"{time_str} • {record.word_count} words")
 
         # Enable action buttons
         self.copy_full_btn.setEnabled(True)
