@@ -1,12 +1,24 @@
 """Prompt library management for Voice Notepad V3.
 
-This module defines the prompt template system, categories, and output formats.
+This module defines the unified prompt system with:
+- PromptConfig: User-facing prompt configurations (favorites, custom prompts)
+- PromptLibrary: Manager for all prompts (builtins + custom + favorites)
+- PromptTemplate: Internal prompt template representation
+
+Architecture:
+- Everything is a "PromptConfig" - simple formats or complex stacks
+- Users can favorite any config for quick access (15-20 slots)
+- Built-in prompts are editable (user modifications stored separately)
+- Verbatim is just another prompt that instructs verbatim output
 """
 
 from enum import Enum
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from datetime import datetime
+from pathlib import Path
+import json
+import uuid
 
 
 class PromptCategory(str, Enum):
@@ -234,5 +246,702 @@ def build_prompt_from_templates(
                 lines.append(f"- {prompt.instruction}")
 
             lines.append("")
+
+    return "\n".join(lines)
+
+
+# =============================================================================
+# UNIFIED PROMPT SYSTEM
+# =============================================================================
+# PromptConfig: User-facing prompt configurations (what users interact with)
+# PromptLibrary: Manager for all prompts (builtins + custom + favorites)
+# =============================================================================
+
+
+class PromptConfigCategory(str, Enum):
+    """User-facing categories for prompt configurations."""
+    GENERAL = "general"
+    WORK = "work"
+    DOCUMENTATION = "documentation"
+    CREATIVE = "creative"
+    LISTS = "lists"
+    CUSTOM = "custom"
+
+
+# Display names for user-facing categories
+PROMPT_CONFIG_CATEGORY_NAMES = {
+    PromptConfigCategory.GENERAL: "General",
+    PromptConfigCategory.WORK: "Work",
+    PromptConfigCategory.DOCUMENTATION: "Documentation",
+    PromptConfigCategory.CREATIVE: "Creative",
+    PromptConfigCategory.LISTS: "Lists",
+    PromptConfigCategory.CUSTOM: "Custom",
+}
+
+
+@dataclass
+class PromptConfig:
+    """A unified prompt configuration.
+
+    This represents a complete prompt setup that can be:
+    - A simple format preset (like "email" or "todo")
+    - A complex stack of elements (like "meeting notes + action items + formal")
+    - A user-created custom prompt
+
+    All prompts are treated equally - the distinction between "presets" and
+    "stacks" is purely in how they're constructed internally.
+    """
+    id: str                              # Unique identifier (uuid)
+    name: str                            # Display name
+    category: str                        # PromptConfigCategory value
+    description: str                     # User-facing description
+
+    # How the prompt is built (mutually exclusive)
+    # Option A: Direct instruction (simple format)
+    instruction: str = ""                # The format instruction
+    adherence: str = ""                  # How strictly to follow
+
+    # Option B: Element-based (stack of elements)
+    elements: List[str] = field(default_factory=list)  # Element keys to combine
+
+    # Metadata
+    is_builtin: bool = True              # True for app defaults
+    is_modified: bool = False            # True if user edited a builtin
+    is_favorite: bool = False            # Show in quick-access bar
+    favorite_order: int = 999            # Position in favorites (lower = earlier)
+
+    # Optional overrides (None = use global settings)
+    formality: Optional[str] = None      # Override formality level
+    verbosity: Optional[str] = None      # Override verbosity reduction
+
+    # Email-specific settings
+    use_business_signature: bool = True  # Use business vs personal signature
+
+    # Timestamps
+    created_at: Optional[str] = None
+    modified_at: Optional[str] = None
+
+    def __post_init__(self):
+        """Generate ID if not provided."""
+        if not self.id:
+            self.id = str(uuid.uuid4())
+        if not self.created_at:
+            self.created_at = datetime.now().isoformat()
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for JSON storage."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "category": self.category,
+            "description": self.description,
+            "instruction": self.instruction,
+            "adherence": self.adherence,
+            "elements": self.elements,
+            "is_builtin": self.is_builtin,
+            "is_modified": self.is_modified,
+            "is_favorite": self.is_favorite,
+            "favorite_order": self.favorite_order,
+            "formality": self.formality,
+            "verbosity": self.verbosity,
+            "use_business_signature": self.use_business_signature,
+            "created_at": self.created_at,
+            "modified_at": self.modified_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "PromptConfig":
+        """Create from dict (JSON storage)."""
+        return cls(
+            id=data.get("id", ""),
+            name=data["name"],
+            category=data.get("category", PromptConfigCategory.CUSTOM),
+            description=data.get("description", ""),
+            instruction=data.get("instruction", ""),
+            adherence=data.get("adherence", ""),
+            elements=data.get("elements", []),
+            is_builtin=data.get("is_builtin", False),
+            is_modified=data.get("is_modified", False),
+            is_favorite=data.get("is_favorite", False),
+            favorite_order=data.get("favorite_order", 999),
+            formality=data.get("formality"),
+            verbosity=data.get("verbosity"),
+            use_business_signature=data.get("use_business_signature", True),
+            created_at=data.get("created_at"),
+            modified_at=data.get("modified_at"),
+        )
+
+    def is_element_based(self) -> bool:
+        """Check if this config uses element stacking."""
+        return len(self.elements) > 0
+
+    def clone(self, new_name: str = None) -> "PromptConfig":
+        """Create a copy of this config (for user customization)."""
+        data = self.to_dict()
+        data["id"] = str(uuid.uuid4())
+        data["name"] = new_name or f"{self.name} (copy)"
+        data["is_builtin"] = False
+        data["is_modified"] = False
+        data["is_favorite"] = False
+        data["favorite_order"] = 999
+        data["created_at"] = datetime.now().isoformat()
+        data["modified_at"] = None
+        return PromptConfig.from_dict(data)
+
+
+# =============================================================================
+# DEFAULT PROMPT CONFIGS
+# =============================================================================
+# These are the built-in prompts that ship with the app.
+# Users can edit them (modifications stored separately) or create custom ones.
+# =============================================================================
+
+DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
+    # General
+    PromptConfig(
+        id="general",
+        name="General",
+        category=PromptConfigCategory.GENERAL,
+        description="Standard cleanup with no specific formatting",
+        instruction="",
+        adherence="",
+        is_favorite=True,
+        favorite_order=0,
+    ),
+    PromptConfig(
+        id="verbatim",
+        name="Verbatim",
+        category=PromptConfigCategory.GENERAL,
+        description="Minimal transformation - closest to raw transcription",
+        instruction="Preserve the original wording and structure as much as possible while applying only essential cleanup.",
+        adherence="Keep the transcription very close to the original speech. Only remove obvious filler words, add basic punctuation, and create paragraph breaks. Do not rephrase, restructure, or add formatting beyond the absolute minimum needed for readability.",
+        is_favorite=True,
+        favorite_order=1,
+    ),
+
+    # Work
+    PromptConfig(
+        id="email",
+        name="Email",
+        category=PromptConfigCategory.WORK,
+        description="Professional email format with greeting and sign-off",
+        instruction="Format the output as an email with an appropriate greeting and sign-off.",
+        adherence="Follow standard email formatting conventions. Include a clear subject line suggestion if the content is substantial. Use proper email etiquette.",
+        is_favorite=True,
+        favorite_order=2,
+    ),
+    PromptConfig(
+        id="meeting_notes",
+        name="Meeting Notes",
+        category=PromptConfigCategory.WORK,
+        description="Structured meeting notes with action items",
+        instruction="Format as meeting notes with clear sections, bullet points for key points, and a separate 'Action Items' section at the end.",
+        adherence="Include: meeting date/time if mentioned, attendees if mentioned, discussion points as bullets, decisions made, and action items with assignees if specified.",
+        is_favorite=True,
+        favorite_order=6,
+    ),
+    PromptConfig(
+        id="bug_report",
+        name="Bug Report",
+        category=PromptConfigCategory.WORK,
+        description="Structured bug report format",
+        instruction="Format as a bug report with sections for Description, Steps to Reproduce, Expected Behavior, Actual Behavior, and Environment (if mentioned).",
+        adherence="Use clear technical language. Ensure steps are numbered and specific. Include any error messages or codes mentioned.",
+    ),
+    PromptConfig(
+        id="status_update",
+        name="Status Update",
+        category=PromptConfigCategory.WORK,
+        description="Brief project status update",
+        instruction="Format as a concise status update with what was completed, what's in progress, and any blockers.",
+        adherence="Keep it brief and scannable. Use bullet points. Focus on facts rather than details.",
+    ),
+
+    # AI Prompts
+    PromptConfig(
+        id="ai_prompt",
+        name="AI Prompt",
+        category=PromptConfigCategory.WORK,
+        description="General AI assistant instructions",
+        instruction="Format the output as clear, well-organized instructions for an AI assistant. Use imperative voice, organize tasks logically, and ensure instructions are unambiguous and actionable.",
+        adherence="Strictly follow AI prompt engineering best practices: be specific, use clear command language, break complex tasks into numbered steps, and include context where needed.",
+        is_favorite=True,
+        favorite_order=3,
+    ),
+    PromptConfig(
+        id="dev_prompt",
+        name="Dev Prompt",
+        category=PromptConfigCategory.WORK,
+        description="Software development instructions for AI",
+        instruction="Format the output as a development prompt for a software development AI assistant. Include technical requirements, implementation details, and expected outcomes. Use imperative voice and be explicit about technical constraints.",
+        adherence="Follow software development prompt conventions: specify programming languages, frameworks, file paths if mentioned, testing requirements, and code quality expectations.",
+        is_favorite=True,
+        favorite_order=4,
+    ),
+    PromptConfig(
+        id="system_prompt",
+        name="System Prompt",
+        category=PromptConfigCategory.WORK,
+        description="AI system prompt / persona definition",
+        instruction="Format the output as a system prompt that defines an AI assistant's persona, capabilities, and behavioral guidelines.",
+        adherence="Use clear, directive language. Define the assistant's role, tone, and any constraints. Structure as a complete system prompt ready for use.",
+        is_favorite=True,
+        favorite_order=5,
+    ),
+
+    # Documentation
+    PromptConfig(
+        id="tech_docs",
+        name="Tech Docs",
+        category=PromptConfigCategory.DOCUMENTATION,
+        description="Technical documentation format",
+        instruction="Format as technical documentation with clear headings, code examples in fenced blocks, and structured explanations.",
+        adherence="Use markdown formatting. Include code blocks with language tags. Be precise with technical terminology.",
+        is_favorite=True,
+        favorite_order=7,
+    ),
+    PromptConfig(
+        id="readme",
+        name="README",
+        category=PromptConfigCategory.DOCUMENTATION,
+        description="GitHub README format",
+        instruction="Format as a README.md file for a software project. Include clear sections for project description, installation, usage, and other relevant information.",
+        adherence="Follow standard README conventions: project title as H1, sections as H2, code blocks for commands, and clear installation/usage instructions.",
+    ),
+    PromptConfig(
+        id="api_docs",
+        name="API Docs",
+        category=PromptConfigCategory.DOCUMENTATION,
+        description="API endpoint documentation",
+        instruction="Format as API documentation with endpoint details, request/response formats, and parameter descriptions.",
+        adherence="Include HTTP methods, URL patterns, request bodies, response examples, and error codes. Use code blocks for JSON examples.",
+    ),
+
+    # Lists
+    PromptConfig(
+        id="todo",
+        name="To-Do List",
+        category=PromptConfigCategory.LISTS,
+        description="Checkbox to-do list format",
+        instruction="Format as a to-do list with checkbox items (- [ ] task). Use action verbs and be concise.",
+        adherence="Each item must start with an action verb. Keep items specific and actionable. Group related items under headers if there are distinct categories.",
+        is_favorite=True,
+        favorite_order=8,
+    ),
+    PromptConfig(
+        id="grocery",
+        name="Grocery List",
+        category=PromptConfigCategory.LISTS,
+        description="Categorized grocery shopping list",
+        instruction="Format as a grocery list. Group items by category (produce, dairy, meat, pantry, etc.) if there are multiple items.",
+        adherence="Always organize by store section categories. Use consistent item naming (e.g., quantities if mentioned).",
+    ),
+    PromptConfig(
+        id="bullet_points",
+        name="Bullet Points",
+        category=PromptConfigCategory.LISTS,
+        description="Simple bullet point list",
+        instruction="Format as concise bullet points. One idea per bullet.",
+        adherence="Each bullet must be self-contained and parallel in structure. Use consistent formatting throughout.",
+    ),
+
+    # Creative
+    PromptConfig(
+        id="social_post",
+        name="Social Post",
+        category=PromptConfigCategory.CREATIVE,
+        description="Social media post format",
+        instruction="Format as a social media post. Keep it engaging, concise, and appropriate for platforms like Twitter/X or LinkedIn.",
+        adherence="Optimize for engagement. Use appropriate hashtags if relevant. Keep within typical character limits.",
+        is_favorite=True,
+        favorite_order=9,
+    ),
+    PromptConfig(
+        id="blog_outline",
+        name="Blog Outline",
+        category=PromptConfigCategory.CREATIVE,
+        description="Blog post outline with sections",
+        instruction="Format as a blog post outline with a compelling title, introduction hook, main sections, and conclusion.",
+        adherence="Structure for readability. Include suggested subheadings. Note where examples or images might enhance the content.",
+    ),
+    PromptConfig(
+        id="story_notes",
+        name="Story Notes",
+        category=PromptConfigCategory.CREATIVE,
+        description="Creative writing notes and ideas",
+        instruction="Format as creative writing notes. Capture character ideas, plot points, settings, and any narrative elements mentioned.",
+        adherence="Preserve creative details and mood. Organize by narrative element (characters, plot, setting, themes).",
+    ),
+]
+
+
+class PromptLibrary:
+    """Manages all prompt configurations (builtins + custom + favorites).
+
+    Provides a unified interface for:
+    - Loading and saving prompts
+    - Managing favorites for quick access
+    - User modifications to builtin prompts
+    - Creating custom prompts
+    """
+
+    def __init__(self, config_dir: Path):
+        """Initialize the prompt library.
+
+        Args:
+            config_dir: Path to config directory (e.g., ~/.config/voice-notepad-v3/)
+        """
+        self.config_dir = config_dir
+        self.prompts_dir = config_dir / "prompts"
+        self.prompts_dir.mkdir(parents=True, exist_ok=True)
+
+        # Storage files
+        self.custom_prompts_file = self.prompts_dir / "custom.json"
+        self.modifications_file = self.prompts_dir / "modifications.json"
+        self.favorites_file = self.prompts_dir / "favorites.json"
+
+        # In-memory cache
+        self._builtins: Dict[str, PromptConfig] = {}
+        self._custom: Dict[str, PromptConfig] = {}
+        self._modifications: Dict[str, Dict[str, Any]] = {}  # id -> modified fields
+        self._favorites_order: Dict[str, int] = {}  # id -> order
+
+        # Load data
+        self._load_builtins()
+        self._load_custom()
+        self._load_modifications()
+        self._load_favorites()
+
+    def _load_builtins(self):
+        """Load builtin prompts into cache."""
+        for config in DEFAULT_PROMPT_CONFIGS:
+            self._builtins[config.id] = config
+
+    def _load_custom(self):
+        """Load custom prompts from disk."""
+        if not self.custom_prompts_file.exists():
+            return
+
+        try:
+            with open(self.custom_prompts_file) as f:
+                data = json.load(f)
+            for item in data.get("prompts", []):
+                config = PromptConfig.from_dict(item)
+                self._custom[config.id] = config
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Error loading custom prompts: {e}")
+
+    def _load_modifications(self):
+        """Load user modifications to builtin prompts."""
+        if not self.modifications_file.exists():
+            return
+
+        try:
+            with open(self.modifications_file) as f:
+                self._modifications = json.load(f)
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Error loading modifications: {e}")
+
+    def _load_favorites(self):
+        """Load favorites order from disk."""
+        if not self.favorites_file.exists():
+            # Initialize from builtin defaults
+            for config in DEFAULT_PROMPT_CONFIGS:
+                if config.is_favorite:
+                    self._favorites_order[config.id] = config.favorite_order
+            return
+
+        try:
+            with open(self.favorites_file) as f:
+                self._favorites_order = json.load(f)
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Error loading favorites: {e}")
+
+    def _save_custom(self):
+        """Save custom prompts to disk."""
+        data = {"prompts": [c.to_dict() for c in self._custom.values()]}
+        with open(self.custom_prompts_file, "w") as f:
+            json.dump(data, f, indent=2)
+
+    def _save_modifications(self):
+        """Save modifications to disk."""
+        with open(self.modifications_file, "w") as f:
+            json.dump(self._modifications, f, indent=2)
+
+    def _save_favorites(self):
+        """Save favorites order to disk."""
+        with open(self.favorites_file, "w") as f:
+            json.dump(self._favorites_order, f, indent=2)
+
+    def get(self, prompt_id: str) -> Optional[PromptConfig]:
+        """Get a prompt config by ID, applying any user modifications."""
+        # Check custom first
+        if prompt_id in self._custom:
+            config = self._custom[prompt_id]
+        elif prompt_id in self._builtins:
+            config = self._builtins[prompt_id]
+        else:
+            return None
+
+        # Apply modifications if any
+        if prompt_id in self._modifications:
+            data = config.to_dict()
+            data.update(self._modifications[prompt_id])
+            data["is_modified"] = True
+            config = PromptConfig.from_dict(data)
+
+        # Apply favorite status
+        if prompt_id in self._favorites_order:
+            config.is_favorite = True
+            config.favorite_order = self._favorites_order[prompt_id]
+        else:
+            config.is_favorite = False
+
+        return config
+
+    def get_all(self) -> List[PromptConfig]:
+        """Get all prompts (builtins + custom), with modifications applied."""
+        all_ids = set(self._builtins.keys()) | set(self._custom.keys())
+        return [self.get(pid) for pid in all_ids if self.get(pid) is not None]
+
+    def get_by_category(self, category: str) -> List[PromptConfig]:
+        """Get all prompts in a category."""
+        return [p for p in self.get_all() if p.category == category]
+
+    def get_favorites(self) -> List[PromptConfig]:
+        """Get favorite prompts, sorted by order."""
+        favorites = [self.get(pid) for pid in self._favorites_order.keys()]
+        favorites = [f for f in favorites if f is not None]
+        return sorted(favorites, key=lambda p: p.favorite_order)
+
+    def add_favorite(self, prompt_id: str, order: int = None):
+        """Add a prompt to favorites."""
+        if order is None:
+            # Add at end
+            order = max(self._favorites_order.values(), default=-1) + 1
+        self._favorites_order[prompt_id] = order
+        self._save_favorites()
+
+    def remove_favorite(self, prompt_id: str):
+        """Remove a prompt from favorites."""
+        if prompt_id in self._favorites_order:
+            del self._favorites_order[prompt_id]
+            self._save_favorites()
+
+    def reorder_favorites(self, ordered_ids: List[str]):
+        """Reorder favorites by providing a list of IDs in desired order."""
+        self._favorites_order = {pid: idx for idx, pid in enumerate(ordered_ids)}
+        self._save_favorites()
+
+    def create_custom(self, config: PromptConfig) -> PromptConfig:
+        """Create a new custom prompt."""
+        config.is_builtin = False
+        config.created_at = datetime.now().isoformat()
+        self._custom[config.id] = config
+        self._save_custom()
+        return config
+
+    def update_custom(self, config: PromptConfig):
+        """Update an existing custom prompt."""
+        if config.id not in self._custom:
+            raise ValueError(f"Custom prompt {config.id} not found")
+        config.modified_at = datetime.now().isoformat()
+        self._custom[config.id] = config
+        self._save_custom()
+
+    def delete_custom(self, prompt_id: str):
+        """Delete a custom prompt."""
+        if prompt_id in self._custom:
+            del self._custom[prompt_id]
+            self._save_custom()
+        # Also remove from favorites
+        self.remove_favorite(prompt_id)
+
+    def modify_builtin(self, prompt_id: str, modifications: Dict[str, Any]):
+        """Modify a builtin prompt (stores delta, not full copy)."""
+        if prompt_id not in self._builtins:
+            raise ValueError(f"Builtin prompt {prompt_id} not found")
+        modifications["modified_at"] = datetime.now().isoformat()
+        self._modifications[prompt_id] = modifications
+        self._save_modifications()
+
+    def reset_builtin(self, prompt_id: str):
+        """Reset a builtin prompt to its default state."""
+        if prompt_id in self._modifications:
+            del self._modifications[prompt_id]
+            self._save_modifications()
+
+    def is_modified(self, prompt_id: str) -> bool:
+        """Check if a builtin prompt has been modified."""
+        return prompt_id in self._modifications
+
+    def search(self, query: str) -> List[PromptConfig]:
+        """Search prompts by name or description."""
+        query = query.lower()
+        results = []
+        for config in self.get_all():
+            if query in config.name.lower() or query in config.description.lower():
+                results.append(config)
+        return results
+
+    def build_prompt(self, prompt_id: str, app_config: Any = None) -> str:
+        """Build a complete cleanup prompt from a prompt config.
+
+        Args:
+            prompt_id: ID of the prompt config to use
+            app_config: Optional app Config object for additional settings
+                       (formality, verbosity, email signature, etc.)
+
+        Returns:
+            Complete cleanup prompt string ready to send to the API
+        """
+        config = self.get(prompt_id)
+        if config is None:
+            # Fallback to general
+            config = self.get("general")
+
+        return build_prompt_from_config(config, app_config)
+
+
+def build_prompt_from_config(prompt_config: PromptConfig, app_config: Any = None) -> str:
+    """Build a complete cleanup prompt from a PromptConfig.
+
+    This combines:
+    1. Foundation cleanup (always applied)
+    2. The prompt config's format instructions
+    3. App-level settings (formality, verbosity, email signature)
+
+    Args:
+        prompt_config: The PromptConfig to build from
+        app_config: Optional app Config object for additional settings
+
+    Returns:
+        Complete cleanup prompt string
+    """
+    # Import here to avoid circular imports
+    try:
+        from .config import FOUNDATION_PROMPT_SECTIONS
+    except ImportError:
+        from config import FOUNDATION_PROMPT_SECTIONS
+
+    lines = ["Your task is to provide a cleaned transcription of the audio recorded by the user."]
+
+    # ===== LAYER 1: FOUNDATION (ALWAYS APPLIED) =====
+    lines.append("\n## Foundation Cleanup (Always Applied)")
+    for section_key, section_data in FOUNDATION_PROMPT_SECTIONS.items():
+        for instruction in section_data["instructions"]:
+            lines.append(f"- {instruction}")
+
+    # ===== LAYER 2: FORMAT-SPECIFIC INSTRUCTIONS =====
+    if prompt_config.is_element_based():
+        # Build from elements
+        try:
+            from .prompt_elements import ALL_ELEMENTS
+        except ImportError:
+            from prompt_elements import ALL_ELEMENTS
+
+        format_lines = []
+        style_lines = []
+
+        for elem_key in prompt_config.elements:
+            if elem_key in ALL_ELEMENTS:
+                elem = ALL_ELEMENTS[elem_key]
+                if elem.category == "format":
+                    format_lines.append(f"- {elem.instruction}")
+                    if elem.adherence:
+                        format_lines.append(f"  {elem.adherence}")
+                elif elem.category in ("style", "grammar"):
+                    style_lines.append(f"- {elem.instruction}")
+
+        if format_lines:
+            lines.append("\n## Format Requirements")
+            lines.extend(format_lines)
+
+        if style_lines:
+            lines.append("\n## Style & Grammar")
+            lines.extend(style_lines)
+
+    else:
+        # Use direct instruction/adherence
+        if prompt_config.instruction or prompt_config.adherence:
+            lines.append("\n## Format Requirements")
+            if prompt_config.instruction:
+                lines.append(f"- {prompt_config.instruction}")
+            if prompt_config.adherence:
+                lines.append(f"- {prompt_config.adherence}")
+
+    # ===== LAYER 3: APP-LEVEL SETTINGS =====
+    if app_config:
+        # Import formality/verbosity templates
+        try:
+            from .config import FORMALITY_TEMPLATES, VERBOSITY_TEMPLATES
+        except ImportError:
+            from config import FORMALITY_TEMPLATES, VERBOSITY_TEMPLATES
+
+        style_instructions = []
+
+        # Formality (prompt override takes precedence)
+        formality = prompt_config.formality or getattr(app_config, 'formality_level', None)
+        if formality and formality in FORMALITY_TEMPLATES:
+            template = FORMALITY_TEMPLATES[formality]
+            if template:
+                style_instructions.append(template)
+
+        # Verbosity (prompt override takes precedence)
+        verbosity = prompt_config.verbosity or getattr(app_config, 'verbosity_reduction', None)
+        if verbosity and verbosity in VERBOSITY_TEMPLATES:
+            template = VERBOSITY_TEMPLATES[verbosity]
+            if template:
+                style_instructions.append(template)
+
+        if style_instructions:
+            lines.append("\n## Style & Tone")
+            for instruction in style_instructions:
+                lines.append(f"- {instruction}")
+
+        # Writing sample
+        writing_sample = getattr(app_config, 'writing_sample', None)
+        if writing_sample and writing_sample.strip():
+            lines.append("\n## Writing Style Reference")
+            lines.append("The user has provided the following writing sample as a reference for tone, style, and structure. "
+                        "Use this as guidance for the output style:")
+            lines.append(f"\n{writing_sample.strip()}\n")
+
+        # Email signature (if email format)
+        if prompt_config.id == "email" or prompt_config.name.lower() == "email":
+            user_name = getattr(app_config, 'user_name', None)
+
+            # Choose signature based on prompt config preference
+            if prompt_config.use_business_signature:
+                sender_email = getattr(app_config, 'business_email', None) or getattr(app_config, 'personal_email', None)
+                sender_signature = getattr(app_config, 'business_signature', None) or getattr(app_config, 'personal_signature', None)
+            else:
+                sender_email = getattr(app_config, 'personal_email', None) or getattr(app_config, 'business_email', None)
+                sender_signature = getattr(app_config, 'personal_signature', None) or getattr(app_config, 'business_signature', None)
+
+            user_phone = getattr(app_config, 'user_phone', None)
+
+            if user_name or sender_email or user_phone:
+                lines.append("\n## User Profile")
+                profile_parts = []
+                if user_name:
+                    profile_parts.append(f"Name: {user_name}")
+                if sender_email:
+                    profile_parts.append(f"Email: {sender_email}")
+                if user_phone:
+                    profile_parts.append(f"Phone: {user_phone}")
+
+                profile_info = ", ".join(profile_parts)
+                lines.append(f"- Draft the email from the following person: {profile_info}")
+
+            if sender_signature:
+                lines.append(f"- End the email with the following signature:\n\n{sender_signature}")
+            elif user_name:
+                sign_off = getattr(app_config, 'email_signature', "Best regards")
+                lines.append(f"- End the email with the sign-off: \"{sign_off},\" followed by the sender's name: \"{user_name}\"")
+
+    # Final instruction
+    lines.append("\n## Output")
+    lines.append("- Output ONLY the cleaned transcription in markdown format, no commentary or preamble")
 
     return "\n".join(lines)

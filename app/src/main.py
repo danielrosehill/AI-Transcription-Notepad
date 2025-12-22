@@ -49,7 +49,7 @@ from PyQt6.QtGui import QIcon, QAction, QFont, QClipboard, QShortcut, QKeySequen
 from PyQt6.QtWidgets import QCompleter
 
 from .config import (
-    Config, load_config, save_config, load_env_keys,
+    Config, load_config, save_config, load_env_keys, CONFIG_DIR,
     GEMINI_MODELS, OPENAI_MODELS, MISTRAL_MODELS, OPENROUTER_MODELS,
     MODEL_TIERS, FOUNDATION_PROMPT_COMPONENTS, OPTIONAL_PROMPT_COMPONENTS, build_cleanup_prompt,
     FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES, FORMALITY_DISPLAY_NAMES, VERBOSITY_DISPLAY_NAMES, EMAIL_SIGNOFFS,
@@ -78,6 +78,9 @@ from .file_transcription_widget import FileTranscriptionWidget
 from .mic_naming_ai import MicrophoneNamingAI
 from .prompt_options_dialog import PromptOptionsDialog
 from .format_manager_dialog import FormatManagerDialog
+from .prompt_library import PromptLibrary, build_prompt_from_config
+from .prompt_library_widget import PromptLibraryWidget
+from .favorites_bar import FavoritesBar
 from .stack_manager_dialog import StackManagerDialog
 from .rewrite_dialog import RewriteDialog
 
@@ -269,6 +272,10 @@ class MainWindow(QMainWindow):
         self.accumulated_duration: float = 0.0
         self.append_mode: bool = False  # Track if next transcription should append
         self.has_cached_audio: bool = False  # Track if we have stopped audio waiting to be transcribed
+
+        # Initialize unified prompt library
+        self.prompt_library = PromptLibrary(CONFIG_DIR)
+        self.current_prompt_id = self.config.format_preset or "general"
 
         # Set window title (add DEV suffix if in dev mode)
         title = "Voice Notepad"
@@ -499,208 +506,17 @@ class MainWindow(QMainWindow):
         format_help.setStyleSheet("color: #666; font-size: 11px; padding: 4px 0; margin-bottom: 4px;")
         format_section_layout.addWidget(format_help)
 
-        # Quick format selector buttons - using grid layout for two rows
-        format_quick_select_layout = QVBoxLayout()
-        format_quick_select_layout.setSpacing(8)
+        # Dynamic favorites bar for quick format selection
+        # Supports up to 20 user-configurable favorites
+        self.favorites_bar = FavoritesBar(CONFIG_DIR)
+        self.favorites_bar.prompt_selected.connect(self._on_prompt_selected_from_bar)
+        self.favorites_bar.manage_clicked.connect(self._open_prompts_tab)
 
-        # Create button group for mutual exclusivity
-        self.format_button_group = QButtonGroup(self)
+        # Set initial selection based on config
+        if self.config.format_preset:
+            self.favorites_bar.set_selected_prompt_id(self.config.format_preset)
 
-        # First row of format buttons
-        format_row1 = QHBoxLayout()
-        format_row1.setSpacing(8)
-
-        format_label = QLabel("Format:")
-        format_label.setStyleSheet("font-weight: bold; color: #495057;")
-        format_row1.addWidget(format_label)
-
-        # General button (default)
-        self.general_format_btn = QPushButton("General")
-        self.general_format_btn.setCheckable(True)
-        self.general_format_btn.setMinimumHeight(32)
-        self.general_format_btn.clicked.connect(lambda: self._set_quick_format("general"))
-        self.format_button_group.addButton(self.general_format_btn)
-        format_row1.addWidget(self.general_format_btn)
-
-        # Verbatim button
-        self.verbatim_format_btn = QPushButton("Verbatim")
-        self.verbatim_format_btn.setCheckable(True)
-        self.verbatim_format_btn.setMinimumHeight(32)
-        self.verbatim_format_btn.clicked.connect(lambda: self._set_quick_format("verbatim"))
-        self.format_button_group.addButton(self.verbatim_format_btn)
-        format_row1.addWidget(self.verbatim_format_btn)
-
-        # Email button
-        self.email_format_btn = QPushButton("Email")
-        self.email_format_btn.setCheckable(True)
-        self.email_format_btn.setMinimumHeight(32)
-        self.email_format_btn.clicked.connect(lambda: self._set_quick_format("email"))
-        self.format_button_group.addButton(self.email_format_btn)
-        format_row1.addWidget(self.email_format_btn)
-
-        # AI Prompt button
-        self.ai_prompt_format_btn = QPushButton("AI Prompt")
-        self.ai_prompt_format_btn.setCheckable(True)
-        self.ai_prompt_format_btn.setMinimumHeight(32)
-        self.ai_prompt_format_btn.clicked.connect(lambda: self._set_quick_format("ai_prompt"))
-        self.format_button_group.addButton(self.ai_prompt_format_btn)
-        format_row1.addWidget(self.ai_prompt_format_btn)
-
-        # System Prompt button
-        self.system_prompt_format_btn = QPushButton("System Prompt")
-        self.system_prompt_format_btn.setCheckable(True)
-        self.system_prompt_format_btn.setMinimumHeight(32)
-        self.system_prompt_format_btn.clicked.connect(lambda: self._set_quick_format("system_prompt"))
-        self.format_button_group.addButton(self.system_prompt_format_btn)
-        format_row1.addWidget(self.system_prompt_format_btn)
-
-        format_row1.addStretch()
-
-        format_quick_select_layout.addLayout(format_row1)
-
-        # Second row of format buttons
-        format_row2 = QHBoxLayout()
-        format_row2.setSpacing(8)
-
-        # Add spacing to align with first row (compensate for "Format:" label)
-        format_row2.addSpacing(70)
-
-        # Dev Prompt button
-        self.dev_prompt_format_btn = QPushButton("Dev Prompt")
-        self.dev_prompt_format_btn.setCheckable(True)
-        self.dev_prompt_format_btn.setMinimumHeight(32)
-        self.dev_prompt_format_btn.clicked.connect(lambda: self._set_quick_format("dev_prompt"))
-        self.format_button_group.addButton(self.dev_prompt_format_btn)
-        format_row2.addWidget(self.dev_prompt_format_btn)
-
-        # Tech Docs button
-        self.tech_docs_format_btn = QPushButton("Tech Docs")
-        self.tech_docs_format_btn.setCheckable(True)
-        self.tech_docs_format_btn.setMinimumHeight(32)
-        self.tech_docs_format_btn.clicked.connect(lambda: self._set_quick_format("tech_docs"))
-        self.format_button_group.addButton(self.tech_docs_format_btn)
-        format_row2.addWidget(self.tech_docs_format_btn)
-
-        # To-Do button
-        self.todo_format_btn = QPushButton("To-Do")
-        self.todo_format_btn.setCheckable(True)
-        self.todo_format_btn.setMinimumHeight(32)
-        self.todo_format_btn.clicked.connect(lambda: self._set_quick_format("todo"))
-        self.format_button_group.addButton(self.todo_format_btn)
-        format_row2.addWidget(self.todo_format_btn)
-
-        # Social Post button
-        self.social_post_format_btn = QPushButton("Social Post")
-        self.social_post_format_btn.setCheckable(True)
-        self.social_post_format_btn.setMinimumHeight(32)
-        self.social_post_format_btn.clicked.connect(lambda: self._set_quick_format("social_post"))
-        self.format_button_group.addButton(self.social_post_format_btn)
-        format_row2.addWidget(self.social_post_format_btn)
-
-        # Custom button (shown when using prompt stacks)
-        self.custom_format_btn = QPushButton("Custom")
-        self.custom_format_btn.setCheckable(True)
-        self.custom_format_btn.setMinimumHeight(32)
-        self.custom_format_btn.setToolTip("Custom prompt configuration active (using Prompt Stacks)")
-        self.custom_format_btn.clicked.connect(self._on_custom_format_clicked)
-        self.format_button_group.addButton(self.custom_format_btn)
-        format_row2.addWidget(self.custom_format_btn)
-
-        format_row2.addStretch()
-
-        format_quick_select_layout.addLayout(format_row2)
-
-        # Third row - Manage Formats button on its own row for better visibility
-        format_row3 = QHBoxLayout()
-        format_row3.setSpacing(8)
-
-        # Add spacing to align with first row (compensate for "Format:" label)
-        format_row3.addSpacing(70)
-
-        # Manage Formats button
-        manage_formats_btn = QPushButton("⚙️ Manage Formats...")
-        manage_formats_btn.setFixedHeight(32)
-        manage_formats_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f8f9fa;
-                color: #495057;
-                border: 2px solid #ced4da;
-                border-radius: 6px;
-                font-weight: bold;
-                font-size: 12px;
-                padding: 4px 12px;
-            }
-            QPushButton:hover {
-                background-color: #e9ecef;
-                border-color: #adb5bd;
-            }
-        """)
-        manage_formats_btn.clicked.connect(self._open_format_manager)
-        format_row3.addWidget(manage_formats_btn)
-
-        format_row3.addStretch()
-
-        format_quick_select_layout.addLayout(format_row3)
-
-        # Style the format buttons - unified appearance with green highlighting for active
-        format_button_style = """
-            QPushButton {
-                background-color: #cfe2ff;
-                color: #000000;
-                border: 2px solid #9ec5fe;
-                border-radius: 6px;
-                font-weight: bold;
-                font-size: 12px;
-                padding: 4px 12px;
-            }
-            QPushButton:hover {
-                background-color: #b6d4fe;
-                border-color: #6ea8fe;
-            }
-            QPushButton:checked {
-                background-color: #28a745;
-                color: white;
-                border-color: #28a745;
-                border-width: 3px;
-            }
-        """
-
-        # Apply unified style to all format buttons
-        self.general_format_btn.setStyleSheet(format_button_style)
-        self.verbatim_format_btn.setStyleSheet(format_button_style)
-        self.email_format_btn.setStyleSheet(format_button_style)
-        self.ai_prompt_format_btn.setStyleSheet(format_button_style)
-        self.system_prompt_format_btn.setStyleSheet(format_button_style)
-        self.dev_prompt_format_btn.setStyleSheet(format_button_style)
-        self.tech_docs_format_btn.setStyleSheet(format_button_style)
-        self.todo_format_btn.setStyleSheet(format_button_style)
-        self.social_post_format_btn.setStyleSheet(format_button_style)
-        self.custom_format_btn.setStyleSheet(format_button_style)
-
-        # Set initial button state based on config
-        if self.config.use_prompt_stacks:
-            # If using prompt stacks, show Custom as active
-            self.custom_format_btn.setChecked(True)
-        elif self.config.format_preset == "verbatim":
-            self.verbatim_format_btn.setChecked(True)
-        elif self.config.format_preset == "email":
-            self.email_format_btn.setChecked(True)
-        elif self.config.format_preset == "ai_prompt":
-            self.ai_prompt_format_btn.setChecked(True)
-        elif self.config.format_preset == "system_prompt":
-            self.system_prompt_format_btn.setChecked(True)
-        elif self.config.format_preset == "dev_prompt":
-            self.dev_prompt_format_btn.setChecked(True)
-        elif self.config.format_preset == "tech_docs":
-            self.tech_docs_format_btn.setChecked(True)
-        elif self.config.format_preset == "todo":
-            self.todo_format_btn.setChecked(True)
-        elif self.config.format_preset == "social_post":
-            self.social_post_format_btn.setChecked(True)
-        else:
-            self.general_format_btn.setChecked(True)
-
-        format_section_layout.addLayout(format_quick_select_layout)
+        format_section_layout.addWidget(self.favorites_bar)
         layout.addLayout(format_section_layout)
 
         layout.addSpacing(8)
@@ -1019,6 +835,12 @@ class MainWindow(QMainWindow):
         # Analytics tab (combines Cost + Analysis)
         self.analytics_widget = AnalyticsWidget()
         self.tabs.addTab(self.analytics_widget, "📊 Analytics")
+
+        # Prompt Library tab
+        self.prompt_library_widget = PromptLibraryWidget(CONFIG_DIR)
+        self.prompt_library_widget.favorites_changed.connect(self._on_favorites_changed)
+        self.prompt_library_widget.prompt_selected.connect(self._on_prompt_library_selection)
+        self.tabs.addTab(self.prompt_library_widget, "Prompts")
 
         # About tab
         self.about_widget = AboutWidget()
@@ -1432,8 +1254,9 @@ class MainWindow(QMainWindow):
 
         For 'verbatim' format, also configures optional enhancements to minimal settings.
         """
-        # Update the config
+        # Update the config and current prompt ID
         self.config.format_preset = format_key
+        self.current_prompt_id = format_key
 
         # Disable custom mode when selecting a preset format
         if self.config.use_prompt_stacks:
@@ -1456,6 +1279,36 @@ class MainWindow(QMainWindow):
             self._update_prompt_indicator()
 
         save_config(self.config)
+
+    def _on_favorites_changed(self):
+        """Handle changes to favorites in the prompt library."""
+        # Refresh the favorites bar if we have one
+        if hasattr(self, 'favorites_bar'):
+            self.favorites_bar.update_library()
+
+    def _on_prompt_library_selection(self, prompt_id: str):
+        """Handle prompt selection from the Prompt Library tab."""
+        self.current_prompt_id = prompt_id
+        self.config.format_preset = prompt_id
+        save_config(self.config)
+
+        # Update the favorites bar if we have one
+        if hasattr(self, 'favorites_bar'):
+            self.favorites_bar.set_selected_prompt_id(prompt_id)
+
+    def _on_prompt_selected_from_bar(self, prompt_id: str):
+        """Handle prompt selection from the favorites bar."""
+        self.current_prompt_id = prompt_id
+        self.config.format_preset = prompt_id
+        save_config(self.config)
+
+    def _open_prompts_tab(self):
+        """Open the Prompts tab for managing prompt configurations."""
+        if hasattr(self, 'tabs'):
+            for i in range(self.tabs.count()):
+                if self.tabs.tabText(i) == "Prompts":
+                    self.tabs.setCurrentIndex(i)
+                    break
 
     def _on_custom_format_clicked(self):
         """Handle Custom button click - open Prompt Stacks tab."""

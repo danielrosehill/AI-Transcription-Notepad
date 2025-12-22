@@ -237,15 +237,82 @@ def load_env_keys(config: Config) -> Config:
     return config
 
 
-# Foundation layer - ALWAYS APPLIED (mandatory, no verbatim option)
-# This distinguishes the app from traditional speech-to-text
-FOUNDATION_PROMPT_COMPONENTS = [
-    "Remove filler words (um, uh, like, you know, so, well, etc.)",
-    "Remove conversational verbal tics and hedging phrases (e.g., \"you know\", \"I mean\", \"kind of\", \"sort of\", \"basically\", \"actually\" when used as fillers)",
-    "Remove standalone acknowledgments that don't add meaning (e.g., \"Okay.\" or \"Right.\" as their own sentences)",
-    "Add proper punctuation and sentence structure",
-    "Add natural paragraph spacing",
-]
+# =============================================================================
+# FOUNDATION CLEANUP PROMPT
+# =============================================================================
+# Always applied to every transcription. This is the core cleanup that
+# distinguishes Voice Notepad from traditional speech-to-text.
+#
+# Organized into sections so individual components can be modified if needed.
+# See CLAUDE.md "Foundation Cleanup Prompt" section for full documentation.
+# =============================================================================
+
+FOUNDATION_PROMPT_SECTIONS = {
+    # Section 1: Filler and noise removal
+    "filler_removal": {
+        "heading": "Filler & Noise Removal",
+        "instructions": [
+            "Remove filler words (um, uh, like, you know, so, well, etc.)",
+            "Remove conversational verbal tics and hedging phrases (e.g., \"you know\", \"I mean\", \"kind of\", \"sort of\", \"basically\", \"actually\" when used as fillers)",
+            "Remove standalone acknowledgments that don't add meaning (e.g., \"Okay.\" or \"Right.\" as their own sentences)",
+        ],
+    },
+
+    # Section 2: Structure and punctuation
+    "structure": {
+        "heading": "Structure & Punctuation",
+        "instructions": [
+            "Add proper punctuation and sentence structure",
+            "Add natural paragraph spacing",
+            "For lengthy transcriptions with distinct topics, add markdown subheadings (## Heading) to organize the content",
+        ],
+    },
+
+    # Section 3: Clarity improvements
+    "clarity": {
+        "heading": "Clarity",
+        "instructions": [
+            "Clarify confusing or illogical phrasing while preserving all details and original meaning",
+            "Make language more direct and concise — tighten rambling sentences without removing information",
+        ],
+    },
+
+    # Section 4: Inferred instructions (verbal cues during recording)
+    "inferred_instructions": {
+        "heading": "Inferred Instructions",
+        "instructions": [
+            "Handle self-corrections: If the speaker corrects themselves mid-speech (e.g., \"I want to go to the cinema. No wait, I mean the supermarket\"), output only the corrected version (\"I want to go to the supermarket\")",
+            "Handle spelling clarifications: If the speaker spells out a word for accuracy (e.g., \"We need to use ZOD. ZOD is spelled Z-O-D\"), use the correct spelling in the output but omit the spelling instruction itself",
+            "Handle explicit exclusions: If the speaker says \"don't include this\" or \"skip that part\", honor those instructions",
+        ],
+    },
+
+    # Section 5: Format and context detection
+    "format_detection": {
+        "heading": "Format & Context Detection",
+        "instructions": [
+            "If the speaker explicitly requests a format (e.g., \"format this as a to-do list\" or \"make this an email\"), honor that format in the output",
+            "If the content is clearly a specific format (email, list, instructions) even without explicit request, format it appropriately",
+            "Match language tone to detected context: business emails should use professional language, casual notes can be informal",
+        ],
+    },
+}
+
+
+def get_foundation_prompt_list() -> list:
+    """Get all foundation prompt instructions as a flat list.
+
+    Returns all enabled foundation components for backward compatibility
+    with code that expects FOUNDATION_PROMPT_COMPONENTS as a list.
+    """
+    instructions = []
+    for section in FOUNDATION_PROMPT_SECTIONS.values():
+        instructions.extend(section["instructions"])
+    return instructions
+
+
+# Backward compatibility: keep FOUNDATION_PROMPT_COMPONENTS as a list
+FOUNDATION_PROMPT_COMPONENTS = get_foundation_prompt_list()
 
 # Layer 2: Optional formatting enhancements (checkboxes)
 # These enhance output without changing format adherence

@@ -123,20 +123,53 @@ MISTRAL_API_KEY=your_key
 
 ### The Cleanup Prompt
 
-The cleanup prompt is fully customizable via checkboxes in Settings → Prompt. Default options include:
-1. Remove filler words (um, uh, like, etc.)
-2. Remove verbal tics and hedging phrases (you know, I mean, etc.)
-3. Remove standalone acknowledgments (Okay, Right, etc.)
-4. Add proper punctuation and sentences
-5. Add natural paragraph spacing
-6. Follow verbal instructions in the recording (e.g., "don't include this", "change this")
-7. Add subheadings for lengthy transcriptions (optional, disabled by default)
-8. Use markdown formatting like bold and lists (optional, disabled by default)
-9. Remove unintentional dialogue (optional, disabled by default)
-   - Only removes dialogue if the AI can confidently detect it was accidental
-   - E.g., someone else speaking to the user during recording
+Voice Notepad uses a layered prompt system to transform speech into clean, well-formatted text.
 
-The prompt is built dynamically from selected options, along with format preset (email, todo, meeting notes, etc.), formality level (casual, neutral, professional), and verbosity reduction settings.
+#### Foundation Cleanup (Always Applied)
+
+The foundation layer is always applied to every transcription. This is what distinguishes Voice Notepad from traditional speech-to-text. Defined in `config.py` as `FOUNDATION_PROMPT_SECTIONS`.
+
+**1. Filler & Noise Removal**
+- Remove filler words (um, uh, like, you know, so, well, etc.)
+- Remove verbal tics and hedging phrases ("you know", "I mean", "kind of", "basically", etc.)
+- Remove standalone acknowledgments that don't add meaning ("Okay.", "Right.", etc.)
+
+**2. Structure & Punctuation**
+- Add proper punctuation and sentence structure
+- Add natural paragraph spacing
+- For lengthy transcriptions with distinct topics, add markdown subheadings
+
+**3. Clarity**
+- Clarify confusing or illogical phrasing while preserving all details and original meaning
+- Make language more direct and concise — tighten rambling sentences without removing information
+
+**4. Inferred Instructions**
+
+The model interprets verbal cues you give during recording:
+
+- **Self-corrections**: If you say "I want to go to the cinema. No wait, I mean the supermarket", the output will be "I want to go to the supermarket" — only the corrected version
+- **Spelling clarifications**: If you say "We need to use ZOD. ZOD is spelled Z-O-D", the output uses the correct spelling but omits the spelling instruction
+- **Explicit exclusions**: If you say "don't include this" or "skip that part", those sections are removed
+
+**5. Format & Context Detection**
+
+- If you explicitly request a format ("format this as a to-do list", "make this an email"), the output honors that format
+- If content is clearly a specific format (email, list, instructions) even without explicit request, it's formatted appropriately
+- Language tone matches detected context: business emails use professional language, casual notes stay informal
+
+#### Optional Enhancements (Checkboxes)
+
+Additional options available in Settings → Prompt:
+- Use markdown formatting (bold, lists, etc.)
+- Remove unintentional dialogue (if the AI can confidently detect it was accidental)
+- Enhance AI prompts for effectiveness (only applies to prompt-format outputs)
+
+#### Format Presets
+
+The prompt is further customized by:
+- **Format preset**: email, todo, meeting notes, AI prompt, dev prompt, tech docs, etc.
+- **Formality level**: casual, neutral, professional
+- **Verbosity reduction**: none, minimum, short, medium, maximum
 
 ### Email Personalization
 
