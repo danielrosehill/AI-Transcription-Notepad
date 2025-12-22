@@ -681,11 +681,28 @@ class FileTranscriptionWidget(QWidget):
             clipboard = QApplication.clipboard()
             clipboard.setText(text)
 
+        # Auto-paste if enabled (inject text at cursor using ydotool)
+        if self.config and self.config.auto_paste:
+            self._paste_wayland()
+
         # Play clipboard beep
         if self.config:
             feedback = get_feedback()
             feedback.enabled = self.config.beep_on_clipboard
             feedback.play_clipboard_beep()
+
+    def _paste_wayland(self):
+        """Simulate Ctrl+V paste using ydotool (Wayland-compatible)."""
+        import subprocess
+        try:
+            subprocess.run(
+                ["ydotool", "key", "--delay", "50", "ctrl+v"],
+                check=True,
+                capture_output=True,
+                timeout=2
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, subprocess.CalledProcessError, Exception):
+            pass  # Fail silently for file transcription widget
 
     # Drag and drop support
     def dragEnterEvent(self, event: QDragEnterEvent):

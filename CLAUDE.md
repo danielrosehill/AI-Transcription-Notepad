@@ -270,8 +270,8 @@ AGC_MAX_GAIN_DB = 20.0        # Maximum boost to apply
 
 ### Planned
 
-- [ ] **Auto-copy to clipboard**: Automatic clipboard copy after transcription
-- [ ] **Virtual input insertion**: Type transcription into any text field (Wayland challenge)
+- [x] **Auto-copy to clipboard**: Automatic clipboard copy after transcription (using wl-copy)
+- [x] **Auto-paste (text injection)**: Automatically paste transcription at cursor after copy (Settings → Behavior, uses ydotool)
 - [x] **Debian packaging**: Build as .deb for easy distribution
 - [ ] **S3 cloud backup**: Mirror local data to object storage
 - [ ] **Words per minute tracking**: Analyze speech patterns

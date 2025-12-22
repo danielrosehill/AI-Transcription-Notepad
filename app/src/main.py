@@ -658,6 +658,25 @@ class MainWindow(QMainWindow):
         format_section_layout.addWidget(self.favorites_bar)
         layout.addLayout(format_section_layout)
 
+        # Quick toggles row (Quiet Mode, Text Injection)
+        toggles_layout = QHBoxLayout()
+        toggles_layout.setSpacing(20)
+
+        self.quiet_mode_checkbox = QCheckBox("🔇 Quiet Mode")
+        self.quiet_mode_checkbox.setChecked(self.config.quiet_mode)
+        self.quiet_mode_checkbox.setToolTip("Suppress all audio beeps")
+        self.quiet_mode_checkbox.toggled.connect(self._on_quiet_mode_changed)
+        toggles_layout.addWidget(self.quiet_mode_checkbox)
+
+        self.auto_paste_cb = QCheckBox("📋 Text Injection")
+        self.auto_paste_cb.setChecked(self.config.auto_paste)
+        self.auto_paste_cb.setToolTip("Auto-paste (Ctrl+V) after copying to clipboard")
+        self.auto_paste_cb.toggled.connect(self._on_auto_paste_toggled)
+        toggles_layout.addWidget(self.auto_paste_cb)
+
+        toggles_layout.addStretch()
+        layout.addLayout(toggles_layout)
+
         # Text output area with markdown rendering
         self.text_output = MarkdownTextWidget()
         self.text_output.setPlaceholderText("Transcription will appear here...")
@@ -770,19 +789,6 @@ class MainWindow(QMainWindow):
         status_bar.addWidget(self.cost_label)
 
         status_bar.addStretch()
-
-        # Quiet Mode toggle (right)
-        self.quiet_mode_checkbox = QCheckBox("🔇 Quiet Mode")
-        self.quiet_mode_checkbox.setStyleSheet("color: #888; font-size: 10px;")
-        self.quiet_mode_checkbox.setToolTip(
-            "Suppress all audio beeps while in Quiet Mode.\n"
-            "Your default beep settings (in Settings → Behavior) are preserved.\n"
-            "Uncheck to restore normal beep behavior."
-        )
-        self.quiet_mode_checkbox.setChecked(self.config.quiet_mode)
-        self.quiet_mode_checkbox.toggled.connect(self._on_quiet_mode_changed)
-        status_bar.addWidget(self.quiet_mode_checkbox)
-
         layout.addLayout(status_bar)
 
         # Initialize mic and cost displays
@@ -1174,6 +1180,15 @@ class MainWindow(QMainWindow):
         When unchecked, beeps will play according to Settings → Behavior preferences.
         """
         self.config.quiet_mode = checked
+        save_config(self.config)
+
+    def _on_auto_paste_toggled(self, checked: bool):
+        """Handle Text Injection (auto-paste) checkbox toggle.
+
+        When enabled, automatically simulates Ctrl+V after copying transcription
+        to clipboard, pasting the text wherever the cursor is focused.
+        """
+        self.config.auto_paste = checked
         save_config(self.config)
 
     def _set_quick_format(self, format_key: str):
@@ -1624,6 +1639,10 @@ class MainWindow(QMainWindow):
         # Auto-copy to clipboard (using wl-copy for Wayland)
         self._copy_to_clipboard_wayland(result.text)
 
+        # Auto-paste if enabled (inject text at cursor using ydotool)
+        if self.config.auto_paste:
+            self._paste_wayland()
+
         # Play clipboard beep (unless in Quiet Mode)
         feedback = get_feedback()
         feedback.enabled = self.config.beep_on_clipboard and not self.config.quiet_mode
@@ -1884,6 +1903,34 @@ class MainWindow(QMainWindow):
             clipboard = QApplication.clipboard()
             clipboard.setText(text)
 
+    def _paste_wayland(self):
+        """Simulate Ctrl+V paste using ydotool (Wayland-compatible).
+
+        This uses ydotool to inject keyboard input at the uinput level,
+        which works on Wayland where xdotool cannot. Requires the user
+        to be in the 'input' group or have appropriate permissions.
+
+        Falls back silently if ydotool is not available.
+        """
+        import subprocess
+        try:
+            # Small delay to ensure clipboard is ready
+            subprocess.run(
+                ["ydotool", "key", "--delay", "50", "ctrl+v"],
+                check=True,
+                capture_output=True,
+                timeout=2
+            )
+        except FileNotFoundError:
+            # ydotool not installed - fail silently
+            print("Warning: ydotool not found for auto-paste. Install with: sudo apt install ydotool")
+        except subprocess.TimeoutExpired:
+            print("Warning: ydotool paste timed out")
+        except subprocess.CalledProcessError as e:
+            print(f"Warning: ydotool paste failed: {e}")
+        except Exception as e:
+            print(f"Warning: Auto-paste failed: {e}")
+
     def copy_to_clipboard(self):
         """Copy transcription to clipboard."""
         text = self.text_output.toPlainText()
@@ -2111,16 +2158,19 @@ class MainWindow(QMainWindow):
         self.settings_dialog.activateWindow()
 
     def _sync_quiet_mode_checkbox(self):
-        """Sync the quiet mode checkbox state with current config.
+        """Sync the toggle checkboxes state with current config.
 
-        Called when settings dialog is closed. Currently quiet_mode is not
-        editable in Settings, but this ensures consistency if config is
-        modified externally.
+        Called when settings dialog is closed. Ensures consistency if
+        settings are modified in the Settings → Behavior tab.
         """
-        # Block signals to prevent triggering the toggle handler
+        # Block signals to prevent triggering the toggle handlers
         self.quiet_mode_checkbox.blockSignals(True)
         self.quiet_mode_checkbox.setChecked(self.config.quiet_mode)
         self.quiet_mode_checkbox.blockSignals(False)
+
+        self.auto_paste_cb.blockSignals(True)
+        self.auto_paste_cb.setChecked(self.config.auto_paste)
+        self.auto_paste_cb.blockSignals(False)
 
     def show_analytics(self):
         """Show analytics dialog."""

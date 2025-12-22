@@ -134,6 +134,9 @@ class Config:
     beep_on_clipboard: bool = True  # Play beep when text copied to clipboard
     quiet_mode: bool = False  # Suppress all beeps (overrides above settings when True)
 
+    # Text injection (auto-paste after clipboard copy)
+    auto_paste: bool = False  # Automatically paste (Ctrl+V) after copying to clipboard
+
     # Prompt customization options (checkboxes) - Layer 2 only
     # Foundation layer (fillers, punctuation, paragraph spacing) is always applied
     prompt_follow_instructions: bool = True  # Follow verbal instructions (don't include this, etc.)

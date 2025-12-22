@@ -274,6 +274,17 @@ class BehaviorWidget(QWidget):
         self.beep_on_clipboard.toggled.connect(lambda v: self._save_bool("beep_on_clipboard", v))
         form.addRow("Beep on clipboard copy:", self.beep_on_clipboard)
 
+        # Auto-paste (text injection)
+        auto_paste_layout = QVBoxLayout()
+        self.auto_paste = QCheckBox()
+        self.auto_paste.setChecked(self.config.auto_paste)
+        self.auto_paste.toggled.connect(lambda v: self._save_bool("auto_paste", v))
+        auto_paste_layout.addWidget(self.auto_paste)
+        auto_paste_help = QLabel("Automatically paste (Ctrl+V) after copying. Uses ydotool.")
+        auto_paste_help.setStyleSheet("color: #666; font-size: 10px;")
+        auto_paste_layout.addWidget(auto_paste_help)
+        form.addRow("Auto-paste after copy:", auto_paste_layout)
+
         layout.addLayout(form)
         layout.addStretch()
 
