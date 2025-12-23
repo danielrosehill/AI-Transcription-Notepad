@@ -137,6 +137,9 @@ class Config:
     # Text injection (auto-paste after clipboard copy)
     auto_paste: bool = False  # Automatically paste (Ctrl+V) after copying to clipboard
 
+    # Append mode behavior
+    append_position: str = "end"  # "end" (append at document end) or "cursor" (insert at cursor)
+
     # Prompt customization options (checkboxes) - Layer 2 only
     # Foundation layer (fillers, punctuation, paragraph spacing) is always applied
     prompt_follow_instructions: bool = True  # Follow verbal instructions (don't include this, etc.)
@@ -450,6 +453,12 @@ FORMAT_TEMPLATES = {
         "category": "foundational",
         "description": "Quick personal note - minimal formatting",
     },
+    "note_to_self": {
+        "instruction": "Format as a note-to-self for future reference. Focus on capturing the key detail or reminder clearly and concisely.",
+        "adherence": "Keep it brief and focused. This is something you're noting down for your future self - could be a reminder, a detail to remember, a thought to revisit, or a quick reference. No elaborate formatting needed. Just the essential information, clearly stated.",
+        "category": "foundational",
+        "description": "Lightweight note for future reference",
+    },
 
     # ==========================================================================
     # STYLISTIC - Writing styles and formats
@@ -654,16 +663,10 @@ FORMAT_TEMPLATES = {
     # CREATIVE - Creative writing and social media
     # ==========================================================================
     "social_post": {
-        "instruction": "Format as a social media post optimized for engagement. Keep concise, use line breaks for readability, include hashtags if mentioned, and maintain conversational tone.",
-        "adherence": "Respect platform character limits if specified. Use emoji strategically if mentioned. Structure for scanability. Include call-to-action if present.",
+        "instruction": "Format as a social media or community post. Works for Twitter/X, LinkedIn, Reddit, Discord, forums, and other social platforms. Keep it engaging, use line breaks for readability, and maintain a conversational tone appropriate for the platform.",
+        "adherence": "Respect platform character limits if specified. Use short paragraphs (2-3 sentences max) for readability. Be genuine and conversational. For community posts (Reddit, forums), include context and a clear question if asking for help. Use hashtags or emoji strategically when appropriate.",
         "category": "creative",
-        "description": "Social media post (Twitter, LinkedIn, etc.)",
-    },
-    "community_post": {
-        "instruction": "Format as an online community post (Reddit, forums, Discord, etc.). Start with a brief friendly intro or context, use short paragraphs for readability, and maintain an approachable conversational tone.",
-        "adherence": "Start with context or a brief 'Hi' intro if appropriate. Use short paragraphs (2-3 sentences max). Add line breaks between paragraphs for readability. Be genuine and conversational. Include a clear question or discussion point if asking for help. End with thanks if requesting assistance.",
-        "category": "creative",
-        "description": "Community/forum post (Reddit, Discord, etc.)",
+        "description": "Social media & community posts (Twitter, Reddit, Discord, etc.)",
     },
     "story_notes": {
         "instruction": "Format as creative writing notes. Capture character ideas, plot points, settings, and any narrative elements mentioned.",
@@ -708,6 +711,7 @@ FORMAT_DISPLAY_NAMES = {
     "verbatim": "Verbatim",
     "brief": "Brief",
     "quick_note": "Quick Note",
+    "note_to_self": "Note to Self",
     # Stylistic
     "email": "Email",
     "meeting_notes": "Meeting Notes",
@@ -745,7 +749,6 @@ FORMAT_DISPLAY_NAMES = {
     "status_update": "Status Update",
     # Creative
     "social_post": "Social Post",
-    "community_post": "Community Post",
     "story_notes": "Story Notes",
     # Experimental
     "shakespearean": "Shakespearean Style",

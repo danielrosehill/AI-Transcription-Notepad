@@ -1,11 +1,11 @@
 """
 Unified Prompt Editor Window
 
-A single window for all prompt configuration:
-1. Foundation Prompt Editor - view/edit base system prompt
-2. Format Favorites - star formats for quick buttons
-3. Stack Builder - create element-based stacks
-4. Tone & Style - formality, verbosity, optional checkboxes
+A single window for all prompt configuration using a tabbed interface:
+1. Foundation - view/edit base system prompt
+2. Favorites - star formats for quick buttons
+3. Stacks - create element-based stacks
+4. Style - formality, verbosity, optional checkboxes
 """
 
 from PyQt6.QtWidgets import (
@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QTextEdit, QPushButton, QScrollArea, QFrame, QCheckBox,
     QGroupBox, QRadioButton, QButtonGroup, QComboBox,
     QGridLayout, QSizePolicy, QMessageBox, QLineEdit,
-    QDialog, QDialogButtonBox, QToolButton
+    QDialog, QDialogButtonBox, QToolButton, QTabWidget
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -32,60 +32,6 @@ from .prompt_elements import (
     PromptStack, get_all_stacks, save_custom_stack, delete_stack,
     build_prompt_from_elements
 )
-
-
-class CollapsibleSection(QWidget):
-    """A collapsible section widget with header and content."""
-
-    def __init__(self, title: str, parent=None):
-        super().__init__(parent)
-        self.is_expanded = True
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        # Header button
-        self.header_btn = QPushButton(f"▼ {title}")
-        self.header_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #e9ecef;
-                border: none;
-                border-radius: 4px;
-                padding: 10px 12px;
-                text-align: left;
-                font-weight: bold;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background-color: #dee2e6;
-            }
-        """)
-        self.header_btn.clicked.connect(self._toggle)
-        layout.addWidget(self.header_btn)
-
-        # Content container
-        self.content_widget = QWidget()
-        self.content_layout = QVBoxLayout(self.content_widget)
-        self.content_layout.setContentsMargins(8, 8, 8, 8)
-        layout.addWidget(self.content_widget)
-
-        self._title = title
-
-    def _toggle(self):
-        """Toggle expanded/collapsed state."""
-        self.is_expanded = not self.is_expanded
-        self.content_widget.setVisible(self.is_expanded)
-        arrow = "▼" if self.is_expanded else "▶"
-        self.header_btn.setText(f"{arrow} {self._title}")
-
-    def add_widget(self, widget):
-        """Add a widget to the content area."""
-        self.content_layout.addWidget(widget)
-
-    def add_layout(self, layout):
-        """Add a layout to the content area."""
-        self.content_layout.addLayout(layout)
 
 
 class FormatFavoriteCard(QFrame):
@@ -186,7 +132,7 @@ class PromptEditorWindow(QMainWindow):
         self.config = config
         self.config_dir = config_dir
 
-        self.setWindowTitle("Prompt Editor")
+        self.setWindowTitle("Prompts")
         self.setMinimumSize(700, 800)
         self.resize(750, 900)
 
@@ -198,7 +144,7 @@ class PromptEditorWindow(QMainWindow):
         self._init_ui()
 
     def _init_ui(self):
-        """Initialize the UI."""
+        """Initialize the UI with a tabbed interface."""
         central = QWidget()
         self.setCentralWidget(central)
 
@@ -207,7 +153,7 @@ class PromptEditorWindow(QMainWindow):
         main_layout.setSpacing(12)
 
         # Header
-        header = QLabel("Prompt Editor")
+        header = QLabel("Prompts")
         header.setFont(QFont("Sans", 18, QFont.Weight.Bold))
         main_layout.addWidget(header)
 
@@ -219,30 +165,50 @@ class PromptEditorWindow(QMainWindow):
         desc.setStyleSheet("color: #6c757d; margin-bottom: 8px;")
         main_layout.addWidget(desc)
 
-        # Scrollable content
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # Tabbed interface
+        self.tabs = QTabWidget()
 
-        scroll_content = QWidget()
-        scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setSpacing(16)
+        # Tab 1: Foundation Prompt
+        foundation_tab = QWidget()
+        foundation_layout = QVBoxLayout(foundation_tab)
+        foundation_layout.setContentsMargins(12, 12, 12, 12)
+        self._create_foundation_content(foundation_layout)
+        foundation_layout.addStretch()
+        self.tabs.addTab(foundation_tab, "Foundation")
 
-        # Section 1: Foundation Prompt
-        self._create_foundation_section(scroll_layout)
+        # Tab 2: Format Favorites
+        favorites_tab = QWidget()
+        favorites_scroll = QScrollArea()
+        favorites_scroll.setWidgetResizable(True)
+        favorites_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        favorites_content = QWidget()
+        favorites_layout = QVBoxLayout(favorites_content)
+        favorites_layout.setContentsMargins(12, 12, 12, 12)
+        self._create_favorites_content(favorites_layout)
+        favorites_layout.addStretch()
+        favorites_scroll.setWidget(favorites_content)
+        favorites_tab_layout = QVBoxLayout(favorites_tab)
+        favorites_tab_layout.setContentsMargins(0, 0, 0, 0)
+        favorites_tab_layout.addWidget(favorites_scroll)
+        self.tabs.addTab(favorites_tab, "Favorites")
 
-        # Section 2: Format Favorites
-        self._create_favorites_section(scroll_layout)
+        # Tab 3: Stack Builder
+        stacks_tab = QWidget()
+        stacks_layout = QVBoxLayout(stacks_tab)
+        stacks_layout.setContentsMargins(12, 12, 12, 12)
+        self._create_stack_content(stacks_layout)
+        stacks_layout.addStretch()
+        self.tabs.addTab(stacks_tab, "Stacks")
 
-        # Section 3: Stack Builder
-        self._create_stack_section(scroll_layout)
+        # Tab 4: Tone & Style
+        style_tab = QWidget()
+        style_layout = QVBoxLayout(style_tab)
+        style_layout.setContentsMargins(12, 12, 12, 12)
+        self._create_tone_content(style_layout)
+        style_layout.addStretch()
+        self.tabs.addTab(style_tab, "Style")
 
-        # Section 4: Tone & Style
-        self._create_tone_section(scroll_layout)
-
-        scroll_layout.addStretch()
-        scroll.setWidget(scroll_content)
-        main_layout.addWidget(scroll, stretch=1)
+        main_layout.addWidget(self.tabs, stretch=1)
 
         # Close button
         close_btn = QPushButton("Close")
@@ -263,17 +229,15 @@ class PromptEditorWindow(QMainWindow):
         close_btn.clicked.connect(self.close)
         main_layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
 
-    def _create_foundation_section(self, parent_layout):
-        """Create the Foundation Prompt section."""
-        section = CollapsibleSection("Foundation Prompt")
-
+    def _create_foundation_content(self, parent_layout):
+        """Create the Foundation Prompt content for the tab."""
         desc = QLabel(
             "These rules are always applied to every transcription. "
             "They define the core cleanup behavior."
         )
         desc.setWordWrap(True)
         desc.setStyleSheet("color: #6c757d; font-size: 11px; margin-bottom: 8px;")
-        section.add_widget(desc)
+        parent_layout.addWidget(desc)
 
         # Build foundation prompt text
         foundation_text = self._build_foundation_display()
@@ -281,7 +245,6 @@ class PromptEditorWindow(QMainWindow):
         self.foundation_text = QTextEdit()
         self.foundation_text.setPlainText(foundation_text)
         self.foundation_text.setReadOnly(True)
-        self.foundation_text.setMaximumHeight(200)
         self.foundation_text.setStyleSheet("""
             QTextEdit {
                 background-color: #f8f9fa;
@@ -292,7 +255,7 @@ class PromptEditorWindow(QMainWindow):
                 padding: 8px;
             }
         """)
-        section.add_widget(self.foundation_text)
+        parent_layout.addWidget(self.foundation_text, 1)  # Give it stretch
 
         # Edit/Reset buttons (disabled for now - read-only)
         btn_layout = QHBoxLayout()
@@ -302,9 +265,7 @@ class PromptEditorWindow(QMainWindow):
         info_label.setStyleSheet("color: #6c757d; font-size: 10px; font-style: italic;")
         btn_layout.addWidget(info_label)
 
-        section.add_layout(btn_layout)
-
-        parent_layout.addWidget(section)
+        parent_layout.addLayout(btn_layout)
 
     def _build_foundation_display(self) -> str:
         """Build a formatted display of the foundation prompt."""
@@ -319,17 +280,15 @@ class PromptEditorWindow(QMainWindow):
             lines.append("")
         return "\n".join(lines)
 
-    def _create_favorites_section(self, parent_layout):
-        """Create the Format Favorites section."""
-        section = CollapsibleSection("Format Favorites")
-
+    def _create_favorites_content(self, parent_layout):
+        """Create the Format Favorites content for the tab."""
         desc = QLabel(
             "Star formats to add them to the quick buttons in the main window. "
             "Starred formats appear as buttons for one-click selection."
         )
         desc.setWordWrap(True)
         desc.setStyleSheet("color: #6c757d; font-size: 11px; margin-bottom: 8px;")
-        section.add_widget(desc)
+        parent_layout.addWidget(desc)
 
         # Format cards by category
         for category_key, category_name in FORMAT_CATEGORIES.items():
@@ -343,7 +302,7 @@ class PromptEditorWindow(QMainWindow):
             # Category label
             cat_label = QLabel(category_name)
             cat_label.setStyleSheet("font-weight: bold; font-size: 12px; margin-top: 8px;")
-            section.add_widget(cat_label)
+            parent_layout.addWidget(cat_label)
 
             # Grid of format cards
             grid = QGridLayout()
@@ -359,9 +318,7 @@ class PromptEditorWindow(QMainWindow):
                 col = i % 3
                 grid.addWidget(card, row, col)
 
-            section.add_layout(grid)
-
-        parent_layout.addWidget(section)
+            parent_layout.addLayout(grid)
 
     def _on_favorite_toggled(self, format_key: str, is_favorite: bool):
         """Handle favorite toggle."""
@@ -375,17 +332,15 @@ class PromptEditorWindow(QMainWindow):
         save_config(self.config)
         self.favorites_changed.emit(self.config.favorite_formats)
 
-    def _create_stack_section(self, parent_layout):
-        """Create the Stack Builder section."""
-        section = CollapsibleSection("Stack Builder")
-
+    def _create_stack_content(self, parent_layout):
+        """Create the Stack Builder content for the tab."""
         desc = QLabel(
             "Build custom prompt stacks by combining format, style, and grammar elements. "
             "Save stacks for reuse."
         )
         desc.setWordWrap(True)
         desc.setStyleSheet("color: #6c757d; font-size: 11px; margin-bottom: 8px;")
-        section.add_widget(desc)
+        parent_layout.addWidget(desc)
 
         # Stack selector
         stack_row = QHBoxLayout()
@@ -407,7 +362,7 @@ class PromptEditorWindow(QMainWindow):
         stack_row.addWidget(delete_btn)
 
         stack_row.addStretch()
-        section.add_layout(stack_row)
+        parent_layout.addLayout(stack_row)
 
         # Element checkboxes by category
         elements_container = QWidget()
@@ -427,14 +382,12 @@ class PromptEditorWindow(QMainWindow):
         grammar_group = self._create_element_group("Grammar", GRAMMAR_ELEMENTS)
         elements_layout.addWidget(grammar_group)
 
-        section.add_widget(elements_container)
+        parent_layout.addWidget(elements_container)
 
         # Preview button
         preview_btn = QPushButton("Preview Stack Prompt")
         preview_btn.clicked.connect(self._preview_stack)
-        section.add_widget(preview_btn)
-
-        parent_layout.addWidget(section)
+        parent_layout.addWidget(preview_btn)
 
     def _create_element_group(self, title: str, elements: dict) -> QGroupBox:
         """Create a group box for element checkboxes."""
@@ -600,16 +553,14 @@ class PromptEditorWindow(QMainWindow):
 
         dialog.exec()
 
-    def _create_tone_section(self, parent_layout):
-        """Create the Tone & Style section."""
-        section = CollapsibleSection("Tone & Style")
-
+    def _create_tone_content(self, parent_layout):
+        """Create the Tone & Style content for the tab."""
         desc = QLabel(
             "Configure writing tone, verbosity, and optional enhancements."
         )
         desc.setWordWrap(True)
         desc.setStyleSheet("color: #6c757d; font-size: 11px; margin-bottom: 8px;")
-        section.add_widget(desc)
+        parent_layout.addWidget(desc)
 
         # Formality
         formality_row = QHBoxLayout()
@@ -626,7 +577,7 @@ class PromptEditorWindow(QMainWindow):
         self.formality_group.buttonClicked.connect(self._on_tone_changed)
 
         formality_row.addStretch()
-        section.add_layout(formality_row)
+        parent_layout.addLayout(formality_row)
 
         # Verbosity
         verbosity_row = QHBoxLayout()
@@ -643,11 +594,11 @@ class PromptEditorWindow(QMainWindow):
 
         verbosity_row.addWidget(self.verbosity_combo)
         verbosity_row.addStretch()
-        section.add_layout(verbosity_row)
+        parent_layout.addLayout(verbosity_row)
 
         # Optional enhancements (only the 2 remaining)
         if OPTIONAL_PROMPT_COMPONENTS:
-            section.add_widget(QLabel("Optional Enhancements:"))
+            parent_layout.addWidget(QLabel("Optional Enhancements:"))
 
             self.optional_checkboxes = {}
             for field_name, _, ui_description in OPTIONAL_PROMPT_COMPONENTS:
@@ -657,26 +608,24 @@ class PromptEditorWindow(QMainWindow):
                     lambda state, fn=field_name: self._on_optional_changed(fn, state)
                 )
                 self.optional_checkboxes[field_name] = checkbox
-                section.add_widget(checkbox)
+                parent_layout.addWidget(checkbox)
 
         # Writing sample
-        section.add_widget(QLabel("Writing Sample (optional):"))
+        parent_layout.addWidget(QLabel("Writing Sample (optional):"))
         ws_desc = QLabel(
             "Provide a sample of your writing to guide the AI's output style."
         )
         ws_desc.setStyleSheet("color: #6c757d; font-size: 10px;")
-        section.add_widget(ws_desc)
+        parent_layout.addWidget(ws_desc)
 
         self.writing_sample_edit = QTextEdit()
         self.writing_sample_edit.setPlaceholderText(
             "Paste a sample of your writing here..."
         )
-        self.writing_sample_edit.setMaximumHeight(80)
+        self.writing_sample_edit.setMaximumHeight(120)
         self.writing_sample_edit.setText(self.config.writing_sample)
         self.writing_sample_edit.textChanged.connect(self._on_writing_sample_changed)
-        section.add_widget(self.writing_sample_edit)
-
-        parent_layout.addWidget(section)
+        parent_layout.addWidget(self.writing_sample_edit)
 
     def _on_tone_changed(self):
         """Handle formality or verbosity change."""

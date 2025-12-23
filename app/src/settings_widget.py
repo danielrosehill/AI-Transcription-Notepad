@@ -285,12 +285,34 @@ class BehaviorWidget(QWidget):
         auto_paste_layout.addWidget(auto_paste_help)
         form.addRow("Auto-paste after copy:", auto_paste_layout)
 
+        # Append position (where to insert text in append mode)
+        append_pos_layout = QVBoxLayout()
+        self.append_position = QComboBox()
+        self.append_position.addItem("End of document", "end")
+        self.append_position.addItem("At cursor position", "cursor")
+        # Set current value
+        idx = self.append_position.findData(self.config.append_position)
+        if idx >= 0:
+            self.append_position.setCurrentIndex(idx)
+        self.append_position.currentIndexChanged.connect(self._on_append_position_changed)
+        append_pos_layout.addWidget(self.append_position)
+        append_pos_help = QLabel("Where to insert text when using append mode (F16/F19 workflow).")
+        append_pos_help.setStyleSheet("color: #666; font-size: 10px;")
+        append_pos_layout.addWidget(append_pos_help)
+        form.addRow("Append position:", append_pos_layout)
+
         layout.addLayout(form)
         layout.addStretch()
 
     def _save_bool(self, key: str, value: bool):
         """Save boolean config value."""
         setattr(self.config, key, value)
+        save_config(self.config)
+
+    def _on_append_position_changed(self, index: int):
+        """Save append position setting."""
+        value = self.append_position.itemData(index)
+        self.config.append_position = value
         save_config(self.config)
 
 

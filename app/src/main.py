@@ -384,6 +384,10 @@ class MainWindow(QMainWindow):
         header = QHBoxLayout()
         header.addStretch()
 
+        prompts_btn = QPushButton("Prompts")
+        prompts_btn.clicked.connect(self._open_prompt_editor)
+        header.addWidget(prompts_btn)
+
         analytics_btn = QPushButton("Analytics")
         analytics_btn.clicked.connect(self.show_analytics)
         header.addWidget(analytics_btn)
@@ -599,38 +603,6 @@ class MainWindow(QMainWindow):
         layout.setSpacing(12)
         layout.setContentsMargins(8, 12, 8, 8)
 
-        # Prompt Editor button (opens unified prompt configuration window)
-        prompt_config_layout = QHBoxLayout()
-
-        prompt_editor_btn = QPushButton("⚙ Prompt Editor...")
-        prompt_editor_btn.setMinimumHeight(34)
-        prompt_editor_btn.setToolTip(
-            "Open the unified Prompt Editor to configure:\n"
-            "• Foundation prompt settings\n"
-            "• Format favorites (quick buttons)\n"
-            "• Prompt stacks\n"
-            "• Tone and style options"
-        )
-        prompt_editor_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f8f9fa;
-                color: #495057;
-                border: 1px solid #ced4da;
-                border-radius: 4px;
-                font-size: 12px;
-                padding: 6px 16px;
-            }
-            QPushButton:hover {
-                background-color: #e9ecef;
-                border-color: #adb5bd;
-            }
-        """)
-        prompt_editor_btn.clicked.connect(self._open_prompt_editor)
-        prompt_config_layout.addWidget(prompt_editor_btn)
-
-        prompt_config_layout.addStretch()
-        layout.addLayout(prompt_config_layout)
-
         # Quick format selector with help text
         format_section_layout = QVBoxLayout()
         format_section_layout.setSpacing(8)
@@ -638,8 +610,8 @@ class MainWindow(QMainWindow):
         # Help text explaining the format system
         format_help = QLabel(
             "<b>Quick Formats:</b> Pre-configured output styles for common use cases. "
-            "These formats work with the system prompt (configured above) to shape your transcription. "
-            "For more formats, click 'Manage Formats' or use 'Prompt Stacks' for advanced combinations."
+            "These formats work with the system prompt to shape your transcription. "
+            "For more formats, click 'Manage Prompts' or use 'Prompt Stacks' for advanced combinations."
         )
         format_help.setWordWrap(True)
         format_help.setStyleSheet("color: #666; font-size: 11px; padding: 4px 0; margin-bottom: 4px;")
@@ -1555,16 +1527,21 @@ class MainWindow(QMainWindow):
     def on_transcription_complete(self, result: TranscriptionResult):
         """Handle completed transcription."""
         if self.append_mode:
-            # Append to existing text - always at the end
             existing_text = self.text_output.toPlainText()
             if existing_text:
-                # Add a newline separator if there's existing content
-                combined_text = existing_text + "\n\n" + result.text
-                self.text_output.setMarkdown(combined_text)
-                # Move cursor to end of document after appending
-                cursor = self.text_output.source_view.textCursor()
-                cursor.movePosition(cursor.MoveOperation.End)
-                self.text_output.source_view.setTextCursor(cursor)
+                if self.config.append_position == "cursor":
+                    # Insert at cursor position
+                    cursor = self.text_output.source_view.textCursor()
+                    cursor.insertText("\n\n" + result.text)
+                    self.text_output.source_view.setTextCursor(cursor)
+                else:
+                    # Append at end (default)
+                    combined_text = existing_text + "\n\n" + result.text
+                    self.text_output.setMarkdown(combined_text)
+                    # Move cursor to end of document after appending
+                    cursor = self.text_output.source_view.textCursor()
+                    cursor.movePosition(cursor.MoveOperation.End)
+                    self.text_output.source_view.setTextCursor(cursor)
             else:
                 self.text_output.setMarkdown(result.text)
             # Reset append mode

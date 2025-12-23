@@ -1,7 +1,7 @@
 """Favorites Bar Widget
 
 A dynamic button bar for quick access to favorite prompt configurations.
-Uses a two-column layout with categories distributed for better space utilization.
+Uses a linear row layout with favorites grouped by favorite_order.
 """
 
 from PyQt6.QtWidgets import (
@@ -21,34 +21,21 @@ except ImportError:
     from prompt_library import PromptLibrary, PromptConfig, PromptConfigCategory, PROMPT_CONFIG_CATEGORY_NAMES
 
 
-# Define the order in which category rows should appear
-# Split into left and right columns for two-column layout
-LEFT_COLUMN_CATEGORIES = [
-    PromptConfigCategory.FOUNDATIONAL,
-    PromptConfigCategory.STYLISTIC,
-    PromptConfigCategory.PROMPTS,
-    PromptConfigCategory.TODO_LISTS,
-    PromptConfigCategory.CUSTOM,
-]
-
-RIGHT_COLUMN_CATEGORIES = [
-    PromptConfigCategory.BLOG,
-    PromptConfigCategory.DOCUMENTATION,
-    PromptConfigCategory.WORK,
-    PromptConfigCategory.CREATIVE,
-]
-
-# Full order for backwards compatibility
-CATEGORY_ROW_ORDER = LEFT_COLUMN_CATEGORIES + RIGHT_COLUMN_CATEGORIES
+# Row boundaries based on favorite_order:
+# Row 1 (0-9): General, Verbatim
+# Row 2 (10-19): Blog Post, Email, Meeting Notes, Documentation
+# Row 3 (20-29): AI Prompt, Dev Prompt, System Prompt
+# Row 4 (30-39): Note to Self, To-Do List, Shopping List
+# Row 5 (40-49): Status Update, Social Post
+ROW_BOUNDARIES = [10, 20, 30, 40, 50]  # Cutoff points for each row
 
 
 class FavoritesBar(QWidget):
     """Dynamic button bar for favorite prompt configurations.
 
     Features:
-    - Two-column layout for efficient space usage
-    - Displays favorites grouped by category
-    - Category labels at the start of each row
+    - Linear row layout with favorites grouped by favorite_order
+    - Row boundaries: 0-9 (Row 1), 10-19 (Row 2), 20-29 (Row 3), etc.
     - Supports up to 30 buttons total
     - Mutual exclusivity (only one selected at a time)
     - Automatic refresh when favorites change
@@ -60,10 +47,7 @@ class FavoritesBar(QWidget):
     # Emitted when "Manage" button is clicked
     manage_clicked = pyqtSignal()
 
-    # Maximum buttons per category row (reduced for two-column layout)
-    BUTTONS_PER_ROW = 4
-
-    # Maximum total favorites (increased for more quick access options)
+    # Maximum total favorites
     MAX_FAVORITES = 30
 
     def __init__(self, config_dir: Path, parent=None):
@@ -86,30 +70,14 @@ class FavoritesBar(QWidget):
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(6)
 
-        # Two-column container for category rows
-        self.columns_container = QWidget()
-        self.columns_layout = QHBoxLayout(self.columns_container)
-        self.columns_layout.setContentsMargins(0, 0, 0, 0)
-        self.columns_layout.setSpacing(16)  # Gap between columns
+        # Container for rows of buttons
+        self.rows_container = QWidget()
+        self.rows_layout = QVBoxLayout(self.rows_container)
+        self.rows_layout.setContentsMargins(0, 0, 0, 0)
+        self.rows_layout.setSpacing(4)
+        self.rows_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        # Left column
-        self.left_column = QWidget()
-        self.left_layout = QVBoxLayout(self.left_column)
-        self.left_layout.setContentsMargins(0, 0, 0, 0)
-        self.left_layout.setSpacing(4)
-        self.left_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        # Right column
-        self.right_column = QWidget()
-        self.right_layout = QVBoxLayout(self.right_column)
-        self.right_layout.setContentsMargins(0, 0, 0, 0)
-        self.right_layout.setSpacing(4)
-        self.right_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        self.columns_layout.addWidget(self.left_column, 1)
-        self.columns_layout.addWidget(self.right_column, 1)
-
-        self.main_layout.addWidget(self.columns_container)
+        self.main_layout.addWidget(self.rows_container)
 
         # Bottom row with Manage button
         bottom_row = QHBoxLayout()
@@ -137,10 +105,10 @@ class FavoritesBar(QWidget):
         bottom_row.addStretch()
         self.main_layout.addLayout(bottom_row)
 
-    def _clear_column(self, layout: QVBoxLayout):
-        """Clear all items from a column layout."""
-        while layout.count():
-            item = layout.takeAt(0)
+    def _clear_rows(self):
+        """Clear all items from the rows layout."""
+        while self.rows_layout.count():
+            item = self.rows_layout.takeAt(0)
             if item.layout():
                 while item.layout().count():
                     child = item.layout().takeAt(0)
@@ -150,8 +118,15 @@ class FavoritesBar(QWidget):
             elif item.widget():
                 item.widget().deleteLater()
 
+    def _get_row_for_order(self, order: int) -> int:
+        """Get the row number for a given favorite_order."""
+        for i, boundary in enumerate(ROW_BOUNDARIES):
+            if order < boundary:
+                return i
+        return len(ROW_BOUNDARIES)  # Last row for anything beyond boundaries
+
     def refresh(self):
-        """Refresh the button bar from the library, grouped by category."""
+        """Refresh the button bar from the library, grouped by favorite_order rows."""
         # Clear existing buttons
         for btn in self.buttons.values():
             self.button_group.removeButton(btn)
@@ -159,76 +134,43 @@ class FavoritesBar(QWidget):
         self.buttons.clear()
 
         # Clear existing layouts
-        self._clear_column(self.left_layout)
-        self._clear_column(self.right_layout)
+        self._clear_rows()
 
         # Get favorites
         favorites = self.library.get_favorites()[:self.MAX_FAVORITES]
 
         if not favorites:
-            # Show placeholder in left column
+            # Show placeholder
             placeholder = QLabel("No favorites. Click 'Manage Prompts' to add some.")
             placeholder.setStyleSheet("color: #6c757d; font-style: italic;")
-            self.left_layout.addWidget(placeholder)
+            self.rows_layout.addWidget(placeholder)
             return
 
-        # Group favorites by category
-        by_category: dict[str, List[PromptConfig]] = OrderedDict()
-        for cat in CATEGORY_ROW_ORDER:
-            by_category[cat.value] = []
-
+        # Group favorites by row based on favorite_order
+        rows: dict[int, List[PromptConfig]] = {}
         for prompt in favorites:
-            category = prompt.category
-            if category in by_category:
-                by_category[category].append(prompt)
-            else:
-                # Unknown category - add to custom
-                by_category[PromptConfigCategory.CUSTOM.value].append(prompt)
+            row_num = self._get_row_for_order(prompt.favorite_order)
+            if row_num not in rows:
+                rows[row_num] = []
+            rows[row_num].append(prompt)
 
-        # Helper to create a category row
-        def create_category_row(category_value: str, prompts: List[PromptConfig]) -> QHBoxLayout:
-            row = QHBoxLayout()
-            row.setSpacing(6)
-
-            # Category label (compact)
-            category_name = PROMPT_CONFIG_CATEGORY_NAMES.get(
-                PromptConfigCategory(category_value),
-                category_value.replace("_", " ").title()
-            )
-            label = QLabel(f"{category_name}:")
-            label.setStyleSheet("font-weight: bold; color: #495057; font-size: 10px;")
-            label.setFixedWidth(70)
-            label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            row.addWidget(label)
-
-            # Sort and add buttons
+        # Create rows in order
+        for row_num in sorted(rows.keys()):
+            prompts = rows[row_num]
+            # Sort prompts within the row by favorite_order
             prompts.sort(key=lambda p: p.favorite_order)
-            for prompt in prompts[:self.BUTTONS_PER_ROW]:
+
+            row_layout = QHBoxLayout()
+            row_layout.setSpacing(6)
+
+            for prompt in prompts:
                 btn = self._create_button(prompt)
                 self.buttons[prompt.id] = btn
                 self.button_group.addButton(btn)
-                row.addWidget(btn)
+                row_layout.addWidget(btn)
 
-            row.addStretch()
-            return row
-
-        # Build left column
-        for cat in LEFT_COLUMN_CATEGORIES:
-            prompts = by_category.get(cat.value, [])
-            if prompts:
-                row = create_category_row(cat.value, prompts)
-                self.left_layout.addLayout(row)
-
-        self.left_layout.addStretch()
-
-        # Build right column
-        for cat in RIGHT_COLUMN_CATEGORIES:
-            prompts = by_category.get(cat.value, [])
-            if prompts:
-                row = create_category_row(cat.value, prompts)
-                self.right_layout.addLayout(row)
-
-        self.right_layout.addStretch()
+            row_layout.addStretch()
+            self.rows_layout.addLayout(row_layout)
 
         # Restore selection
         if self._current_prompt_id and self._current_prompt_id in self.buttons:

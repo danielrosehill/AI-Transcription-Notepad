@@ -417,6 +417,7 @@ class PromptConfig:
 DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
     # ==========================================================================
     # FOUNDATIONAL - Core transcription modes (Row 1 in favorites bar)
+    # Row 1: General, Verbatim (most specific modes)
     # ==========================================================================
     PromptConfig(
         id="general",
@@ -445,8 +446,8 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         description="Maximum conciseness - as brief as possible",
         instruction="Be as brief as possible. Condense the content to its essential core message with maximum conciseness.",
         adherence="Ruthlessly cut unnecessary words, qualifiers, and redundant phrases. Prefer short sentences. Eliminate preamble and filler. Every word must earn its place. Aim for the minimum viable length while preserving meaning.",
-        is_favorite=True,
-        favorite_order=2,
+        is_favorite=False,  # Not in favorites bar
+        favorite_order=999,
     ),
     PromptConfig(
         id="quick_note",
@@ -456,9 +457,20 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         instruction="Format as a quick personal note. Minimal formatting, just capture the thought clearly.",
         adherence="Keep it informal and quick. No headers, no elaborate structure. Just the thought, clearly expressed. Suitable for jotting down ideas or reminders.",
     ),
+    PromptConfig(
+        id="note_to_self",
+        name="Note to Self",
+        category=PromptConfigCategory.FOUNDATIONAL,
+        description="Lightweight note for future reference",
+        instruction="Format as a note-to-self for future reference. Focus on capturing the key detail or reminder clearly and concisely.",
+        adherence="Keep it brief and focused. This is something you're noting down for your future self - could be a reminder, a detail to remember, a thought to revisit, or a quick reference. No elaborate formatting needed. Just the essential information, clearly stated.",
+        is_favorite=True,  # Row 4: Note to Self, To-Do List, Shopping List
+        favorite_order=30,
+    ),
 
     # ==========================================================================
-    # STYLISTIC - Writing styles and formats (Row 2 in favorites bar)
+    # STYLISTIC - Writing styles and formats
+    # Row 2: Blog Post, Email, Meeting Notes, Documentation
     # ==========================================================================
     PromptConfig(
         id="email",
@@ -468,7 +480,7 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         instruction="Format the output as an email with an appropriate greeting and sign-off.",
         adherence="Follow standard email formatting conventions. Include a clear subject line suggestion if the content is substantial. Use proper email etiquette.",
         is_favorite=True,
-        favorite_order=10,
+        favorite_order=11,  # Row 2 position 2
     ),
     PromptConfig(
         id="meeting_notes",
@@ -478,7 +490,7 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         instruction="Format as meeting notes with clear sections, bullet points for key points, and a separate 'Action Items' section at the end.",
         adherence="Include: meeting date/time if mentioned, attendees if mentioned, discussion points as bullets, decisions made, and action items with assignees if specified.",
         is_favorite=True,
-        favorite_order=11,
+        favorite_order=12,  # Row 2 position 3
     ),
     PromptConfig(
         id="bullet_points",
@@ -487,8 +499,8 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         description="Simple bullet point list",
         instruction="Format as concise bullet points. One idea per bullet.",
         adherence="Each bullet must be self-contained and parallel in structure. Use consistent formatting throughout.",
-        is_favorite=True,
-        favorite_order=12,
+        is_favorite=False,  # Not in favorites bar
+        favorite_order=999,
     ),
     PromptConfig(
         id="persuasive",
@@ -508,7 +520,8 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
     ),
 
     # ==========================================================================
-    # PROMPTS - AI prompt formats (Row 3 in favorites bar)
+    # PROMPTS - AI prompt formats
+    # Row 3: AI Prompt, Dev Prompt, System Prompt
     # ==========================================================================
     PromptConfig(
         id="ai_prompt",
@@ -518,7 +531,7 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         instruction="Format the output as clear, well-organized instructions for an AI assistant. Use imperative voice, organize tasks logically, and ensure instructions are unambiguous and actionable.",
         adherence="Strictly follow AI prompt engineering best practices: be specific, use clear command language, break complex tasks into numbered steps, and include context where needed.",
         is_favorite=True,
-        favorite_order=20,
+        favorite_order=20,  # Row 3 position 1
     ),
     PromptConfig(
         id="dev_prompt",
@@ -528,7 +541,7 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         instruction="Format the output as a development prompt for a software development AI assistant. Include technical requirements, implementation details, and expected outcomes. Use imperative voice and be explicit about technical constraints.",
         adherence="Follow software development prompt conventions: specify programming languages, frameworks, file paths if mentioned, testing requirements, and code quality expectations.",
         is_favorite=True,
-        favorite_order=21,
+        favorite_order=21,  # Row 3 position 2
     ),
     PromptConfig(
         id="system_prompt",
@@ -538,21 +551,22 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         instruction="Format as a system prompt for an AI assistant. Write in second-person, addressing the AI directly. Define its role, capabilities, constraints, and behavioral guidelines using 'You are...' and 'You should...' statements.",
         adherence="Always use second-person perspective addressing the AI directly (e.g., 'You are a helpful assistant', 'You should respond concisely'). Never use third-person ('The assistant should...'). Define role clearly upfront. Specify constraints and boundaries. Include behavioral guidelines. Be comprehensive but concise.",
         is_favorite=True,
-        favorite_order=22,
+        favorite_order=22,  # Row 3 position 3
     ),
 
     # ==========================================================================
-    # TODO_LISTS - List formats (Row 4 in favorites bar)
+    # TODO_LISTS - List formats
+    # Row 4: Note to Self, To-Do List, Shopping List
     # ==========================================================================
     PromptConfig(
         id="todo",
-        name="To-Do",
+        name="To-Do List",
         category=PromptConfigCategory.TODO_LISTS,
         description="Checkbox to-do list format",
         instruction="Format as a to-do list with checkbox items (- [ ] task). Use action verbs and be concise.",
         adherence="Each item must start with an action verb. Keep items specific and actionable. Group related items under headers if there are distinct categories.",
         is_favorite=True,
-        favorite_order=30,
+        favorite_order=31,  # Row 4 position 2 (after Note to Self)
     ),
     PromptConfig(
         id="shopping_list",
@@ -562,11 +576,12 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         instruction="Format as a shopping list. Group items by category (produce, dairy, meat, pantry, household, etc.) if there are multiple items.",
         adherence="Always organize by store section categories. Use consistent item naming (e.g., quantities if mentioned).",
         is_favorite=True,
-        favorite_order=31,
+        favorite_order=32,  # Row 4 position 3
     ),
 
     # ==========================================================================
-    # BLOG - Blog/content creation formats (Row 5 in favorites bar)
+    # BLOG - Blog/content creation formats
+    # Row 2: Blog Post is position 1
     # ==========================================================================
     PromptConfig(
         id="blog",
@@ -576,7 +591,7 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         instruction="Format as a blog post with a compelling title, engaging introduction, well-organized body sections, and a conclusion.",
         adherence="Structure for readability. Use subheadings to break up content. Maintain a conversational yet informative tone. Note where examples or images might enhance the content.",
         is_favorite=True,
-        favorite_order=40,
+        favorite_order=10,  # Row 2 position 1
     ),
     PromptConfig(
         id="blog_outline",
@@ -589,6 +604,7 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
 
     # ==========================================================================
     # DOCUMENTATION - Technical and reference documentation
+    # Row 2: Documentation is position 4
     # ==========================================================================
     PromptConfig(
         id="documentation",
@@ -598,7 +614,7 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         instruction="Format as structured documentation with clear headings, organized sections, and logical flow.",
         adherence="Use markdown formatting. Structure content hierarchically. Be clear and precise. Include examples where helpful.",
         is_favorite=True,
-        favorite_order=50,
+        favorite_order=13,  # Row 2 position 4
     ),
     PromptConfig(
         id="tech_docs",
@@ -644,7 +660,7 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         instruction="Format as a concise status update with what was completed, what's in progress, and any blockers.",
         adherence="Keep it brief and scannable. Use bullet points. Focus on facts rather than details.",
         is_favorite=True,
-        favorite_order=61,
+        favorite_order=40,  # Row 5 position 1
     ),
     PromptConfig(
         id="software_spec",
@@ -662,21 +678,11 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         id="social_post",
         name="Social Post",
         category=PromptConfigCategory.CREATIVE,
-        description="Social media post format",
-        instruction="Format as a social media post. Keep it engaging, concise, and appropriate for platforms like Twitter/X or LinkedIn.",
-        adherence="Optimize for engagement. Use appropriate hashtags if relevant. Keep within typical character limits.",
+        description="Social media & community posts (Twitter, Reddit, Discord, etc.)",
+        instruction="Format as a social media or community post. Works for Twitter/X, LinkedIn, Reddit, Discord, forums, and other social platforms. Keep it engaging, use line breaks for readability, and maintain a conversational tone appropriate for the platform.",
+        adherence="Respect platform character limits if specified. Use short paragraphs (2-3 sentences max) for readability. Be genuine and conversational. For community posts (Reddit, forums), include context and a clear question if asking for help. Use hashtags or emoji strategically when appropriate.",
         is_favorite=True,
-        favorite_order=70,
-    ),
-    PromptConfig(
-        id="community_post",
-        name="Community Post",
-        category=PromptConfigCategory.CREATIVE,
-        description="Community/forum post (Reddit, Discord, etc.)",
-        instruction="Format as an online community post (Reddit, forums, Discord, etc.). Start with a brief friendly intro or context, use short paragraphs for readability, and maintain an approachable conversational tone.",
-        adherence="Start with context or a brief 'Hi' intro if appropriate. Use short paragraphs (2-3 sentences max). Add line breaks between paragraphs for readability. Be genuine and conversational. Include a clear question or discussion point if asking for help. End with thanks if requesting assistance.",
-        is_favorite=True,
-        favorite_order=71,
+        favorite_order=41,  # Row 5 position 2
     ),
     PromptConfig(
         id="story_notes",
