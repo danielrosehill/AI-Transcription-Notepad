@@ -51,7 +51,7 @@ from PyQt6.QtWidgets import QCompleter
 from .config import (
     Config, load_config, save_config, load_env_keys, CONFIG_DIR,
     GEMINI_MODELS, OPENROUTER_MODELS,
-    MODEL_TIERS, build_cleanup_prompt,
+    MODEL_TIERS, build_cleanup_prompt, get_model_display_name,
     FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES, FORMALITY_DISPLAY_NAMES, VERBOSITY_DISPLAY_NAMES, EMAIL_SIGNOFFS,
 )
 from .audio_recorder import AudioRecorder
@@ -798,7 +798,7 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(bottom)
 
-        # Bottom status bar: microphone (left), cost (center), beep toggle (right)
+        # Bottom status bar: microphone (left), model (right)
         status_bar = QHBoxLayout()
 
         # Microphone info (left)
@@ -806,27 +806,18 @@ class MainWindow(QMainWindow):
         self.mic_label.setStyleSheet("color: #888; font-size: 11px;")
         status_bar.addWidget(self.mic_label)
 
-        # Model info (left-center)
+        status_bar.addStretch()
+
+        # Model info (right)
         self.model_label = QLabel()
         self.model_label.setStyleSheet("color: #888; font-size: 11px;")
         status_bar.addWidget(self.model_label)
 
-        status_bar.addStretch()
-
-        # Cost info (center)
-        self.cost_label = QLabel("")
-        self.cost_label.setTextFormat(Qt.TextFormat.RichText)
-        self.cost_label.setStyleSheet("color: #888; font-size: 11px;")
-        self.cost_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        status_bar.addWidget(self.cost_label)
-
-        status_bar.addStretch()
         layout.addLayout(status_bar)
 
-        # Initialize mic, model, and cost displays
+        # Initialize mic and model displays
         self._update_mic_display()
         self._update_model_display()
-        self._update_cost_display()
 
         self.tabs.addTab(record_tab, "🎙️ Record")
 
@@ -1689,66 +1680,12 @@ class MainWindow(QMainWindow):
         self._set_tray_state('idle')
 
     def _update_cost_display(self):
-        """Update the cost display label with today's spend and trigger async balance fetch."""
-        db = get_db()
-        today = db.get_cost_today()
-        today_cost = today['total_cost']
-        count = today['count']
-
-        # Store for balance callback
-        self._today_cost = today_cost
-        self._today_count = count
-
-        # Build today's cost text immediately (no blocking)
-        today_text = ""
-        if count > 0:
-            today_text = f"Today: ${today_cost:.2f}"
-
-        # Show today's cost immediately
-        self.cost_label.setText(today_text)
-        self.cost_label.setToolTip(f"Spent today: ${today_cost:.2f}\nTranscriptions: {count}" if count > 0 else "")
-
-        # Trigger async balance fetch for OpenRouter (non-blocking)
-        if self.config.openrouter_api_key and self.config.selected_provider == "openrouter":
-            try:
-                from .openrouter_api import get_openrouter_api
-                api = get_openrouter_api(self.config.openrouter_api_key)
-                # Async fetch - callback will update display when ready
-                api.get_credits_async(lambda credits: self.balance_updated.emit(credits))
-            except Exception:
-                pass
+        """No-op: Cost display removed from status bar."""
+        pass
 
     def _on_balance_received(self, credits):
-        """Handle balance update from async fetch (called on main thread via signal)."""
-        if credits is None:
-            return
-
-        # Rebuild display with balance info
-        today_text = ""
-        tooltip_parts = []
-
-        if hasattr(self, '_today_count') and self._today_count > 0:
-            today_text = f"Today: ${self._today_cost:.2f}"
-            tooltip_parts.append(f"Spent today: ${self._today_cost:.2f}")
-            tooltip_parts.append(f"Transcriptions: {self._today_count}")
-
-        balance = credits.balance
-        # Format balance: cents if < $1, dollars if >= $1
-        if balance < 1.0:
-            cents = int(round(balance * 100))
-            balance_display = f"({cents} cents)"
-        else:
-            balance_display = f"(${balance:.1f})"
-        # Style with distinctive background
-        balance_text = f'<span style="background-color: rgba(100, 149, 237, 0.3); padding: 1px 4px; border-radius: 3px;">{balance_display}</span>'
-        tooltip_parts.append(f"\nOpenRouter Balance: ${balance:.2f}")
-        tooltip_parts.append(f"Credits: ${credits.total_credits:.2f}")
-        tooltip_parts.append(f"Usage: ${credits.total_usage:.2f}")
-
-        # Update display
-        parts = [p for p in [today_text, balance_text] if p]
-        self.cost_label.setText("  ".join(parts))
-        self.cost_label.setToolTip("\n".join(tooltip_parts))
+        """No-op: Cost display removed from status bar."""
+        pass
 
     def _update_mic_display(self):
         """Update the microphone display label."""
@@ -1836,14 +1773,12 @@ class MainWindow(QMainWindow):
     def _update_model_display(self):
         """Update the model display label."""
         provider, model = self._get_current_model()
-        # Show just the model name (strip provider prefix if present)
-        display_name = model
-        if "/" in display_name:
-            display_name = display_name.split("/")[-1]
+        # Get human-readable display name from config
+        display_name = get_model_display_name(model, provider)
         # Truncate if too long
-        if len(display_name) > 25:
-            display_name = display_name[:22] + "..."
-        self.model_label.setText(f"Model: {display_name}")
+        if len(display_name) > 30:
+            display_name = display_name[:27] + "..."
+        self.model_label.setText(display_name)
         self.model_label.setToolTip(f"Provider: {provider}\nModel: {model}\nChange in Settings → Model")
 
     def _get_current_model(self) -> tuple[str, str]:

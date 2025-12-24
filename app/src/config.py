@@ -45,6 +45,27 @@ MODEL_TIERS = {
 }
 
 
+def get_model_display_name(model_id: str, provider: str = "gemini") -> str:
+    """Get the human-readable display name for a model ID.
+
+    Args:
+        model_id: The model identifier (e.g., "gemini-flash-latest", "google/gemini-2.5-flash")
+        provider: The provider name ("gemini" or "openrouter")
+
+    Returns:
+        Human-readable display name (e.g., "Gemini Flash (Latest) ⭐")
+    """
+    # Build lookup dictionary from model lists
+    model_lookup = {}
+    for model_id_key, display_name in GEMINI_MODELS:
+        model_lookup[model_id_key] = display_name
+    for model_id_key, display_name in OPENROUTER_MODELS:
+        model_lookup[model_id_key] = display_name
+
+    # Return display name if found, otherwise return the model_id as-is
+    return model_lookup.get(model_id, model_id)
+
+
 @dataclass
 class Config:
     """Application configuration."""

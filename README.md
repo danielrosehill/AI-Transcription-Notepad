@@ -1,4 +1,4 @@
-# Voice Notepad - AI Multimodal Based Text Transcription/Dictation App (API / Cloud Inference)
+# AI Transcription Notepad - Multimodal Cloud API Text Transcription/Dictation App  
 
 ![alt text](screenshots/v_18_1/1.png)
 
