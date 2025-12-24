@@ -875,14 +875,14 @@ class MainWindow(QMainWindow):
 
         self.tabs.addTab(record_tab, "🎙️ Record")
 
-        # File Transcription tab (right after Record)
-        self.file_transcription_widget = FileTranscriptionWidget(config=self.config)
-        self.tabs.addTab(self.file_transcription_widget, "📁 File")
-
-        # History tab
+        # History tab (second tab for quick access)
         self.history_widget = HistoryWidget(config=self.config)
         self.history_widget.transcription_selected.connect(self.on_history_transcription_selected)
         self.tabs.addTab(self.history_widget, "📝 History")
+
+        # File Transcription tab
+        self.file_transcription_widget = FileTranscriptionWidget(config=self.config)
+        self.tabs.addTab(self.file_transcription_widget, "📁 File")
 
         # Prompt Editor window (opened via button, not a tab)
         self.prompt_editor_window = None
@@ -1001,6 +1001,10 @@ class MainWindow(QMainWindow):
         # Ctrl+N to clear
         clear_shortcut = QShortcut(QKeySequence("Ctrl+N"), self)
         clear_shortcut.activated.connect(self.clear_transcription)
+
+        # Ctrl+H to jump to History tab
+        history_shortcut = QShortcut(QKeySequence("Ctrl+H"), self)
+        history_shortcut.activated.connect(self.jump_to_history_tab)
 
         # Set up configurable in-focus hotkeys (F15, F16, etc.)
         self._setup_configurable_shortcuts()
@@ -1197,10 +1201,14 @@ class MainWindow(QMainWindow):
 
     def on_tab_changed(self, index: int):
         """Handle tab change - refresh data in the selected tab."""
-        # Tabs: 0=Record, 1=File, 2=History, 3=Prompt
-        if index == 2:  # History tab
+        # Tabs: 0=Record, 1=History, 2=File
+        if index == 1:  # History tab
             self.history_widget.refresh()
-        # Record (0), File (1), Prompt (3) don't need refresh
+        # Record (0), File (2) don't need refresh
+
+    def jump_to_history_tab(self):
+        """Jump to the History tab (Ctrl+H shortcut)."""
+        self.tabs.setCurrentIndex(1)  # History is at index 1
 
     def on_history_transcription_selected(self, text: str):
         """Handle transcription selected from history - put in editor."""

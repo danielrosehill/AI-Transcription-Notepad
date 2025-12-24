@@ -48,7 +48,6 @@ def format_relative_time(timestamp_str: str) -> str:
 class TranscriptItem(QFrame):
     """A single transcript item in the history list."""
 
-    copy_clicked = pyqtSignal(str)  # Emits the full transcript text
     item_clicked = pyqtSignal(object)  # Emits the TranscriptionRecord
 
     def __init__(self, record: TranscriptionRecord, parent=None):
@@ -76,7 +75,7 @@ class TranscriptItem(QFrame):
         layout.setSpacing(6)
         layout.setContentsMargins(10, 8, 10, 8)
 
-        # Header row: relative timestamp and copy button
+        # Header row: relative timestamp
         header = QHBoxLayout()
 
         time_str = format_relative_time(self.record.timestamp)
@@ -85,27 +84,6 @@ class TranscriptItem(QFrame):
         header.addWidget(time_label)
 
         header.addStretch()
-
-        copy_btn = QPushButton("Copy")
-        copy_btn.setFixedSize(60, 26)
-        copy_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #007bff;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #0056b3;
-            }
-            QPushButton:pressed {
-                background-color: #004094;
-            }
-        """)
-        copy_btn.clicked.connect(self._on_copy_clicked)
-        header.addWidget(copy_btn)
 
         layout.addLayout(header)
 
@@ -118,9 +96,6 @@ class TranscriptItem(QFrame):
         preview.setWordWrap(True)
         preview.setStyleSheet("color: #333; font-size: 12px;")
         layout.addWidget(preview)
-
-    def _on_copy_clicked(self):
-        self.copy_clicked.emit(self.record.transcript_text)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -377,7 +352,6 @@ class HistoryWidget(QWidget):
         # Add new items
         for record in records:
             item = TranscriptItem(record)
-            item.copy_clicked.connect(self._on_item_copy)
             item.item_clicked.connect(self._on_item_selected)
             self.list_layout.insertWidget(self.list_layout.count() - 1, item)
 
@@ -417,10 +391,13 @@ class HistoryWidget(QWidget):
         self.current_offset += self.page_size
         self.refresh()
 
-    def _on_item_copy(self, text: str):
-        """Copy transcript to clipboard."""
+    def _on_item_selected(self, record: TranscriptionRecord):
+        """Show selected transcript in preview and copy to clipboard."""
+        self.selected_record = record
+
+        # Copy to clipboard immediately
         clipboard = QApplication.clipboard()
-        clipboard.setText(text)
+        clipboard.setText(record.transcript_text)
 
         # Play clipboard beep
         if self.config:
@@ -428,18 +405,12 @@ class HistoryWidget(QWidget):
             feedback.enabled = self.config.beep_on_clipboard
             feedback.play_clipboard_beep()
 
-        self.status_label.setText("Copied to clipboard!")
-
-    def _on_item_selected(self, record: TranscriptionRecord):
-        """Show selected transcript in preview."""
-        self.selected_record = record
-
         # Update preview
         self.preview_text.setPlainText(record.transcript_text)
 
         # Update preview info with relative time
         time_str = format_relative_time(record.timestamp)
-        self.preview_info.setText(f"{time_str} • {record.word_count} words")
+        self.preview_info.setText(f"{time_str} • {record.word_count} words • Copied!")
 
         # Enable action buttons
         self.copy_full_btn.setEnabled(True)
