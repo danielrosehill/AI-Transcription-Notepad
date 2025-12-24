@@ -78,7 +78,7 @@ from .audio_feedback import get_feedback
 from .file_transcription_widget import FileTranscriptionWidget
 from .mic_naming_ai import MicrophoneNamingAI
 from .prompt_library import PromptLibrary, build_prompt_from_config
-from .favorites_bar import FavoritesBar
+from .stack_builder import StackBuilderWidget
 from .prompt_editor_window import PromptEditorWindow
 from .rewrite_dialog import RewriteDialog
 
@@ -669,32 +669,75 @@ class MainWindow(QMainWindow):
         layout.setSpacing(12)
         layout.setContentsMargins(8, 12, 8, 8)
 
-        # Quick format selector with help text
-        format_section_layout = QVBoxLayout()
-        format_section_layout.setSpacing(8)
+        # Prompt Stack Builder - columnar interface for building prompts
+        presets_section_layout = QVBoxLayout()
+        presets_section_layout.setSpacing(8)
 
-        # Help text explaining the format system
-        format_help = QLabel(
-            "<b>Quick Formats:</b> Pre-configured output styles for common use cases. "
-            "These formats work with the system prompt to shape your transcription. "
-            "For more formats, click 'Manage Prompts' or use 'Prompt Stacks' for advanced combinations."
-        )
-        format_help.setWordWrap(True)
-        format_help.setStyleSheet("color: #666; font-size: 11px; padding: 4px 0; margin-bottom: 4px;")
-        format_section_layout.addWidget(format_help)
+        # Prompt library for searching all prompts
+        self.prompt_library = PromptLibrary(CONFIG_DIR)
 
-        # Dynamic favorites bar for quick format selection
-        # Supports up to 20 user-configurable favorites
-        self.favorites_bar = FavoritesBar(CONFIG_DIR)
-        self.favorites_bar.prompt_selected.connect(self._on_prompt_selected_from_bar)
-        self.favorites_bar.manage_clicked.connect(self._open_prompt_editor)
+        # Search dropdown for all prompts (positioned at top)
+        search_layout = QHBoxLayout()
+        search_layout.setSpacing(8)
 
-        # Set initial selection based on config
-        if self.config.format_preset:
-            self.favorites_bar.set_selected_prompt_id(self.config.format_preset)
+        search_label = QLabel("🔍 Search all prompts:")
+        search_label.setStyleSheet("color: #666; font-weight: bold;")
+        search_layout.addWidget(search_label)
 
-        format_section_layout.addWidget(self.favorites_bar)
-        layout.addLayout(format_section_layout)
+        self.prompt_search_combo = QComboBox()
+        self.prompt_search_combo.setEditable(True)
+        self.prompt_search_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.prompt_search_combo.setMinimumWidth(250)
+        self.prompt_search_combo.setPlaceholderText("Type to search...")
+        self.prompt_search_combo.setToolTip("Search and select from all available prompts")
+
+        # Populate with all prompts from the library
+        self._populate_prompt_search()
+
+        # Set up completer for search
+        completer = QCompleter([self.prompt_search_combo.itemText(i) for i in range(self.prompt_search_combo.count())])
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.prompt_search_combo.setCompleter(completer)
+
+        # Connect selection changed
+        self.prompt_search_combo.activated.connect(self._on_prompt_search_selected)
+
+        search_layout.addWidget(self.prompt_search_combo)
+        search_layout.addStretch()
+
+        presets_section_layout.addLayout(search_layout)
+
+        # Stack Builder widget (replaces FavoritesBar)
+        self.stack_builder = StackBuilderWidget(self.config)
+        self.stack_builder.prompt_changed.connect(self._on_stack_changed)
+        presets_section_layout.addWidget(self.stack_builder)
+
+        # TLDR modifier row
+        tldr_layout = QHBoxLayout()
+        tldr_layout.setSpacing(10)
+
+        self.tldr_checkbox = QCheckBox("Add TLDR")
+        self.tldr_checkbox.setChecked(self.config.tldr_enabled)
+        self.tldr_checkbox.setToolTip("Add a TLDR/summary section to the output")
+        self.tldr_checkbox.toggled.connect(self._on_tldr_toggled)
+        tldr_layout.addWidget(self.tldr_checkbox)
+
+        tldr_position_label = QLabel("Position:")
+        tldr_position_label.setStyleSheet("color: #666;")
+        tldr_layout.addWidget(tldr_position_label)
+
+        self.tldr_position_combo = QComboBox()
+        self.tldr_position_combo.addItems(["Top", "Bottom"])
+        self.tldr_position_combo.setCurrentText(self.config.tldr_position.capitalize())
+        self.tldr_position_combo.setFixedWidth(80)
+        self.tldr_position_combo.currentTextChanged.connect(self._on_tldr_position_changed)
+        tldr_layout.addWidget(self.tldr_position_combo)
+
+        tldr_layout.addStretch()
+        presets_section_layout.addLayout(tldr_layout)
+
+        layout.addLayout(presets_section_layout)
 
         # Quick toggles row (Quiet Mode, Text Injection)
         toggles_layout = QHBoxLayout()
@@ -1202,7 +1245,7 @@ class MainWindow(QMainWindow):
             self.prompt_editor_window = PromptEditorWindow(
                 self.config, CONFIG_DIR, self
             )
-            self.prompt_editor_window.favorites_changed.connect(self._on_favorites_changed)
+            self.prompt_editor_window.prompts_changed.connect(self._on_prompts_changed)
 
         self.prompt_editor_window.show()
         self.prompt_editor_window.raise_()
@@ -1226,6 +1269,22 @@ class MainWindow(QMainWindow):
         self.config.auto_paste = checked
         save_config(self.config)
 
+    def _on_tldr_toggled(self, checked: bool):
+        """Handle TLDR checkbox toggle.
+
+        When enabled, adds a TLDR/summary section to the output.
+        """
+        self.config.tldr_enabled = checked
+        save_config(self.config)
+
+    def _on_tldr_position_changed(self, position: str):
+        """Handle TLDR position dropdown change.
+
+        Sets where the TLDR section appears: top or bottom.
+        """
+        self.config.tldr_position = position.lower()
+        save_config(self.config)
+
     def _set_quick_format(self, format_key: str):
         """Handle quick format button clicks."""
         # Update the config and current prompt ID
@@ -1243,17 +1302,63 @@ class MainWindow(QMainWindow):
 
         save_config(self.config)
 
-    def _on_favorites_changed(self, favorites=None):
-        """Handle changes to favorites in the prompt library or editor."""
-        # Refresh the favorites bar if we have one
-        if hasattr(self, 'favorites_bar'):
-            self.favorites_bar.update_library()
+    def _on_prompts_changed(self):
+        """Handle changes to prompts in the prompt library or editor."""
+        # Reload the prompt library
+        self.prompt_library = PromptLibrary(CONFIG_DIR)
+        # Refresh the search dropdown
+        if hasattr(self, 'prompt_search_combo'):
+            self._populate_prompt_search()
+            # Restore selection if possible
+            if hasattr(self, 'current_prompt_id') and self.current_prompt_id:
+                self._update_prompt_search_selection(self.current_prompt_id)
 
-    def _on_prompt_selected_from_bar(self, prompt_id: str):
-        """Handle prompt selection from the favorites bar."""
-        self.current_prompt_id = prompt_id
-        self.config.format_preset = prompt_id
+    def _on_stack_changed(self):
+        """Handle changes from the stack builder widget.
+
+        The stack builder has already updated self.config with the new values.
+        We just need to save and update any dependent UI elements.
+        """
         save_config(self.config)
+        # Update search combo selection if format changed
+        format_preset = self.config.format_preset
+        self._update_prompt_search_selection(format_preset)
+
+    def _populate_prompt_search(self):
+        """Populate the prompt search combo with all available prompts."""
+        self.prompt_search_combo.clear()
+        # Get all prompts from the library
+        all_prompts = self.prompt_library.get_all()
+
+        # Sort prompts alphabetically by name
+        all_prompts = sorted(all_prompts, key=lambda p: p.name.lower())
+
+        # Store mapping of display text to prompt_id
+        self._prompt_search_map = {}
+
+        for prompt in all_prompts:
+            # Format: "Name" for regular prompts, "Name (Stack)" for stacks
+            if prompt.is_element_based():
+                display_text = f"{prompt.name} (Stack)"
+            else:
+                display_text = prompt.name
+            self._prompt_search_map[display_text] = prompt.id
+            self.prompt_search_combo.addItem(display_text, prompt.id)
+
+    def _on_prompt_search_selected(self, index: int):
+        """Handle selection from the prompt search dropdown."""
+        prompt_id = self.prompt_search_combo.itemData(index)
+        if prompt_id:
+            self.current_prompt_id = prompt_id
+            self.config.format_preset = prompt_id
+            save_config(self.config)
+
+    def _update_prompt_search_selection(self, prompt_id: str):
+        """Update the search combo to reflect the current selection."""
+        for i in range(self.prompt_search_combo.count()):
+            if self.prompt_search_combo.itemData(i) == prompt_id:
+                self.prompt_search_combo.setCurrentIndex(i)
+                return
 
     def get_selected_microphone_index(self):
         """Get the index of the configured microphone.

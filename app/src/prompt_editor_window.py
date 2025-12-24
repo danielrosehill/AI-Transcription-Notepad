@@ -2,8 +2,8 @@
 Unified Prompt Editor Window
 
 A single window for all prompt configuration using a tabbed interface:
-1. Foundation - view/edit base system prompt
-2. Favorites - star formats for quick buttons
+1. Prompts - browse and edit all prompts (builtin + custom)
+2. Foundation - view base system prompt
 3. Stacks - create element-based stacks
 4. Style - formality, verbosity, optional checkboxes
 """
@@ -13,131 +13,200 @@ from PyQt6.QtWidgets import (
     QTextEdit, QPushButton, QScrollArea, QFrame, QCheckBox,
     QGroupBox, QRadioButton, QButtonGroup, QComboBox,
     QGridLayout, QSizePolicy, QMessageBox, QLineEdit,
-    QDialog, QDialogButtonBox, QToolButton, QTabWidget
+    QDialog, QDialogButtonBox, QToolButton, QTabWidget,
+    QListWidget, QListWidgetItem, QSplitter
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from pathlib import Path
-from typing import List, Set
+from typing import List, Set, Optional
 
 from .config import (
     Config, save_config,
     FOUNDATION_PROMPT_SECTIONS,
     FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES, FORMAT_CATEGORIES,
     OPTIONAL_PROMPT_COMPONENTS,
-    FORMALITY_DISPLAY_NAMES, VERBOSITY_DISPLAY_NAMES
+    FORMALITY_DISPLAY_NAMES, VERBOSITY_DISPLAY_NAMES,
+    TONE_DISPLAY_NAMES, STYLE_DISPLAY_NAMES
 )
 from .prompt_elements import (
     FORMAT_ELEMENTS, STYLE_ELEMENTS, GRAMMAR_ELEMENTS,
     PromptStack, get_all_stacks, save_custom_stack, delete_stack,
     build_prompt_from_elements
 )
+from .prompt_library import (
+    PromptLibrary, PromptConfig, PromptConfigCategory,
+    PROMPT_CONFIG_CATEGORY_NAMES
+)
 
 
-class FormatFavoriteCard(QFrame):
-    """A card for a format preset with star toggle."""
+class PromptEditDialog(QDialog):
+    """Dialog for editing a prompt configuration."""
 
-    favorite_toggled = pyqtSignal(str, bool)  # format_key, is_favorite
-    format_selected = pyqtSignal(str)  # format_key
-
-    def __init__(self, format_key: str, format_data: dict, is_favorite: bool = False, parent=None):
+    def __init__(self, prompt: Optional[PromptConfig] = None, parent=None):
         super().__init__(parent)
-        self.format_key = format_key
-        self.is_favorite = is_favorite
+        self.prompt = prompt
+        self.is_new = prompt is None
 
-        self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
-        self.setStyleSheet("""
-            FormatFavoriteCard {
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 6px;
-                padding: 4px;
-            }
-            FormatFavoriteCard:hover {
-                background-color: #e9ecef;
-            }
-        """)
+        self.setWindowTitle("New Prompt" if self.is_new else f"Edit: {prompt.name}")
+        self.setMinimumSize(500, 500)
+        self.resize(550, 600)
 
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(8)
+        self._init_ui()
+        if prompt:
+            self._load_prompt()
 
-        # Star button
-        self.star_btn = QToolButton()
-        self.star_btn.setText("★" if is_favorite else "☆")
-        self.star_btn.setStyleSheet(f"""
-            QToolButton {{
-                border: none;
-                font-size: 18px;
-                color: {'#ffc107' if is_favorite else '#adb5bd'};
-                padding: 2px;
-            }}
-            QToolButton:hover {{
-                color: #ffc107;
-            }}
-        """)
-        self.star_btn.clicked.connect(self._toggle_favorite)
-        layout.addWidget(self.star_btn)
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
 
-        # Format name
-        name = FORMAT_DISPLAY_NAMES.get(format_key, format_key)
-        name_label = QLabel(name)
-        name_label.setStyleSheet("font-weight: bold; font-size: 12px;")
-        layout.addWidget(name_label)
+        # Name
+        name_layout = QHBoxLayout()
+        name_layout.addWidget(QLabel("Name:"))
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("e.g., Quick Email, Dev Notes")
+        name_layout.addWidget(self.name_edit)
+        layout.addLayout(name_layout)
+
+        # Category
+        cat_layout = QHBoxLayout()
+        cat_layout.addWidget(QLabel("Category:"))
+        self.category_combo = QComboBox()
+        for cat in PromptConfigCategory:
+            if cat.value not in ("stylistic", "todo_lists", "blog"):  # Skip legacy
+                self.category_combo.addItem(
+                    PROMPT_CONFIG_CATEGORY_NAMES.get(cat, cat.value),
+                    cat.value
+                )
+        cat_layout.addWidget(self.category_combo)
+        cat_layout.addStretch()
+        layout.addLayout(cat_layout)
+
+        # Description
+        layout.addWidget(QLabel("Description:"))
+        self.desc_edit = QLineEdit()
+        self.desc_edit.setPlaceholderText("Brief description of what this prompt does")
+        layout.addWidget(self.desc_edit)
+
+        # Instruction
+        layout.addWidget(QLabel("Format Instruction:"))
+        self.instruction_edit = QTextEdit()
+        self.instruction_edit.setPlaceholderText(
+            "Describe how the output should be formatted.\n"
+            "e.g., 'Format as a professional email with greeting and sign-off.'"
+        )
+        self.instruction_edit.setMaximumHeight(100)
+        layout.addWidget(self.instruction_edit)
+
+        # Adherence
+        layout.addWidget(QLabel("Adherence Guidelines (optional):"))
+        self.adherence_edit = QTextEdit()
+        self.adherence_edit.setPlaceholderText(
+            "Additional guidelines for how strictly to follow the format.\n"
+            "e.g., 'Use proper email etiquette. Include a subject line suggestion.'"
+        )
+        self.adherence_edit.setMaximumHeight(100)
+        layout.addWidget(self.adherence_edit)
+
+        # Formality override
+        formality_layout = QHBoxLayout()
+        formality_layout.addWidget(QLabel("Formality Override:"))
+        self.formality_combo = QComboBox()
+        self.formality_combo.addItem("Use Global Setting", "")
+        for key, display in TONE_DISPLAY_NAMES.items():
+            self.formality_combo.addItem(display, key)
+        formality_layout.addWidget(self.formality_combo)
+        formality_layout.addStretch()
+        layout.addLayout(formality_layout)
+
+        # Verbosity override
+        verbosity_layout = QHBoxLayout()
+        verbosity_layout.addWidget(QLabel("Verbosity Override:"))
+        self.verbosity_combo = QComboBox()
+        self.verbosity_combo.addItem("Use Global Setting", "")
+        for key, display in VERBOSITY_DISPLAY_NAMES.items():
+            self.verbosity_combo.addItem(display, key)
+        verbosity_layout.addWidget(self.verbosity_combo)
+        verbosity_layout.addStretch()
+        layout.addLayout(verbosity_layout)
 
         layout.addStretch()
 
-    def _toggle_favorite(self):
-        """Toggle favorite status."""
-        self.is_favorite = not self.is_favorite
-        self.star_btn.setText("★" if self.is_favorite else "☆")
-        self.star_btn.setStyleSheet(f"""
-            QToolButton {{
-                border: none;
-                font-size: 18px;
-                color: {'#ffc107' if self.is_favorite else '#adb5bd'};
-                padding: 2px;
-            }}
-            QToolButton:hover {{
-                color: #ffc107;
-            }}
-        """)
-        self.favorite_toggled.emit(self.format_key, self.is_favorite)
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._on_save)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
 
-    def set_favorite(self, is_favorite: bool):
-        """Set favorite state without emitting signal."""
-        self.is_favorite = is_favorite
-        self.star_btn.setText("★" if is_favorite else "☆")
-        self.star_btn.setStyleSheet(f"""
-            QToolButton {{
-                border: none;
-                font-size: 18px;
-                color: {'#ffc107' if is_favorite else '#adb5bd'};
-                padding: 2px;
-            }}
-            QToolButton:hover {{
-                color: #ffc107;
-            }}
-        """)
+    def _load_prompt(self):
+        """Load prompt data into fields."""
+        self.name_edit.setText(self.prompt.name)
+        self.desc_edit.setText(self.prompt.description)
+        self.instruction_edit.setPlainText(self.prompt.instruction)
+        self.adherence_edit.setPlainText(self.prompt.adherence)
+
+        # Category
+        idx = self.category_combo.findData(self.prompt.category)
+        if idx >= 0:
+            self.category_combo.setCurrentIndex(idx)
+
+        # Formality
+        if self.prompt.formality:
+            idx = self.formality_combo.findData(self.prompt.formality)
+            if idx >= 0:
+                self.formality_combo.setCurrentIndex(idx)
+
+        # Verbosity
+        if self.prompt.verbosity:
+            idx = self.verbosity_combo.findData(self.prompt.verbosity)
+            if idx >= 0:
+                self.verbosity_combo.setCurrentIndex(idx)
+
+        # Disable name editing for builtin prompts
+        if self.prompt.is_builtin:
+            self.name_edit.setReadOnly(True)
+            self.name_edit.setStyleSheet("background-color: #f0f0f0;")
+
+    def _on_save(self):
+        """Validate and accept."""
+        name = self.name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Name Required", "Please enter a prompt name.")
+            return
+        self.accept()
+
+    def get_prompt_data(self) -> dict:
+        """Get the edited prompt data."""
+        return {
+            "name": self.name_edit.text().strip(),
+            "category": self.category_combo.currentData(),
+            "description": self.desc_edit.text().strip(),
+            "instruction": self.instruction_edit.toPlainText().strip(),
+            "adherence": self.adherence_edit.toPlainText().strip(),
+            "formality": self.formality_combo.currentData() or None,
+            "verbosity": self.verbosity_combo.currentData() or None,
+        }
 
 
 class PromptEditorWindow(QMainWindow):
     """Unified window for all prompt configuration."""
 
-    # Signal emitted when favorites change (main window should update quick buttons)
-    favorites_changed = pyqtSignal(list)  # List of favorite format keys
+    # Signal emitted when prompts change (main window should refresh search)
+    prompts_changed = pyqtSignal()
 
     def __init__(self, config: Config, config_dir: Path, parent=None):
         super().__init__(parent)
         self.config = config
         self.config_dir = config_dir
+        self.library = PromptLibrary(config_dir)
 
-        self.setWindowTitle("Prompts")
-        self.setMinimumSize(700, 800)
-        self.resize(750, 900)
+        self.setWindowTitle("Prompt Manager")
+        self.setMinimumSize(800, 700)
+        self.resize(900, 800)
 
         # Track UI elements
-        self.format_cards = {}  # format_key -> FormatFavoriteCard
         self.element_checkboxes = {}  # element_key -> QCheckBox
         self.selected_elements: Set[str] = set()
 
@@ -153,13 +222,13 @@ class PromptEditorWindow(QMainWindow):
         main_layout.setSpacing(12)
 
         # Header
-        header = QLabel("Prompts")
+        header = QLabel("Prompt Manager")
         header.setFont(QFont("Sans", 18, QFont.Weight.Bold))
         main_layout.addWidget(header)
 
         desc = QLabel(
-            "Configure how your transcriptions are processed. "
-            "Foundation settings are always applied. Star formats to add them to quick buttons."
+            "Manage your prompts. Create custom prompts, edit existing ones, "
+            "or view the foundation settings that are always applied."
         )
         desc.setWordWrap(True)
         desc.setStyleSheet("color: #6c757d; margin-bottom: 8px;")
@@ -168,29 +237,20 @@ class PromptEditorWindow(QMainWindow):
         # Tabbed interface
         self.tabs = QTabWidget()
 
-        # Tab 1: Foundation Prompt
+        # Tab 1: Prompts List
+        prompts_tab = QWidget()
+        prompts_layout = QVBoxLayout(prompts_tab)
+        prompts_layout.setContentsMargins(12, 12, 12, 12)
+        self._create_prompts_content(prompts_layout)
+        self.tabs.addTab(prompts_tab, "Prompts")
+
+        # Tab 2: Foundation Prompt
         foundation_tab = QWidget()
         foundation_layout = QVBoxLayout(foundation_tab)
         foundation_layout.setContentsMargins(12, 12, 12, 12)
         self._create_foundation_content(foundation_layout)
         foundation_layout.addStretch()
         self.tabs.addTab(foundation_tab, "Foundation")
-
-        # Tab 2: Format Favorites
-        favorites_tab = QWidget()
-        favorites_scroll = QScrollArea()
-        favorites_scroll.setWidgetResizable(True)
-        favorites_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        favorites_content = QWidget()
-        favorites_layout = QVBoxLayout(favorites_content)
-        favorites_layout.setContentsMargins(12, 12, 12, 12)
-        self._create_favorites_content(favorites_layout)
-        favorites_layout.addStretch()
-        favorites_scroll.setWidget(favorites_content)
-        favorites_tab_layout = QVBoxLayout(favorites_tab)
-        favorites_tab_layout.setContentsMargins(0, 0, 0, 0)
-        favorites_tab_layout.addWidget(favorites_scroll)
-        self.tabs.addTab(favorites_tab, "Favorites")
 
         # Tab 3: Stack Builder
         stacks_tab = QWidget()
@@ -228,6 +288,354 @@ class PromptEditorWindow(QMainWindow):
         """)
         close_btn.clicked.connect(self.close)
         main_layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
+
+    def _create_prompts_content(self, parent_layout):
+        """Create the Prompts list content for the tab."""
+        desc = QLabel(
+            "Browse and manage all available prompts. "
+            "Create custom prompts or modify existing ones."
+        )
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color: #6c757d; font-size: 11px; margin-bottom: 8px;")
+        parent_layout.addWidget(desc)
+
+        # Filter and actions row
+        filter_layout = QHBoxLayout()
+
+        # Category filter
+        filter_layout.addWidget(QLabel("Category:"))
+        self.category_filter = QComboBox()
+        self.category_filter.addItem("All Categories", "all")
+        for cat in PromptConfigCategory:
+            if cat.value not in ("stylistic", "todo_lists", "blog"):  # Skip legacy
+                self.category_filter.addItem(
+                    PROMPT_CONFIG_CATEGORY_NAMES.get(cat, cat.value),
+                    cat.value
+                )
+        self.category_filter.currentIndexChanged.connect(self._filter_prompts)
+        filter_layout.addWidget(self.category_filter)
+
+        # Search
+        filter_layout.addWidget(QLabel("Search:"))
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("Type to filter...")
+        self.search_edit.setMaximumWidth(200)
+        self.search_edit.textChanged.connect(self._filter_prompts)
+        filter_layout.addWidget(self.search_edit)
+
+        filter_layout.addStretch()
+
+        # New prompt button
+        new_btn = QPushButton("+ New Prompt")
+        new_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #28a745;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+                padding: 6px 16px;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+        """)
+        new_btn.clicked.connect(self._create_new_prompt)
+        filter_layout.addWidget(new_btn)
+
+        parent_layout.addLayout(filter_layout)
+
+        # Splitter for list and details
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # Prompts list
+        list_container = QWidget()
+        list_layout = QVBoxLayout(list_container)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.prompts_list = QListWidget()
+        self.prompts_list.setMinimumWidth(280)
+        self.prompts_list.currentItemChanged.connect(self._on_prompt_selected)
+        list_layout.addWidget(self.prompts_list)
+
+        splitter.addWidget(list_container)
+
+        # Details panel
+        details_container = QWidget()
+        details_layout = QVBoxLayout(details_container)
+        details_layout.setContentsMargins(12, 0, 0, 0)
+
+        self.details_title = QLabel("Select a prompt")
+        self.details_title.setFont(QFont("Sans", 14, QFont.Weight.Bold))
+        details_layout.addWidget(self.details_title)
+
+        self.details_category = QLabel("")
+        self.details_category.setStyleSheet("color: #6c757d; font-size: 11px;")
+        details_layout.addWidget(self.details_category)
+
+        self.details_desc = QLabel("")
+        self.details_desc.setWordWrap(True)
+        self.details_desc.setStyleSheet("margin-top: 8px;")
+        details_layout.addWidget(self.details_desc)
+
+        # Instruction preview
+        details_layout.addWidget(QLabel("Instruction:"))
+        self.details_instruction = QTextEdit()
+        self.details_instruction.setReadOnly(True)
+        self.details_instruction.setMaximumHeight(100)
+        self.details_instruction.setStyleSheet("""
+            QTextEdit {
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                font-size: 11px;
+            }
+        """)
+        details_layout.addWidget(self.details_instruction)
+
+        # Action buttons
+        btn_layout = QHBoxLayout()
+
+        self.edit_btn = QPushButton("Edit")
+        self.edit_btn.setEnabled(False)
+        self.edit_btn.clicked.connect(self._edit_selected_prompt)
+        btn_layout.addWidget(self.edit_btn)
+
+        self.duplicate_btn = QPushButton("Duplicate")
+        self.duplicate_btn.setEnabled(False)
+        self.duplicate_btn.clicked.connect(self._duplicate_selected_prompt)
+        btn_layout.addWidget(self.duplicate_btn)
+
+        self.delete_btn = QPushButton("Delete")
+        self.delete_btn.setEnabled(False)
+        self.delete_btn.setStyleSheet("color: #dc3545;")
+        self.delete_btn.clicked.connect(self._delete_selected_prompt)
+        btn_layout.addWidget(self.delete_btn)
+
+        self.reset_btn = QPushButton("Reset to Default")
+        self.reset_btn.setEnabled(False)
+        self.reset_btn.setVisible(False)
+        self.reset_btn.clicked.connect(self._reset_selected_prompt)
+        btn_layout.addWidget(self.reset_btn)
+
+        btn_layout.addStretch()
+        details_layout.addLayout(btn_layout)
+
+        details_layout.addStretch()
+        splitter.addWidget(details_container)
+
+        splitter.setSizes([300, 400])
+        parent_layout.addWidget(splitter, stretch=1)
+
+        # Populate list
+        self._populate_prompts_list()
+
+    def _populate_prompts_list(self):
+        """Populate the prompts list widget."""
+        self.prompts_list.clear()
+
+        all_prompts = self.library.get_all()
+
+        # Apply filters
+        category_filter = self.category_filter.currentData()
+        search_text = self.search_edit.text().lower().strip()
+
+        for prompt in sorted(all_prompts, key=lambda p: p.name.lower()):
+            # Category filter
+            if category_filter != "all" and prompt.category != category_filter:
+                continue
+
+            # Search filter
+            if search_text:
+                if search_text not in prompt.name.lower() and search_text not in prompt.description.lower():
+                    continue
+
+            # Create list item
+            item = QListWidgetItem()
+            label = prompt.name
+            if prompt.is_modified:
+                label += " (modified)"
+            if not prompt.is_builtin:
+                label += " [custom]"
+            item.setText(label)
+            item.setData(Qt.ItemDataRole.UserRole, prompt.id)
+            self.prompts_list.addItem(item)
+
+    def _filter_prompts(self):
+        """Filter prompts list based on current filters."""
+        self._populate_prompts_list()
+
+    def _on_prompt_selected(self, current, previous):
+        """Handle prompt selection in list."""
+        if current is None:
+            self.details_title.setText("Select a prompt")
+            self.details_category.setText("")
+            self.details_desc.setText("")
+            self.details_instruction.setPlainText("")
+            self.edit_btn.setEnabled(False)
+            self.duplicate_btn.setEnabled(False)
+            self.delete_btn.setEnabled(False)
+            self.reset_btn.setVisible(False)
+            return
+
+        prompt_id = current.data(Qt.ItemDataRole.UserRole)
+        prompt = self.library.get(prompt_id)
+
+        if prompt is None:
+            return
+
+        self.details_title.setText(prompt.name)
+
+        cat_name = PROMPT_CONFIG_CATEGORY_NAMES.get(
+            PromptConfigCategory(prompt.category) if prompt.category in [c.value for c in PromptConfigCategory] else None,
+            prompt.category
+        )
+        builtin_label = "Built-in" if prompt.is_builtin else "Custom"
+        self.details_category.setText(f"{cat_name} • {builtin_label}")
+
+        self.details_desc.setText(prompt.description or "No description")
+
+        instruction_text = prompt.instruction or "(No specific instruction)"
+        if prompt.adherence:
+            instruction_text += f"\n\nAdherence:\n{prompt.adherence}"
+        self.details_instruction.setPlainText(instruction_text)
+
+        # Enable buttons
+        self.edit_btn.setEnabled(True)
+        self.duplicate_btn.setEnabled(True)
+        self.delete_btn.setEnabled(not prompt.is_builtin)
+        self.reset_btn.setVisible(prompt.is_builtin and prompt.is_modified)
+        self.reset_btn.setEnabled(prompt.is_builtin and prompt.is_modified)
+
+    def _create_new_prompt(self):
+        """Create a new custom prompt."""
+        dialog = PromptEditDialog(parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            data = dialog.get_prompt_data()
+
+            prompt = PromptConfig(
+                id="",  # Will be auto-generated
+                name=data["name"],
+                category=data["category"],
+                description=data["description"],
+                instruction=data["instruction"],
+                adherence=data["adherence"],
+                formality=data["formality"],
+                verbosity=data["verbosity"],
+                is_builtin=False,
+            )
+
+            self.library.create_custom(prompt)
+            self._populate_prompts_list()
+            self.prompts_changed.emit()
+
+            QMessageBox.information(
+                self, "Prompt Created",
+                f"Prompt '{data['name']}' has been created."
+            )
+
+    def _edit_selected_prompt(self):
+        """Edit the selected prompt."""
+        current = self.prompts_list.currentItem()
+        if current is None:
+            return
+
+        prompt_id = current.data(Qt.ItemDataRole.UserRole)
+        prompt = self.library.get(prompt_id)
+        if prompt is None:
+            return
+
+        dialog = PromptEditDialog(prompt, parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            data = dialog.get_prompt_data()
+
+            if prompt.is_builtin:
+                # Store modification for builtin
+                self.library.modify_builtin(prompt_id, {
+                    "description": data["description"],
+                    "instruction": data["instruction"],
+                    "adherence": data["adherence"],
+                    "formality": data["formality"],
+                    "verbosity": data["verbosity"],
+                })
+            else:
+                # Update custom prompt
+                prompt.name = data["name"]
+                prompt.category = data["category"]
+                prompt.description = data["description"]
+                prompt.instruction = data["instruction"]
+                prompt.adherence = data["adherence"]
+                prompt.formality = data["formality"]
+                prompt.verbosity = data["verbosity"]
+                self.library.update_custom(prompt)
+
+            self._populate_prompts_list()
+            self.prompts_changed.emit()
+
+    def _duplicate_selected_prompt(self):
+        """Duplicate the selected prompt as a new custom prompt."""
+        current = self.prompts_list.currentItem()
+        if current is None:
+            return
+
+        prompt_id = current.data(Qt.ItemDataRole.UserRole)
+        prompt = self.library.get(prompt_id)
+        if prompt is None:
+            return
+
+        new_prompt = prompt.clone(f"{prompt.name} (Copy)")
+        self.library.create_custom(new_prompt)
+        self._populate_prompts_list()
+        self.prompts_changed.emit()
+
+        QMessageBox.information(
+            self, "Prompt Duplicated",
+            f"Created '{new_prompt.name}' as a copy of '{prompt.name}'."
+        )
+
+    def _delete_selected_prompt(self):
+        """Delete the selected custom prompt."""
+        current = self.prompts_list.currentItem()
+        if current is None:
+            return
+
+        prompt_id = current.data(Qt.ItemDataRole.UserRole)
+        prompt = self.library.get(prompt_id)
+        if prompt is None or prompt.is_builtin:
+            return
+
+        reply = QMessageBox.question(
+            self, "Confirm Delete",
+            f"Delete prompt '{prompt.name}'?\n\nThis cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.library.delete_custom(prompt_id)
+            self._populate_prompts_list()
+            self.prompts_changed.emit()
+
+    def _reset_selected_prompt(self):
+        """Reset a modified builtin prompt to its default."""
+        current = self.prompts_list.currentItem()
+        if current is None:
+            return
+
+        prompt_id = current.data(Qt.ItemDataRole.UserRole)
+
+        reply = QMessageBox.question(
+            self, "Reset to Default",
+            "Reset this prompt to its default settings?\n\nYour modifications will be lost.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.library.reset_builtin(prompt_id)
+            self._populate_prompts_list()
+            self.prompts_changed.emit()
+
+            # Refresh details
+            self._on_prompt_selected(self.prompts_list.currentItem(), None)
 
     def _create_foundation_content(self, parent_layout):
         """Create the Foundation Prompt content for the tab."""
@@ -276,61 +684,9 @@ class PromptEditorWindow(QMainWindow):
                 # Truncate long instructions
                 if len(instruction) > 120:
                     instruction = instruction[:117] + "..."
-                lines.append(f"• {instruction}")
+                lines.append(f"* {instruction}")
             lines.append("")
         return "\n".join(lines)
-
-    def _create_favorites_content(self, parent_layout):
-        """Create the Format Favorites content for the tab."""
-        desc = QLabel(
-            "Star formats to add them to the quick buttons in the main window. "
-            "Starred formats appear as buttons for one-click selection."
-        )
-        desc.setWordWrap(True)
-        desc.setStyleSheet("color: #6c757d; font-size: 11px; margin-bottom: 8px;")
-        parent_layout.addWidget(desc)
-
-        # Format cards by category
-        for category_key, category_name in FORMAT_CATEGORIES.items():
-            formats_in_category = [
-                (k, v) for k, v in FORMAT_TEMPLATES.items()
-                if v.get("category") == category_key
-            ]
-            if not formats_in_category:
-                continue
-
-            # Category label
-            cat_label = QLabel(category_name)
-            cat_label.setStyleSheet("font-weight: bold; font-size: 12px; margin-top: 8px;")
-            parent_layout.addWidget(cat_label)
-
-            # Grid of format cards
-            grid = QGridLayout()
-            grid.setSpacing(8)
-
-            for i, (format_key, format_data) in enumerate(formats_in_category):
-                is_fav = format_key in self.config.favorite_formats
-                card = FormatFavoriteCard(format_key, format_data, is_fav)
-                card.favorite_toggled.connect(self._on_favorite_toggled)
-                self.format_cards[format_key] = card
-
-                row = i // 3
-                col = i % 3
-                grid.addWidget(card, row, col)
-
-            parent_layout.addLayout(grid)
-
-    def _on_favorite_toggled(self, format_key: str, is_favorite: bool):
-        """Handle favorite toggle."""
-        if is_favorite:
-            if format_key not in self.config.favorite_formats:
-                self.config.favorite_formats.append(format_key)
-        else:
-            if format_key in self.config.favorite_formats:
-                self.config.favorite_formats.remove(format_key)
-
-        save_config(self.config)
-        self.favorites_changed.emit(self.config.favorite_formats)
 
     def _create_stack_content(self, parent_layout):
         """Create the Stack Builder content for the tab."""

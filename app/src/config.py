@@ -159,21 +159,66 @@ class Config:
     # Writing sample for one-shot style copying
     writing_sample: str = ""
 
-    # User profile settings (used when format_preset == "email" or similar)
+    # ==========================================================================
+    # PERSONALIZED FIELDS
+    # ==========================================================================
+    # These fields are injected into prompts that require personalization
+    # (e.g., Cover Letter, Email). Each prompt specifies which fields it uses.
+
+    # Identity
     user_name: str = ""
-    user_phone: str = ""
+    user_role: str = ""  # Job title/role
+    business_name: str = ""
 
-    # Business email settings
-    business_email: str = ""
-    business_signature: str = ""
+    # Email
+    email_business: str = ""
+    email_personal: str = ""
+    signature_business: str = ""
+    signature_personal: str = ""
 
-    # Personal email settings
-    personal_email: str = ""
-    personal_signature: str = ""
+    # Phone
+    phone_business: str = ""
+    phone_personal: str = ""
 
-    # Legacy fields (kept for backward compatibility)
-    user_email: str = ""  # Migrated to business_email or personal_email
-    email_signature: str = "Best regards"  # Migrated to business/personal signatures
+    # Address
+    address_business: str = ""
+    address_personal: str = ""
+
+    # Online Profiles
+    website_business: str = ""
+    website_personal: str = ""
+    github_profile: str = ""
+    huggingface_profile: str = ""
+    linkedin_profile: str = ""
+
+    # Context (free-form bio/background)
+    user_context: str = ""
+
+    # Legacy fields (kept for backward compatibility, migrated to new names)
+    user_phone: str = ""  # Migrated to phone_business or phone_personal
+    business_email: str = ""  # Migrated to email_business
+    business_signature: str = ""  # Migrated to signature_business
+    personal_email: str = ""  # Migrated to email_personal
+    personal_signature: str = ""  # Migrated to signature_personal
+    user_email: str = ""  # Migrated to email_business or email_personal
+    email_signature: str = "Best regards"  # Migrated to signatures
+
+    # ==========================================================================
+    # TLDR MODIFIER
+    # ==========================================================================
+    # When enabled, adds a TLDR/summary section to the output
+    tldr_enabled: bool = False
+    tldr_position: str = "top"  # "top" or "bottom"
+
+    # ==========================================================================
+    # STACK BUILDER SETTINGS
+    # ==========================================================================
+    # Multi-select writing styles (stackable)
+    selected_styles: list = field(default_factory=list)  # e.g., ["persuasive", "serious"]
+
+    # Word limit constraints
+    word_limit_target: int = 0  # 0 = no limit
+    word_limit_direction: str = "down"  # "up" (expand to target) or "down" (condense to target)
 
     # NEW: Prompt library system
     output_format: str = "markdown"  # text, markdown, html, json, xml, yaml
@@ -182,9 +227,6 @@ class Config:
     # NEW: Prompt stack system (multi-select elements)
     prompt_stack_elements: list = field(default_factory=list)  # List of selected element keys
     use_prompt_stacks: bool = False  # Whether to use prompt stacks instead of legacy format system
-
-    # Favorite formats for quick buttons in main UI
-    favorite_formats: list = field(default_factory=lambda: ["general", "email", "todo", "ai_prompt"])
 
 
 def load_config() -> Config:
@@ -206,15 +248,33 @@ def load_config() -> Config:
                 if config.selected_microphone not in ("pulse", "default"):
                     config.preferred_mic_name = config.selected_microphone
 
-            # Migration: move user_email to business_email if business_email is empty
-            if config.user_email and not config.business_email:
-                config.business_email = config.user_email
+            # Migration: move user_email to email_business if email_business is empty
+            if config.user_email and not config.email_business:
+                config.email_business = config.user_email
 
-            # Migration: move email_signature to business_signature if business_signature is empty
-            # and email_signature is not the default value
-            if config.email_signature and not config.business_signature:
-                if config.email_signature != "Best regards":
-                    config.business_signature = config.email_signature
+            # Migration: move legacy business_email to email_business
+            if config.business_email and not config.email_business:
+                config.email_business = config.business_email
+
+            # Migration: move legacy personal_email to email_personal
+            if config.personal_email and not config.email_personal:
+                config.email_personal = config.personal_email
+
+            # Migration: move legacy business_signature to signature_business
+            if config.business_signature and not config.signature_business:
+                config.signature_business = config.business_signature
+
+            # Migration: move legacy personal_signature to signature_personal
+            if config.personal_signature and not config.signature_personal:
+                config.signature_personal = config.personal_signature
+
+            # Migration: move email_signature to signature_business if not default
+            if config.email_signature and config.email_signature != "Best regards" and not config.signature_business:
+                config.signature_business = config.email_signature
+
+            # Migration: move user_phone to phone_business
+            if config.user_phone and not config.phone_business:
+                config.phone_business = config.user_phone
 
             return config
         except (json.JSONDecodeError, TypeError) as e:
@@ -470,6 +530,18 @@ FORMAT_TEMPLATES = {
         "category": "stylistic",
         "description": "Structured meeting notes with action items",
     },
+    "meeting_agenda": {
+        "instruction": "Format as a meeting agenda with: meeting title, date/time, attendees, and numbered agenda items with time allocations if mentioned.",
+        "adherence": "Structure clearly with numbered items. Include objectives if mentioned. Add time estimates per item if provided. End with 'Any Other Business (AOB)' section if appropriate.",
+        "category": "stylistic",
+        "description": "Meeting agenda with structured items",
+    },
+    "meeting_minutes": {
+        "instruction": "Format as formal meeting minutes with: meeting title, date/time, attendees present/absent, agenda items discussed, decisions made, action items with owners and deadlines, and next meeting date if mentioned.",
+        "adherence": "Use formal minute-taking structure. Number each agenda item. Record decisions verbatim where possible. Clearly mark ACTION items with responsible person and deadline. Include voting results if any votes were taken.",
+        "category": "stylistic",
+        "description": "Formal meeting minutes with decisions and actions",
+    },
     "bullet_points": {
         "instruction": "Format as concise bullet points. One idea per bullet.",
         "adherence": "Each bullet must be self-contained and parallel in structure. Use consistent formatting throughout.",
@@ -493,12 +565,6 @@ FORMAT_TEMPLATES = {
         "adherence": "Use scannable sections with headers. Include brief intro paragraph. Maintain conversational but professional tone. End with clear CTA and sign-off.",
         "category": "stylistic",
         "description": "Email newsletter content",
-    },
-    "persuasive": {
-        "instruction": "Write with persuasive language designed to convince or influence the reader. Use rhetorical techniques, emotional appeals, and compelling arguments.",
-        "adherence": "Employ persuasive techniques: strong opening hook, clear value proposition, social proof if available, address potential objections, use active voice, include call-to-action. Balance logic with emotional appeal. Be assertive but not pushy.",
-        "category": "stylistic",
-        "description": "Persuasive writing to convince or influence",
     },
     "slack_message": {
         "instruction": "Format as a workplace chat message (Slack/Teams style). Keep it conversational, direct, and appropriately informal for workplace communication.",
@@ -670,33 +736,6 @@ FORMAT_TEMPLATES = {
         "description": "Creative writing notes and ideas",
     },
 
-    # ==========================================================================
-    # EXPERIMENTAL - Fun/experimental formats
-    # ==========================================================================
-    "shakespearean": {
-        "instruction": "Rewrite the transcription in Shakespearean English style, using Early Modern English vocabulary, thou/thee pronouns, and poetic phrasing while preserving the core meaning.",
-        "adherence": "Use Elizabethan vocabulary and syntax. Apply thee/thou/thy appropriately. Add poetic flourishes. Maintain iambic rhythm where natural. Preserve original meaning despite stylistic transformation.",
-        "category": "experimental",
-        "description": "Shakespearean English style (fun)",
-    },
-    "medieval": {
-        "instruction": "Rewrite in Medieval/Middle English style as if written by a medieval scribe or chronicler, using archaic vocabulary and formal historical narrative style.",
-        "adherence": "Use medieval English vocabulary (e.g., 'hath', 'doth', 'verily', 'forsooth'). Adopt formal chronicle-style narration. Add period-appropriate phrasing. Maintain clarity despite archaic style.",
-        "category": "experimental",
-        "description": "Medieval English style (fun)",
-    },
-    "pirate_speak": {
-        "instruction": "Rewrite in pirate vernacular with nautical terms, 'arr', 'me hearty', and swashbuckling language while keeping the content recognizable.",
-        "adherence": "Use pirate slang ('arr', 'matey', 'scallywag', etc.). Add nautical metaphors. Replace pronouns with pirate equivalents ('me' instead of 'my'). Keep energetic and playful tone.",
-        "category": "experimental",
-        "description": "Pirate speak style (fun)",
-    },
-    "formal_academic": {
-        "instruction": "Rewrite in formal academic style suitable for scholarly publication, with proper citations structure if sources are mentioned, elevated vocabulary, and passive voice where appropriate.",
-        "adherence": "Use formal academic register. Employ technical vocabulary. Structure arguments logically. Use passive voice judiciously. Add 'According to...' structures if sources mentioned. Maintain objectivity.",
-        "category": "experimental",
-        "description": "Formal academic writing style",
-    },
 }
 
 # Display names for format presets (for UI)
@@ -710,11 +749,12 @@ FORMAT_DISPLAY_NAMES = {
     # Stylistic
     "email": "Email",
     "meeting_notes": "Meeting Notes",
+    "meeting_agenda": "Meeting Agenda",
+    "meeting_minutes": "Meeting Minutes",
     "bullet_points": "Bullet Points",
     "internal_memo": "Internal Memo",
     "press_release": "Press Release",
     "newsletter": "Newsletter",
-    "persuasive": "Persuasive",
     "slack_message": "Slack Message",
     # Prompts
     "ai_prompt": "AI Prompt",
@@ -745,11 +785,6 @@ FORMAT_DISPLAY_NAMES = {
     # Creative
     "social_post": "Social Post",
     "story_notes": "Story Notes",
-    # Experimental
-    "shakespearean": "Shakespearean Style",
-    "medieval": "Medieval Style",
-    "pirate_speak": "Pirate Speak",
-    "formal_academic": "Formal Academic",
 }
 
 # Format categories for organization in Formats tab
@@ -763,22 +798,44 @@ FORMAT_CATEGORIES = {
     "documentation": "Documentation",
     "work": "Work",
     "creative": "Creative",
-    "experimental": "Fun & Experimental",
 }
 
-# Formality level templates
-FORMALITY_TEMPLATES = {
-    "casual": "Use a casual, friendly, conversational tone.",
-    "neutral": "",  # No tone modifier
+# =============================================================================
+# TONE TEMPLATES (Mutually exclusive - pick one)
+# =============================================================================
+# These define the emotional register and formality of the writing.
+# Only one tone can be selected at a time.
+
+TONE_TEMPLATES = {
+    # Formality spectrum
+    "casual": "Use a casual, relaxed, conversational tone as if chatting with a friend.",
+    "neutral": "",  # No tone modifier - let content dictate
     "professional": "Use a professional, formal tone appropriate for business communication.",
+    # Emotional register
+    "friendly": "Use a warm, friendly, approachable tone that puts the reader at ease.",
+    "authoritative": "Use an authoritative, confident tone that conveys expertise and credibility.",
+    "enthusiastic": "Use an enthusiastic, energetic tone that conveys excitement and passion.",
+    "empathetic": "Use an empathetic, understanding tone that acknowledges feelings and concerns.",
+    "urgent": "Use an urgent, pressing tone that conveys importance and time-sensitivity.",
+    "reassuring": "Use a calm, reassuring tone that provides comfort and confidence.",
 }
 
-# Display names for formality levels (for UI)
-FORMALITY_DISPLAY_NAMES = {
+# Display names for tone levels (for UI)
+TONE_DISPLAY_NAMES = {
     "casual": "Casual",
     "neutral": "Neutral",
     "professional": "Professional",
+    "friendly": "Friendly",
+    "authoritative": "Authoritative",
+    "enthusiastic": "Enthusiastic",
+    "empathetic": "Empathetic",
+    "urgent": "Urgent",
+    "reassuring": "Reassuring",
 }
+
+# Legacy aliases for backward compatibility
+FORMALITY_TEMPLATES = TONE_TEMPLATES
+FORMALITY_DISPLAY_NAMES = TONE_DISPLAY_NAMES
 
 # Verbosity reduction templates
 VERBOSITY_TEMPLATES = {
@@ -796,6 +853,51 @@ VERBOSITY_DISPLAY_NAMES = {
     "short": "Short",
     "medium": "Medium",
     "maximum": "Maximum",
+}
+
+# =============================================================================
+# WRITING STYLE TEMPLATES (Stackable - can combine multiple)
+# =============================================================================
+# These are writing style modifiers that can be stacked on top of format presets.
+# Unlike tone (formality), multiple styles can be selected simultaneously.
+# Example: "persuasive" + "serious" = persuasive but not humorous
+
+STYLE_TEMPLATES = {
+    # Core writing styles
+    "analytical": "Use analytical, data-driven language focused on logic and evidence. Emphasize facts and reasoning.",
+    "concise": "Be extremely brief and economical with words. Every word must earn its place. Eliminate redundancy.",
+    "conversational": "Write in a conversational, approachable style as if speaking to a friend. Use natural language patterns.",
+    "direct": "Be direct and to-the-point. Avoid hedging, qualifiers, and unnecessary softening. State things plainly.",
+    "emotive": "Use emotionally engaging language that connects with the reader. Evoke appropriate feelings for the context.",
+    "formal_academic": "Use formal academic writing style with precise terminology, proper citations format, and scholarly tone.",
+    "persuasive": "Use persuasive language to convince and motivate the reader. Appeal to logic, emotion, and credibility where appropriate.",
+    "serious": "Maintain a serious, professional tone throughout. Avoid humor, casualness, or levity.",
+    # Fun/creative styles (moved from experimental formats)
+    "medieval": "Rewrite in Medieval/Middle English style as if written by a medieval scribe or chronicler, using archaic vocabulary and formal historical narrative style.",
+    "pirate_speak": "Rewrite in pirate vernacular with nautical terms, 'arr', 'me hearty', and swashbuckling language while keeping the content recognizable.",
+    "shakespearean": "Rewrite in Shakespearean English style, using Early Modern English vocabulary, thou/thee pronouns, and poetic phrasing while preserving the core meaning.",
+}
+
+# Display names for writing styles (for UI)
+STYLE_DISPLAY_NAMES = {
+    "analytical": "Analytical",
+    "concise": "Concise",
+    "conversational": "Conversational",
+    "direct": "Direct",
+    "emotive": "Emotive",
+    "formal_academic": "Academic",
+    "persuasive": "Persuasive",
+    "serious": "Serious",
+    # Fun styles
+    "medieval": "Medieval 🏰",
+    "pirate_speak": "Pirate 🏴‍☠️",
+    "shakespearean": "Shakespearean 🎭",
+}
+
+# Word limit templates for up/down direction
+WORD_LIMIT_TEMPLATES = {
+    "up": "Expand the content to approximately {target} words. Add relevant detail, examples, and elaboration to reach the target length while maintaining quality.",
+    "down": "Condense the content to approximately {target} words. Keep only the most essential information and trim unnecessary details to reach the target length.",
 }
 
 # Common email sign-offs for dropdown
@@ -888,6 +990,30 @@ def build_cleanup_prompt(config: Config, use_prompt_library: bool = False) -> st
         lines.append("\n## Style & Tone")
         for instruction in style_instructions:
             lines.append(f"- {instruction}")
+
+    # ===== WRITING STYLES (Multi-select, stackable) =====
+    selected_styles = getattr(config, 'selected_styles', [])
+    if selected_styles:
+        writing_style_instructions = []
+        for style_key in selected_styles:
+            style_template = STYLE_TEMPLATES.get(style_key, "")
+            if style_template:
+                writing_style_instructions.append(style_template)
+
+        if writing_style_instructions:
+            lines.append("\n## Writing Style")
+            lines.append("Apply the following writing styles to the output:")
+            for instruction in writing_style_instructions:
+                lines.append(f"- {instruction}")
+
+    # ===== WORD LIMIT CONSTRAINTS =====
+    word_limit_target = getattr(config, 'word_limit_target', 0)
+    word_limit_direction = getattr(config, 'word_limit_direction', 'down')
+    if word_limit_target and word_limit_target > 0:
+        word_limit_template = WORD_LIMIT_TEMPLATES.get(word_limit_direction, "")
+        if word_limit_template:
+            lines.append("\n## Word Count Target")
+            lines.append(f"- {word_limit_template.format(target=word_limit_target)}")
 
     # Writing sample reference
     if config.writing_sample and config.writing_sample.strip():

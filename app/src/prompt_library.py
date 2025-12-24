@@ -262,38 +262,47 @@ class PromptConfigCategory(str, Enum):
     """User-facing categories for prompt configurations.
 
     Categories are organized to group related prompts in the favorites bar:
-    - FOUNDATIONAL: Core transcription modes (General, Verbatim)
-    - STYLISTIC: Writing styles and formats (Email, Meeting Notes, etc.)
+    - FOUNDATIONAL: Core transcription modes (General, Verbatim, Custom)
+    - CREATIVE: Creative formats (Blog, Outline, Idea, Brief)
     - PROMPTS: AI prompt formats (AI Prompt, Dev Prompt, System Prompt)
-    - TODO_LISTS: List formats (To-Do, Shopping List)
-    - BLOG: Blog/content creation formats
+    - MEETINGS: Meeting-related (Agenda, Notes)
+    - COMMUNICATION: Communication formats (Email, Message, Cover Letter)
+    - LISTS: List formats (To-Do, Shopping List, Note to Self)
     - DOCUMENTATION: Technical and reference documentation
-    - CREATIVE: Creative writing and social media
     - WORK: Business/professional formats
     - CUSTOM: User-created prompts
     """
     FOUNDATIONAL = "foundational"
-    STYLISTIC = "stylistic"
-    PROMPTS = "prompts"
-    TODO_LISTS = "todo_lists"
-    BLOG = "blog"
-    DOCUMENTATION = "documentation"
     CREATIVE = "creative"
+    PROMPTS = "prompts"
+    MEETINGS = "meetings"
+    COMMUNICATION = "communication"
+    LISTS = "lists"
+    DOCUMENTATION = "documentation"
     WORK = "work"
     CUSTOM = "custom"
+
+    # Legacy - kept for backwards compatibility
+    STYLISTIC = "stylistic"
+    TODO_LISTS = "todo_lists"
+    BLOG = "blog"
 
 
 # Display names for user-facing categories
 PROMPT_CONFIG_CATEGORY_NAMES = {
     PromptConfigCategory.FOUNDATIONAL: "Foundational",
-    PromptConfigCategory.STYLISTIC: "Format",
-    PromptConfigCategory.PROMPTS: "Prompts",
-    PromptConfigCategory.TODO_LISTS: "To-Do Lists",
-    PromptConfigCategory.BLOG: "Blog",
-    PromptConfigCategory.DOCUMENTATION: "Documentation",
     PromptConfigCategory.CREATIVE: "Creative",
+    PromptConfigCategory.PROMPTS: "AI Prompts",
+    PromptConfigCategory.MEETINGS: "Meetings",
+    PromptConfigCategory.COMMUNICATION: "Communication",
+    PromptConfigCategory.LISTS: "Lists",
+    PromptConfigCategory.DOCUMENTATION: "Documentation",
     PromptConfigCategory.WORK: "Work",
     PromptConfigCategory.CUSTOM: "Custom",
+    # Legacy
+    PromptConfigCategory.STYLISTIC: "Format",
+    PromptConfigCategory.TODO_LISTS: "To-Do Lists",
+    PromptConfigCategory.BLOG: "Blog",
 }
 
 
@@ -325,14 +334,21 @@ class PromptConfig:
     # Metadata
     is_builtin: bool = True              # True for app defaults
     is_modified: bool = False            # True if user edited a builtin
-    is_favorite: bool = False            # Show in quick-access bar
-    favorite_order: int = 999            # Position in favorites (lower = earlier)
+    is_preset: bool = False              # Show in quick-access presets bar
+    preset_order: int = 999              # Position in presets (lower = earlier)
 
     # Optional overrides (None = use global settings)
     formality: Optional[str] = None      # Override formality level
     verbosity: Optional[str] = None      # Override verbosity reduction
 
-    # Email-specific settings
+    # Personalization - which fields from config to inject into this prompt
+    # Available fields: name, role, business_name, email_business, email_personal,
+    # signature_business, signature_personal, phone_business, phone_personal,
+    # address_business, address_personal, website_business, website_personal,
+    # github_profile, huggingface_profile, linkedin_profile, user_context
+    personalized_fields: List[str] = field(default_factory=list)
+
+    # Legacy: Email-specific settings (use personalized_fields instead)
     use_business_signature: bool = True  # Use business vs personal signature
 
     # Timestamps
@@ -358,10 +374,11 @@ class PromptConfig:
             "elements": self.elements,
             "is_builtin": self.is_builtin,
             "is_modified": self.is_modified,
-            "is_favorite": self.is_favorite,
-            "favorite_order": self.favorite_order,
+            "is_preset": self.is_preset,
+            "preset_order": self.preset_order,
             "formality": self.formality,
             "verbosity": self.verbosity,
+            "personalized_fields": self.personalized_fields,
             "use_business_signature": self.use_business_signature,
             "created_at": self.created_at,
             "modified_at": self.modified_at,
@@ -380,10 +397,11 @@ class PromptConfig:
             elements=data.get("elements", []),
             is_builtin=data.get("is_builtin", False),
             is_modified=data.get("is_modified", False),
-            is_favorite=data.get("is_favorite", False),
-            favorite_order=data.get("favorite_order", 999),
+            is_preset=data.get("is_preset", data.get("is_favorite", False)),  # Support legacy
+            preset_order=data.get("preset_order", data.get("favorite_order", 999)),  # Support legacy
             formality=data.get("formality"),
             verbosity=data.get("verbosity"),
+            personalized_fields=data.get("personalized_fields", []),
             use_business_signature=data.get("use_business_signature", True),
             created_at=data.get("created_at"),
             modified_at=data.get("modified_at"),
@@ -412,12 +430,20 @@ class PromptConfig:
 # =============================================================================
 # These are the built-in prompts that ship with the app.
 # Users can edit them (modifications stored separately) or create custom ones.
+#
+# PRESET LAYOUT (Row boundaries: 10, 20, 30, 40, 50, 60, 70):
+# Row 1 (0-9):   General, Verbatim                          [Foundational - Top Bar]
+# Row 2 (10-19): Blog, Outline, Idea, Brief                 [Creative]
+# Row 3 (20-29): AI Prompt, Dev Prompt, System Prompt       [AI Prompts]
+# Row 4 (30-39): Agenda, Notes                              [Meetings]
+# Row 5 (40-49): Email, Message, Cover Letter               [Communication]
+# Row 6 (50-59): To-Do List, Shopping List, Note to Self    [Lists]
+# Row 7 (60-69): Documentation, Social Post                 [Other]
 # =============================================================================
 
 DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
     # ==========================================================================
-    # FOUNDATIONAL - Core transcription modes (Row 1 in favorites bar)
-    # Row 1: General, Verbatim (most specific modes)
+    # ROW 1: FOUNDATIONAL - Core transcription modes (Top Bar)
     # ==========================================================================
     PromptConfig(
         id="general",
@@ -426,8 +452,8 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         description="Standard cleanup with no specific formatting",
         instruction="",
         adherence="",
-        is_favorite=True,
-        favorite_order=0,
+        is_preset=True,
+        preset_order=0,
     ),
     PromptConfig(
         id="verbatim",
@@ -436,92 +462,56 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         description="Minimal transformation - closest to raw transcription",
         instruction="Preserve the original wording and structure as much as possible while applying only essential cleanup.",
         adherence="Keep the transcription very close to the original speech. Only remove obvious filler words, add basic punctuation, and create paragraph breaks. Do not rephrase, restructure, or add formatting beyond the absolute minimum needed for readability.",
-        is_favorite=True,
-        favorite_order=1,
+        is_preset=True,
+        preset_order=1,
+    ),
+
+    # ==========================================================================
+    # ROW 2: CREATIVE - Blog, Outline, Idea, Brief
+    # ==========================================================================
+    PromptConfig(
+        id="blog",
+        name="Blog",
+        category=PromptConfigCategory.CREATIVE,
+        description="Blog post format with sections and flow",
+        instruction="Format as a blog post with a compelling title, engaging introduction, well-organized body sections, and a conclusion.",
+        adherence="Structure for readability. Use subheadings to break up content. Maintain a conversational yet informative tone. Note where examples or images might enhance the content.",
+        is_preset=True,
+        preset_order=10,
+    ),
+    PromptConfig(
+        id="outline",
+        name="Outline",
+        category=PromptConfigCategory.CREATIVE,
+        description="Hierarchical outline structure for organizing ideas",
+        instruction="Format as a hierarchical outline with main points and sub-points. Use consistent indentation and numbering.",
+        adherence="Use a clear hierarchy (I, A, 1, a or similar). Each point should be concise but capture the key idea. Group related concepts under parent headings. Suitable for brainstorming, planning, or organizing thoughts.",
+        is_preset=True,
+        preset_order=11,
+    ),
+    PromptConfig(
+        id="idea",
+        name="Idea",
+        category=PromptConfigCategory.CREATIVE,
+        description="Capture and develop a creative idea or concept",
+        instruction="Format as a structured idea capture. Include the core concept, potential applications, and any related thoughts or considerations.",
+        adherence="Lead with the main idea clearly stated. Include 'Why it matters', 'How it could work', and 'Next steps' sections if applicable. Preserve creative energy while organizing the thought. Good for brainstorming sessions.",
+        is_preset=True,
+        preset_order=12,
     ),
     PromptConfig(
         id="brief",
         name="Brief",
-        category=PromptConfigCategory.FOUNDATIONAL,
-        description="Maximum conciseness - as brief as possible",
-        instruction="Be as brief as possible. Condense the content to its essential core message with maximum conciseness.",
-        adherence="Ruthlessly cut unnecessary words, qualifiers, and redundant phrases. Prefer short sentences. Eliminate preamble and filler. Every word must earn its place. Aim for the minimum viable length while preserving meaning.",
-        is_favorite=False,  # Not in favorites bar
-        favorite_order=999,
-    ),
-    PromptConfig(
-        id="quick_note",
-        name="Quick Note",
-        category=PromptConfigCategory.FOUNDATIONAL,
-        description="Quick personal note - minimal formatting",
-        instruction="Format as a quick personal note. Minimal formatting, just capture the thought clearly.",
-        adherence="Keep it informal and quick. No headers, no elaborate structure. Just the thought, clearly expressed. Suitable for jotting down ideas or reminders.",
-    ),
-    PromptConfig(
-        id="note_to_self",
-        name="Note to Self",
-        category=PromptConfigCategory.FOUNDATIONAL,
-        description="Lightweight note for future reference",
-        instruction="Format as a note-to-self for future reference. Focus on capturing the key detail or reminder clearly and concisely.",
-        adherence="Keep it brief and focused. This is something you're noting down for your future self - could be a reminder, a detail to remember, a thought to revisit, or a quick reference. No elaborate formatting needed. Just the essential information, clearly stated.",
-        is_favorite=True,  # Row 4: Note to Self, To-Do List, Shopping List
-        favorite_order=30,
+        category=PromptConfigCategory.CREATIVE,
+        description="Creative brief - instructions and requirements for a project",
+        instruction="Format as a creative brief with clear objectives, requirements, and deliverables.",
+        adherence="Include: Background/Context, Objectives, Target Audience (if mentioned), Key Messages, Deliverables, and any Constraints or Requirements. Be specific about what success looks like. Suitable for design briefs, project briefs, or task specifications.",
+        is_preset=True,
+        preset_order=13,
     ),
 
     # ==========================================================================
-    # STYLISTIC - Writing styles and formats
-    # Row 2: Blog Post, Email, Meeting Notes, Documentation
-    # ==========================================================================
-    PromptConfig(
-        id="email",
-        name="Email",
-        category=PromptConfigCategory.STYLISTIC,
-        description="Professional email format with greeting and sign-off",
-        instruction="Format the output as an email with an appropriate greeting and sign-off.",
-        adherence="Follow standard email formatting conventions. Include a clear subject line suggestion if the content is substantial. Use proper email etiquette.",
-        is_favorite=True,
-        favorite_order=11,  # Row 2 position 2
-    ),
-    PromptConfig(
-        id="meeting_notes",
-        name="Meeting Notes",
-        category=PromptConfigCategory.STYLISTIC,
-        description="Structured meeting notes with action items",
-        instruction="Format as meeting notes with clear sections, bullet points for key points, and a separate 'Action Items' section at the end.",
-        adherence="Include: meeting date/time if mentioned, attendees if mentioned, discussion points as bullets, decisions made, and action items with assignees if specified.",
-        is_favorite=True,
-        favorite_order=12,  # Row 2 position 3
-    ),
-    PromptConfig(
-        id="bullet_points",
-        name="Bullet Points",
-        category=PromptConfigCategory.STYLISTIC,
-        description="Simple bullet point list",
-        instruction="Format as concise bullet points. One idea per bullet.",
-        adherence="Each bullet must be self-contained and parallel in structure. Use consistent formatting throughout.",
-        is_favorite=False,  # Not in favorites bar
-        favorite_order=999,
-    ),
-    PromptConfig(
-        id="persuasive",
-        name="Persuasive",
-        category=PromptConfigCategory.STYLISTIC,
-        description="Persuasive writing to convince or influence",
-        instruction="Write with persuasive language designed to convince or influence the reader. Use rhetorical techniques, emotional appeals, and compelling arguments.",
-        adherence="Employ persuasive techniques: strong opening hook, clear value proposition, social proof if available, address potential objections, use active voice, include call-to-action. Balance logic with emotional appeal. Be assertive but not pushy.",
-    ),
-    PromptConfig(
-        id="slack_message",
-        name="Slack Message",
-        category=PromptConfigCategory.STYLISTIC,
-        description="Workplace chat message (Slack/Teams)",
-        instruction="Format as a workplace chat message (Slack/Teams style). Keep it conversational, direct, and appropriately informal for workplace communication.",
-        adherence="Be concise and scannable. Use line breaks for readability. Emoji are okay if tone suits. Get to the point quickly. Can use bullet points for multiple items. Maintain professional-casual balance.",
-    ),
-
-    # ==========================================================================
-    # PROMPTS - AI prompt formats
-    # Row 3: AI Prompt, Dev Prompt, System Prompt
+    # ROW 3: AI PROMPTS
     # ==========================================================================
     PromptConfig(
         id="ai_prompt",
@@ -530,8 +520,8 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         description="General AI assistant instructions",
         instruction="Format the output as clear, well-organized instructions for an AI assistant. Use imperative voice, organize tasks logically, and ensure instructions are unambiguous and actionable.",
         adherence="Strictly follow AI prompt engineering best practices: be specific, use clear command language, break complex tasks into numbered steps, and include context where needed.",
-        is_favorite=True,
-        favorite_order=20,  # Row 3 position 1
+        is_preset=True,
+        preset_order=20,
     ),
     PromptConfig(
         id="dev_prompt",
@@ -540,8 +530,8 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         description="Software development instructions for AI",
         instruction="Format the output as a development prompt for a software development AI assistant. Include technical requirements, implementation details, and expected outcomes. Use imperative voice and be explicit about technical constraints.",
         adherence="Follow software development prompt conventions: specify programming languages, frameworks, file paths if mentioned, testing requirements, and code quality expectations.",
-        is_favorite=True,
-        favorite_order=21,  # Row 3 position 2
+        is_preset=True,
+        preset_order=21,
     ),
     PromptConfig(
         id="system_prompt",
@@ -550,61 +540,106 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         description="AI system prompt (second-person, 'You are...' style)",
         instruction="Format as a system prompt for an AI assistant. Write in second-person, addressing the AI directly. Define its role, capabilities, constraints, and behavioral guidelines using 'You are...' and 'You should...' statements.",
         adherence="Always use second-person perspective addressing the AI directly (e.g., 'You are a helpful assistant', 'You should respond concisely'). Never use third-person ('The assistant should...'). Define role clearly upfront. Specify constraints and boundaries. Include behavioral guidelines. Be comprehensive but concise.",
-        is_favorite=True,
-        favorite_order=22,  # Row 3 position 3
+        is_preset=True,
+        preset_order=22,
     ),
 
     # ==========================================================================
-    # TODO_LISTS - List formats
-    # Row 4: Note to Self, To-Do List, Shopping List
+    # ROW 4: MEETINGS - Agenda, Notes
+    # ==========================================================================
+    PromptConfig(
+        id="agenda",
+        name="Agenda",
+        category=PromptConfigCategory.MEETINGS,
+        description="Meeting agenda with topics and time allocations",
+        instruction="Format as a meeting agenda with clear topics, time allocations if mentioned, and any preparation notes.",
+        adherence="Include: Meeting title/purpose, Date/time if mentioned, Attendees if mentioned, Agenda items (numbered or bulleted), Time allocations if specified, and any pre-meeting preparation notes. Keep items actionable and clear.",
+        is_preset=True,
+        preset_order=30,
+    ),
+    PromptConfig(
+        id="notes",
+        name="Notes",
+        category=PromptConfigCategory.MEETINGS,
+        description="Meeting/appointment notes with key points and action items",
+        instruction="Format as meeting or appointment notes with clear sections, bullet points for key points, and a separate 'Action Items' section at the end.",
+        adherence="Include: Date/time if mentioned, attendees/participants if mentioned, discussion points as bullets, decisions made, and action items with assignees if specified. Works for business meetings, medical appointments, consultations, or any structured conversation.",
+        is_preset=True,
+        preset_order=31,
+    ),
+
+    # ==========================================================================
+    # ROW 5: COMMUNICATION - Email, Message, Cover Letter
+    # ==========================================================================
+    PromptConfig(
+        id="email",
+        name="Email",
+        category=PromptConfigCategory.COMMUNICATION,
+        description="Professional email format with greeting and sign-off",
+        instruction="Format the output as an email with an appropriate greeting and sign-off.",
+        adherence="Follow standard email formatting conventions. Include a clear subject line suggestion if the content is substantial. Use proper email etiquette.",
+        is_preset=True,
+        preset_order=40,
+        personalized_fields=["user_name", "email_business", "email_personal", "signature_business", "signature_personal", "phone_business"],
+    ),
+    PromptConfig(
+        id="message",
+        name="Message",
+        category=PromptConfigCategory.COMMUNICATION,
+        description="Short-form message (Slack, Teams, SMS, chat)",
+        instruction="Format as a short-form message suitable for chat platforms (Slack, Teams, Discord) or SMS. Keep it conversational, direct, and appropriately informal.",
+        adherence="Be concise and scannable. Use line breaks for readability. Get to the point quickly. Can use bullet points for multiple items. Emoji are okay if tone suits. No formal greeting/sign-off needed unless appropriate for context.",
+        is_preset=True,
+        preset_order=41,
+    ),
+    PromptConfig(
+        id="cover_letter",
+        name="Cover Letter",
+        category=PromptConfigCategory.COMMUNICATION,
+        description="Professional cover letter for job applications",
+        instruction="Format as a professional cover letter for a job application. Include proper letter formatting with greeting, body paragraphs, and professional closing.",
+        adherence="Structure: Opening paragraph (position applying for, how you found it), Body paragraphs (relevant experience, skills, why you're a good fit), Closing paragraph (call to action, availability). Use professional but engaging tone. Tailor content to the role if details are mentioned.",
+        is_preset=True,
+        preset_order=42,
+        personalized_fields=["user_name", "user_role", "email_business", "phone_business", "address_business", "linkedin_profile", "website_personal", "user_context"],
+    ),
+
+    # ==========================================================================
+    # ROW 6: LISTS - To-Do List, Shopping List, Note to Self
     # ==========================================================================
     PromptConfig(
         id="todo",
         name="To-Do List",
-        category=PromptConfigCategory.TODO_LISTS,
+        category=PromptConfigCategory.LISTS,
         description="Checkbox to-do list format",
         instruction="Format as a to-do list with checkbox items (- [ ] task). Use action verbs and be concise.",
         adherence="Each item must start with an action verb. Keep items specific and actionable. Group related items under headers if there are distinct categories.",
-        is_favorite=True,
-        favorite_order=31,  # Row 4 position 2 (after Note to Self)
+        is_preset=True,
+        preset_order=50,
     ),
     PromptConfig(
         id="shopping_list",
         name="Shopping List",
-        category=PromptConfigCategory.TODO_LISTS,
+        category=PromptConfigCategory.LISTS,
         description="Categorized shopping list",
         instruction="Format as a shopping list. Group items by category (produce, dairy, meat, pantry, household, etc.) if there are multiple items.",
         adherence="Always organize by store section categories. Use consistent item naming (e.g., quantities if mentioned).",
-        is_favorite=True,
-        favorite_order=32,  # Row 4 position 3
+        is_preset=True,
+        preset_order=51,
+    ),
+    PromptConfig(
+        id="note_to_self",
+        name="Note to Self",
+        category=PromptConfigCategory.LISTS,
+        description="Lightweight note for future reference",
+        instruction="Format as a note-to-self for future reference. Focus on capturing the key detail or reminder clearly and concisely.",
+        adherence="Keep it brief and focused. This is something you're noting down for your future self - could be a reminder, a detail to remember, a thought to revisit, or a quick reference. No elaborate formatting needed. Just the essential information, clearly stated.",
+        is_preset=True,
+        preset_order=52,
     ),
 
     # ==========================================================================
-    # BLOG - Blog/content creation formats
-    # Row 2: Blog Post is position 1
-    # ==========================================================================
-    PromptConfig(
-        id="blog",
-        name="Blog Post",
-        category=PromptConfigCategory.BLOG,
-        description="Blog post format with sections and flow",
-        instruction="Format as a blog post with a compelling title, engaging introduction, well-organized body sections, and a conclusion.",
-        adherence="Structure for readability. Use subheadings to break up content. Maintain a conversational yet informative tone. Note where examples or images might enhance the content.",
-        is_favorite=True,
-        favorite_order=10,  # Row 2 position 1
-    ),
-    PromptConfig(
-        id="blog_outline",
-        name="Blog Outline",
-        category=PromptConfigCategory.BLOG,
-        description="Blog post outline with sections",
-        instruction="Format as a blog post outline with a compelling title, introduction hook, main sections, and conclusion.",
-        adherence="Structure for readability. Include suggested subheadings. Note where examples or images might enhance the content.",
-    ),
-
-    # ==========================================================================
-    # DOCUMENTATION - Technical and reference documentation
-    # Row 2: Documentation is position 4
+    # ROW 7: OTHER - Documentation, Social Post
     # ==========================================================================
     PromptConfig(
         id="documentation",
@@ -613,8 +648,62 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         description="Clear, structured documentation format",
         instruction="Format as structured documentation with clear headings, organized sections, and logical flow.",
         adherence="Use markdown formatting. Structure content hierarchically. Be clear and precise. Include examples where helpful.",
-        is_favorite=True,
-        favorite_order=13,  # Row 2 position 4
+        is_preset=True,
+        preset_order=60,
+    ),
+    PromptConfig(
+        id="social_post",
+        name="Social Post",
+        category=PromptConfigCategory.CREATIVE,
+        description="Social media & community posts (Twitter, Reddit, Discord, etc.)",
+        instruction="Format as a social media or community post. Works for Twitter/X, LinkedIn, Reddit, Discord, forums, and other social platforms. Keep it engaging, use line breaks for readability, and maintain a conversational tone appropriate for the platform.",
+        adherence="Respect platform character limits if specified. Use short paragraphs (2-3 sentences max) for readability. Be genuine and conversational. For community posts (Reddit, forums), include context and a clear question if asking for help. Use hashtags or emoji strategically when appropriate.",
+        is_preset=True,
+        preset_order=61,
+    ),
+
+    # ==========================================================================
+    # NON-PRESET PROMPTS (Available in search/library but not in presets bar)
+    # ==========================================================================
+    PromptConfig(
+        id="quick_note",
+        name="Quick Note",
+        category=PromptConfigCategory.FOUNDATIONAL,
+        description="Quick personal note - minimal formatting",
+        instruction="Format as a quick personal note. Minimal formatting, just capture the thought clearly.",
+        adherence="Keep it informal and quick. No headers, no elaborate structure. Just the thought, clearly expressed. Suitable for jotting down ideas or reminders.",
+        is_preset=False,
+        preset_order=999,
+    ),
+    PromptConfig(
+        id="bullet_points",
+        name="Bullet Points",
+        category=PromptConfigCategory.FOUNDATIONAL,
+        description="Simple bullet point list",
+        instruction="Format as concise bullet points. One idea per bullet.",
+        adherence="Each bullet must be self-contained and parallel in structure. Use consistent formatting throughout.",
+        is_preset=False,
+        preset_order=999,
+    ),
+    PromptConfig(
+        id="persuasive",
+        name="Persuasive",
+        category=PromptConfigCategory.CREATIVE,
+        description="Persuasive writing to convince or influence",
+        instruction="Write with persuasive language designed to convince or influence the reader. Use rhetorical techniques, emotional appeals, and compelling arguments.",
+        adherence="Employ persuasive techniques: strong opening hook, clear value proposition, social proof if available, address potential objections, use active voice, include call-to-action. Balance logic with emotional appeal. Be assertive but not pushy.",
+        is_preset=False,
+        preset_order=999,
+    ),
+    PromptConfig(
+        id="blog_outline",
+        name="Blog Outline",
+        category=PromptConfigCategory.CREATIVE,
+        description="Blog post outline with sections",
+        instruction="Format as a blog post outline with a compelling title, introduction hook, main sections, and conclusion.",
+        adherence="Structure for readability. Include suggested subheadings. Note where examples or images might enhance the content.",
+        is_preset=False,
+        preset_order=999,
     ),
     PromptConfig(
         id="tech_docs",
@@ -623,6 +712,8 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         description="Technical documentation with code examples",
         instruction="Format as technical documentation with clear headings, code examples in fenced blocks, and structured explanations.",
         adherence="Use markdown formatting. Include code blocks with language tags. Be precise with technical terminology.",
+        is_preset=False,
+        preset_order=999,
     ),
     PromptConfig(
         id="readme",
@@ -631,6 +722,8 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         description="GitHub README format",
         instruction="Format as a README.md file for a software project. Include clear sections for project description, installation, usage, and other relevant information.",
         adherence="Follow standard README conventions: project title as H1, sections as H2, code blocks for commands, and clear installation/usage instructions.",
+        is_preset=False,
+        preset_order=999,
     ),
     PromptConfig(
         id="api_docs",
@@ -639,11 +732,9 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         description="API endpoint documentation",
         instruction="Format as API documentation with endpoint details, request/response formats, and parameter descriptions.",
         adherence="Include HTTP methods, URL patterns, request bodies, response examples, and error codes. Use code blocks for JSON examples.",
+        is_preset=False,
+        preset_order=999,
     ),
-
-    # ==========================================================================
-    # WORK - Business/professional formats
-    # ==========================================================================
     PromptConfig(
         id="bug_report",
         name="Bug Report",
@@ -651,6 +742,8 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         description="Structured bug report format",
         instruction="Format as a bug report with sections for Description, Steps to Reproduce, Expected Behavior, Actual Behavior, and Environment (if mentioned).",
         adherence="Use clear technical language. Ensure steps are numbered and specific. Include any error messages or codes mentioned.",
+        is_preset=False,
+        preset_order=999,
     ),
     PromptConfig(
         id="status_update",
@@ -659,8 +752,8 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         description="Brief project status update",
         instruction="Format as a concise status update with what was completed, what's in progress, and any blockers.",
         adherence="Keep it brief and scannable. Use bullet points. Focus on facts rather than details.",
-        is_favorite=True,
-        favorite_order=40,  # Row 5 position 1
+        is_preset=False,
+        preset_order=999,
     ),
     PromptConfig(
         id="software_spec",
@@ -669,20 +762,8 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         description="Software requirements specification",
         instruction="Format as a software specification document with clear requirements. Include: Overview, Functional Requirements (numbered list), Non-Functional Requirements, Constraints, and Acceptance Criteria if mentioned.",
         adherence="Use precise, unambiguous language. Number all requirements for reference (REQ-001, REQ-002, etc. or simple numbering). Each requirement should be testable and specific. Use 'shall' for mandatory requirements, 'should' for recommendations. Group related requirements under clear headings.",
-    ),
-
-    # ==========================================================================
-    # CREATIVE - Creative writing and social media
-    # ==========================================================================
-    PromptConfig(
-        id="social_post",
-        name="Social Post",
-        category=PromptConfigCategory.CREATIVE,
-        description="Social media & community posts (Twitter, Reddit, Discord, etc.)",
-        instruction="Format as a social media or community post. Works for Twitter/X, LinkedIn, Reddit, Discord, forums, and other social platforms. Keep it engaging, use line breaks for readability, and maintain a conversational tone appropriate for the platform.",
-        adherence="Respect platform character limits if specified. Use short paragraphs (2-3 sentences max) for readability. Be genuine and conversational. For community posts (Reddit, forums), include context and a clear question if asking for help. Use hashtags or emoji strategically when appropriate.",
-        is_favorite=True,
-        favorite_order=41,  # Row 5 position 2
+        is_preset=False,
+        preset_order=999,
     ),
     PromptConfig(
         id="story_notes",
@@ -691,16 +772,27 @@ DEFAULT_PROMPT_CONFIGS: List[PromptConfig] = [
         description="Creative writing notes and ideas",
         instruction="Format as creative writing notes. Capture character ideas, plot points, settings, and any narrative elements mentioned.",
         adherence="Preserve creative details and mood. Organize by narrative element (characters, plot, setting, themes).",
+        is_preset=False,
+        preset_order=999,
+    ),
+    PromptConfig(
+        id="bluf",
+        name="BLUF",
+        category=PromptConfigCategory.COMMUNICATION,
+        description="Bottom Line Up Front - military-style executive summary format",
+        instruction="Format using the BLUF (Bottom Line Up Front) structure. Start with a clear, concise statement of the main point or request, followed by supporting details and context.",
+        adherence="Lead with the conclusion, recommendation, or key message in the first sentence or paragraph. Follow with background, analysis, and supporting details. This format is designed for busy readers who need the essential information immediately. Use for memos, reports, or any communication where the recipient needs to quickly understand the core message.",
+        is_preset=False,
+        preset_order=999,
     ),
 ]
 
 
 class PromptLibrary:
-    """Manages all prompt configurations (builtins + custom + favorites).
+    """Manages all prompt configurations (builtins + custom).
 
     Provides a unified interface for:
     - Loading and saving prompts
-    - Managing favorites for quick access
     - User modifications to builtin prompts
     - Creating custom prompts
     """
@@ -718,19 +810,16 @@ class PromptLibrary:
         # Storage files
         self.custom_prompts_file = self.prompts_dir / "custom.json"
         self.modifications_file = self.prompts_dir / "modifications.json"
-        self.favorites_file = self.prompts_dir / "favorites.json"
 
         # In-memory cache
         self._builtins: Dict[str, PromptConfig] = {}
         self._custom: Dict[str, PromptConfig] = {}
         self._modifications: Dict[str, Dict[str, Any]] = {}  # id -> modified fields
-        self._favorites_order: Dict[str, int] = {}  # id -> order
 
         # Load data
         self._load_builtins()
         self._load_custom()
         self._load_modifications()
-        self._load_favorites()
 
     def _load_builtins(self):
         """Load builtin prompts into cache."""
@@ -762,21 +851,6 @@ class PromptLibrary:
         except (json.JSONDecodeError, KeyError) as e:
             print(f"Error loading modifications: {e}")
 
-    def _load_favorites(self):
-        """Load favorites order from disk."""
-        if not self.favorites_file.exists():
-            # Initialize from builtin defaults
-            for config in DEFAULT_PROMPT_CONFIGS:
-                if config.is_favorite:
-                    self._favorites_order[config.id] = config.favorite_order
-            return
-
-        try:
-            with open(self.favorites_file) as f:
-                self._favorites_order = json.load(f)
-        except (json.JSONDecodeError, KeyError) as e:
-            print(f"Error loading favorites: {e}")
-
     def _save_custom(self):
         """Save custom prompts to disk."""
         data = {"prompts": [c.to_dict() for c in self._custom.values()]}
@@ -787,11 +861,6 @@ class PromptLibrary:
         """Save modifications to disk."""
         with open(self.modifications_file, "w") as f:
             json.dump(self._modifications, f, indent=2)
-
-    def _save_favorites(self):
-        """Save favorites order to disk."""
-        with open(self.favorites_file, "w") as f:
-            json.dump(self._favorites_order, f, indent=2)
 
     def get(self, prompt_id: str) -> Optional[PromptConfig]:
         """Get a prompt config by ID, applying any user modifications."""
@@ -810,13 +879,6 @@ class PromptLibrary:
             data["is_modified"] = True
             config = PromptConfig.from_dict(data)
 
-        # Apply favorite status
-        if prompt_id in self._favorites_order:
-            config.is_favorite = True
-            config.favorite_order = self._favorites_order[prompt_id]
-        else:
-            config.is_favorite = False
-
         return config
 
     def get_all(self) -> List[PromptConfig]:
@@ -827,31 +889,6 @@ class PromptLibrary:
     def get_by_category(self, category: str) -> List[PromptConfig]:
         """Get all prompts in a category."""
         return [p for p in self.get_all() if p.category == category]
-
-    def get_favorites(self) -> List[PromptConfig]:
-        """Get favorite prompts, sorted by order."""
-        favorites = [self.get(pid) for pid in self._favorites_order.keys()]
-        favorites = [f for f in favorites if f is not None]
-        return sorted(favorites, key=lambda p: p.favorite_order)
-
-    def add_favorite(self, prompt_id: str, order: int = None):
-        """Add a prompt to favorites."""
-        if order is None:
-            # Add at end
-            order = max(self._favorites_order.values(), default=-1) + 1
-        self._favorites_order[prompt_id] = order
-        self._save_favorites()
-
-    def remove_favorite(self, prompt_id: str):
-        """Remove a prompt from favorites."""
-        if prompt_id in self._favorites_order:
-            del self._favorites_order[prompt_id]
-            self._save_favorites()
-
-    def reorder_favorites(self, ordered_ids: List[str]):
-        """Reorder favorites by providing a list of IDs in desired order."""
-        self._favorites_order = {pid: idx for idx, pid in enumerate(ordered_ids)}
-        self._save_favorites()
 
     def create_custom(self, config: PromptConfig) -> PromptConfig:
         """Create a new custom prompt."""
@@ -874,8 +911,6 @@ class PromptLibrary:
         if prompt_id in self._custom:
             del self._custom[prompt_id]
             self._save_custom()
-        # Also remove from favorites
-        self.remove_favorite(prompt_id)
 
     def modify_builtin(self, prompt_id: str, modifications: Dict[str, Any]):
         """Modify a builtin prompt (stores delta, not full copy)."""
@@ -1027,19 +1062,77 @@ def build_prompt_from_config(prompt_config: PromptConfig, app_config: Any = None
                         "Use this as guidance for the output style:")
             lines.append(f"\n{writing_sample.strip()}\n")
 
-        # Email signature (if email format)
-        if prompt_config.id == "email" or prompt_config.name.lower() == "email":
+        # ===== PERSONALIZED FIELDS =====
+        # Inject user profile data for prompts that need personalization
+        if prompt_config.personalized_fields:
+            profile_lines = []
+
+            # Map field names to config attributes and display names
+            field_mapping = {
+                "user_name": ("user_name", "Name"),
+                "name": ("user_name", "Name"),
+                "user_role": ("user_role", "Role"),
+                "role": ("user_role", "Role"),
+                "business_name": ("business_name", "Company"),
+                "email_business": ("email_business", "Business Email"),
+                "email_personal": ("email_personal", "Personal Email"),
+                "signature_business": ("signature_business", None),  # Handled separately
+                "signature_personal": ("signature_personal", None),  # Handled separately
+                "phone_business": ("phone_business", "Business Phone"),
+                "phone_personal": ("phone_personal", "Personal Phone"),
+                "address_business": ("address_business", "Business Address"),
+                "address_personal": ("address_personal", "Personal Address"),
+                "website_business": ("website_business", "Business Website"),
+                "website_personal": ("website_personal", "Personal Website"),
+                "github_profile": ("github_profile", "GitHub"),
+                "huggingface_profile": ("huggingface_profile", "Hugging Face"),
+                "linkedin_profile": ("linkedin_profile", "LinkedIn"),
+                "user_context": ("user_context", None),  # Handled separately as free-form
+            }
+
+            signature_to_use = None
+            user_context = None
+
+            for field in prompt_config.personalized_fields:
+                if field in field_mapping:
+                    attr_name, display_name = field_mapping[field]
+                    value = getattr(app_config, attr_name, None)
+                    if value and value.strip():
+                        if field in ("signature_business", "signature_personal"):
+                            signature_to_use = value
+                        elif field == "user_context":
+                            user_context = value
+                        elif display_name:
+                            profile_lines.append(f"{display_name}: {value}")
+
+            if profile_lines:
+                lines.append("\n## User Profile")
+                lines.append("Use the following information about the user when personalizing the output:")
+                for line in profile_lines:
+                    lines.append(f"- {line}")
+
+            if user_context:
+                lines.append("\n## User Context")
+                lines.append("Background information about the user:")
+                lines.append(f"\n{user_context.strip()}\n")
+
+            if signature_to_use:
+                lines.append(f"\n## Signature")
+                lines.append(f"End with the following signature:\n\n{signature_to_use}")
+
+        # Legacy email handling (for backwards compatibility with prompts without personalized_fields)
+        elif prompt_config.id == "email" or prompt_config.name.lower() == "email":
             user_name = getattr(app_config, 'user_name', None)
 
             # Choose signature based on prompt config preference
             if prompt_config.use_business_signature:
-                sender_email = getattr(app_config, 'business_email', None) or getattr(app_config, 'personal_email', None)
-                sender_signature = getattr(app_config, 'business_signature', None) or getattr(app_config, 'personal_signature', None)
+                sender_email = getattr(app_config, 'email_business', None) or getattr(app_config, 'email_personal', None)
+                sender_signature = getattr(app_config, 'signature_business', None) or getattr(app_config, 'signature_personal', None)
             else:
-                sender_email = getattr(app_config, 'personal_email', None) or getattr(app_config, 'business_email', None)
-                sender_signature = getattr(app_config, 'personal_signature', None) or getattr(app_config, 'business_signature', None)
+                sender_email = getattr(app_config, 'email_personal', None) or getattr(app_config, 'email_business', None)
+                sender_signature = getattr(app_config, 'signature_personal', None) or getattr(app_config, 'signature_business', None)
 
-            user_phone = getattr(app_config, 'user_phone', None)
+            user_phone = getattr(app_config, 'phone_business', None) or getattr(app_config, 'user_phone', None)
 
             if user_name or sender_email or user_phone:
                 lines.append("\n## User Profile")
@@ -1059,6 +1152,22 @@ def build_prompt_from_config(prompt_config: PromptConfig, app_config: Any = None
             elif user_name:
                 sign_off = getattr(app_config, 'email_signature', "Best regards")
                 lines.append(f"- End the email with the sign-off: \"{sign_off},\" followed by the sender's name: \"{user_name}\"")
+
+        # ===== TLDR MODIFIER =====
+        tldr_enabled = getattr(app_config, 'tldr_enabled', False)
+        if tldr_enabled:
+            tldr_position = getattr(app_config, 'tldr_position', 'top')
+            lines.append("\n## TLDR Summary")
+            if tldr_position == 'top':
+                lines.append("- Add a brief TLDR (Too Long; Didn't Read) summary at the TOP of the output")
+                lines.append("- The TLDR should be 1-2 sentences capturing the essential message")
+                lines.append("- Format: **TLDR:** [summary text]")
+                lines.append("- Place a blank line after the TLDR before the main content")
+            else:
+                lines.append("- Add a brief TLDR (Too Long; Didn't Read) summary at the END of the output")
+                lines.append("- The TLDR should be 1-2 sentences capturing the essential message")
+                lines.append("- Format: **TLDR:** [summary text]")
+                lines.append("- Place a blank line before the TLDR after the main content")
 
     # Final instruction
     lines.append("\n## Output")
