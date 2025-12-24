@@ -133,7 +133,7 @@ class AudioMicWidget(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
 
         # Title
-        title = QLabel("Audio & Microphone")
+        title = QLabel("Mic")
         title.setFont(QFont("Sans", 14, QFont.Weight.Bold))
         layout.addWidget(title)
 
@@ -588,7 +588,7 @@ class ModelSelectionWidget(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
 
         # Title
-        title = QLabel("Model Selection")
+        title = QLabel("Model")
         title.setFont(QFont("Sans", 14, QFont.Weight.Bold))
         layout.addWidget(title)
 
@@ -684,6 +684,16 @@ class ModelSelectionWidget(QWidget):
         tier_layout.addStretch()
 
         selection_layout.addLayout(tier_layout)
+
+        # Set Default button
+        default_layout = QHBoxLayout()
+        default_layout.addStretch()
+        self.default_btn = QPushButton("Set Default")
+        self.default_btn.setToolTip("Reset to Gemini Flash (Latest)")
+        self.default_btn.setFixedWidth(100)
+        self.default_btn.clicked.connect(self._set_default)
+        default_layout.addWidget(self.default_btn)
+        selection_layout.addLayout(default_layout)
 
         # Update tier button states
         self._update_tier_buttons()
@@ -799,6 +809,22 @@ class ModelSelectionWidget(QWidget):
         self.standard_btn.blockSignals(False)
         self.budget_btn.blockSignals(False)
 
+    def _set_default(self):
+        """Reset to default: Gemini provider with gemini-flash-latest model."""
+        # Set provider to Gemini
+        self.provider_combo.setCurrentText("Google Gemini (Recommended)")
+        self.config.selected_provider = "gemini"
+
+        # Set model to gemini-flash-latest
+        self._update_model_combo()
+        idx = self.model_combo.findData("gemini-flash-latest")
+        if idx >= 0:
+            self.model_combo.setCurrentIndex(idx)
+        self.config.gemini_model = "gemini-flash-latest"
+
+        save_config(self.config)
+        self._update_tier_buttons()
+
 
 class SettingsWidget(QWidget):
     """Unified settings widget with tabbed sections."""
@@ -819,9 +845,9 @@ class SettingsWidget(QWidget):
         self.tabs.setDocumentMode(True)
 
         # Add sections as tabs
-        self.tabs.addTab(ModelSelectionWidget(self.config), "Model Selection")
+        self.tabs.addTab(ModelSelectionWidget(self.config), "Model")
         self.tabs.addTab(APIKeysWidget(self.config), "API Keys")
-        self.tabs.addTab(AudioMicWidget(self.config, self.recorder), "Audio & Mic")
+        self.tabs.addTab(AudioMicWidget(self.config, self.recorder), "Mic")
         self.tabs.addTab(BehaviorWidget(self.config), "Behavior")
         self.tabs.addTab(PersonalizationWidget(self.config), "Personalization")
         self.tabs.addTab(HotkeysWidget(self.config), "Hotkeys")
