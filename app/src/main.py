@@ -44,9 +44,10 @@ from PyQt6.QtWidgets import (
     QButtonGroup,
     QGroupBox,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPropertyAnimation, QEasingCurve
 import time
 from PyQt6.QtGui import QIcon, QAction, QFont, QClipboard, QShortcut, QKeySequence, QActionGroup
+from PyQt6.QtWidgets import QGraphicsOpacityEffect
 from PyQt6.QtWidgets import QCompleter
 
 from .config import (
@@ -339,6 +340,7 @@ class MainWindow(QMainWindow):
         self.timer.stop()
         self.status_label.setText(f"⚠️ {error_msg}")
         self.status_label.setStyleSheet("color: #dc3545; font-weight: bold;")
+        self.status_label.show()
         self.tray.showMessage(
             "Voice Notepad",
             error_msg,
@@ -399,7 +401,21 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
         main_layout.setSpacing(8)
-        main_layout.setContentsMargins(12, 8, 12, 12)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+
+        # Recording controls container with subtle background
+        recording_container = QFrame()
+        recording_container.setObjectName("recordingContainer")
+        recording_container.setStyleSheet("""
+            QFrame#recordingContainer {
+                background-color: #f8f9fa;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+            }
+        """)
+        recording_layout = QVBoxLayout(recording_container)
+        recording_layout.setSpacing(6)
+        recording_layout.setContentsMargins(16, 12, 16, 12)
 
         # Recording controls (centered)
         control_bar = QHBoxLayout()
@@ -632,33 +648,65 @@ class MainWindow(QMainWindow):
         control_bar.addWidget(self.delete_btn)
 
         control_bar.addStretch()  # Balance the stretch to center controls
-        main_layout.addLayout(control_bar)
 
-        # Status line (centered below controls)
-        status_bar = QHBoxLayout()
-        status_bar.setSpacing(8)
-        status_bar.addStretch()
+        # Duration display in its own box (to the right of controls)
+        self.duration_container = QFrame()
+        self.duration_container.setObjectName("durationContainer")
+        self.duration_container.setStyleSheet("""
+            QFrame#durationContainer {
+                background-color: #e9ecef;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                padding: 2px 8px;
+            }
+        """)
+        self.duration_container.setFixedWidth(50)
+        self.duration_container.hide()  # Hidden until 1 minute
+        duration_box_layout = QHBoxLayout(self.duration_container)
+        duration_box_layout.setContentsMargins(8, 4, 8, 4)
+        duration_box_layout.setSpacing(0)
 
-        self.status_label = QLabel("Ready")
+        self.duration_label = QLabel("")
+        self.duration_label.setFont(QFont("Monospace", 11))
+        self.duration_label.setStyleSheet("color: #495057; font-weight: bold;")
+        self.duration_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        duration_box_layout.addWidget(self.duration_label)
+
+        control_bar.addWidget(self.duration_container)
+
+        # Track last shown minute for fade animation
+        self._last_shown_minute = 0
+
+        recording_layout.addLayout(control_bar)
+
+        # Status label (hidden by default, shows only for important states)
+        self.status_label = QLabel("")
         self.status_label.setStyleSheet("""
             QLabel {
                 color: #6c757d;
-                font-weight: bold;
-                font-size: 13px;
+                font-size: 12px;
             }
         """)
-        status_bar.addWidget(self.status_label)
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_label.hide()
+        recording_layout.addWidget(self.status_label)
 
-        self.duration_label = QLabel("0:00")
-        self.duration_label.setFont(QFont("Monospace", 12))
-        status_bar.addWidget(self.duration_label)
-
+        # Segment indicator (for append mode)
         self.segment_label = QLabel("")
-        self.segment_label.setStyleSheet("color: #17a2b8; font-weight: bold;")
-        status_bar.addWidget(self.segment_label)
+        self.segment_label.setStyleSheet("color: #17a2b8; font-weight: bold; font-size: 11px;")
+        self.segment_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.segment_label.hide()
+        recording_layout.addWidget(self.segment_label)
 
-        status_bar.addStretch()
-        main_layout.addLayout(status_bar)
+        # Add the recording container to main layout
+        main_layout.addWidget(recording_container)
+
+        # Horizontal separator below recording controls
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFrameShadow(QFrame.Shadow.Plain)
+        separator.setStyleSheet("background-color: #dee2e6; max-height: 1px;")
+        main_layout.addWidget(separator)
 
         # Main tabs
         self.tabs = QTabWidget()
@@ -1224,8 +1272,8 @@ class MainWindow(QMainWindow):
         if not text:
             self.status_label.setText("Nothing to save")
             self.status_label.setStyleSheet("color: #ffc107;")
-            QTimer.singleShot(2000, lambda: self.status_label.setText("Ready"))
-            QTimer.singleShot(2000, lambda: self.status_label.setStyleSheet("color: #666;"))
+            self.status_label.show()
+            QTimer.singleShot(2000, lambda: self.status_label.hide())
             return
 
         file_path, _ = QFileDialog.getSaveFileName(
@@ -1241,11 +1289,11 @@ class MainWindow(QMainWindow):
                     f.write(text)
                 self.status_label.setText("Saved!")
                 self.status_label.setStyleSheet("color: #28a745;")
+                self.status_label.show()
             except Exception as e:
                 QMessageBox.critical(self, "Save Error", str(e))
             finally:
-                QTimer.singleShot(2000, lambda: self.status_label.setText("Ready"))
-                QTimer.singleShot(2000, lambda: self.status_label.setStyleSheet("color: #666;"))
+                QTimer.singleShot(2000, lambda: self.status_label.hide())
 
     def _open_prompt_editor(self):
         """Open the unified Prompt Editor window."""
@@ -1449,11 +1497,13 @@ class MainWindow(QMainWindow):
             self.pause_btn.setText("⏸")
             self.status_label.setText("Recording...")
             self.status_label.setStyleSheet("color: #dc3545; font-weight: bold;")
+            self.status_label.show()
         else:
             self.recorder.pause_recording()
             self.pause_btn.setText("▶")
             self.status_label.setText("Paused")
             self.status_label.setStyleSheet("color: #ffc107; font-weight: bold;")
+            self.status_label.show()
 
     def handle_stop_button(self):
         """Stop recording and cache audio without transcribing."""
@@ -1513,6 +1563,7 @@ class MainWindow(QMainWindow):
         # Combine all segments
         self.status_label.setText("Combining clips...")
         self.status_label.setStyleSheet("color: #007bff; font-weight: bold;")
+        self.status_label.show()
         audio_data = combine_wav_segments(self.accumulated_segments)
 
         # Get original audio info
@@ -1608,6 +1659,7 @@ class MainWindow(QMainWindow):
                 self.accumulated_segments.append(audio_data)
                 self.status_label.setText("Combining clips...")
                 self.status_label.setStyleSheet("color: #007bff; font-weight: bold;")
+                self.status_label.show()
                 audio_data = combine_wav_segments(self.accumulated_segments)
                 # Clear accumulated segments after combining
                 self.accumulated_segments = []
@@ -1683,6 +1735,7 @@ class MainWindow(QMainWindow):
         """Handle worker status updates."""
         self.status_label.setText(status)
         self.status_label.setStyleSheet("color: #007bff; font-weight: bold;")
+        self.status_label.show()
 
     def on_vad_complete(self, orig_dur: float, vad_dur: float):
         """Handle VAD processing complete - store duration for database."""
@@ -1936,9 +1989,13 @@ class MainWindow(QMainWindow):
         self.transcribe_btn.setEnabled(False)
         self.transcribe_btn.setStyleSheet(self._transcribe_btn_idle_style)  # Reset to green
         self.delete_btn.setEnabled(False)
-        self.duration_label.setText("0:00")
-        self.status_label.setText("Ready")
-        self.status_label.setStyleSheet("color: #666;")
+        # Hide duration display and reset minute counter
+        self.duration_label.setText("")
+        self.duration_container.hide()
+        self._last_shown_minute = 0
+        # Hide status label (no longer shows "Ready")
+        self.status_label.setText("")
+        self.status_label.hide()
 
     def delete_recording(self):
         """Delete current recording and any accumulated segments."""
@@ -1978,11 +2035,52 @@ class MainWindow(QMainWindow):
         self._set_tray_state('idle')
 
     def update_duration(self):
-        """Update the duration display."""
+        """Update the duration display - shows only minutes, fades on change."""
         duration = self.recorder.get_duration()
         mins = int(duration // 60)
-        secs = int(duration % 60)
-        self.duration_label.setText(f"{mins}:{secs:02d}")
+
+        # Only show duration once we hit 1 minute
+        if mins < 1:
+            self.duration_container.hide()
+            return
+
+        # Show container if hidden
+        if not self.duration_container.isVisible():
+            self.duration_container.show()
+
+        # Update display only when minute changes
+        if mins != self._last_shown_minute:
+            self._last_shown_minute = mins
+            self._animate_duration_change(f"{mins}m")
+
+    def _animate_duration_change(self, new_text: str):
+        """Animate duration label with fade out/in effect."""
+        # Set up opacity effect if not already present
+        if not self.duration_label.graphicsEffect():
+            effect = QGraphicsOpacityEffect(self.duration_label)
+            self.duration_label.setGraphicsEffect(effect)
+
+        effect = self.duration_label.graphicsEffect()
+
+        # Fade out animation
+        self._fade_out = QPropertyAnimation(effect, b"opacity")
+        self._fade_out.setDuration(150)
+        self._fade_out.setStartValue(1.0)
+        self._fade_out.setEndValue(0.0)
+        self._fade_out.setEasingCurve(QEasingCurve.Type.OutQuad)
+
+        # When fade out completes, update text and fade in
+        def on_fade_out_finished():
+            self.duration_label.setText(new_text)
+            self._fade_in = QPropertyAnimation(effect, b"opacity")
+            self._fade_in.setDuration(200)
+            self._fade_in.setStartValue(0.0)
+            self._fade_in.setEndValue(1.0)
+            self._fade_in.setEasingCurve(QEasingCurve.Type.InQuad)
+            self._fade_in.start()
+
+        self._fade_out.finished.connect(on_fade_out_finished)
+        self._fade_out.start()
 
     def clear_transcription(self):
         """Clear the transcription text."""
@@ -2049,8 +2147,8 @@ class MainWindow(QMainWindow):
             # Don't play beep here - only play when transcription first arrives
             self.status_label.setText("Copied!")
             self.status_label.setStyleSheet("color: #28a745;")
-            QTimer.singleShot(2000, lambda: self.status_label.setText("Ready"))
-            QTimer.singleShot(2000, lambda: self.status_label.setStyleSheet("color: #666;"))
+            self.status_label.show()
+            QTimer.singleShot(2000, lambda: self.status_label.hide())
 
     def rewrite_transcript(self):
         """Rewrite the transcript with user instructions."""
@@ -2094,6 +2192,7 @@ class MainWindow(QMainWindow):
         self.download_btn.setEnabled(False)
         self.status_label.setText("Rewriting...")
         self.status_label.setStyleSheet("color: #007bff; font-weight: bold;")
+        self.status_label.show()
 
         # Start rewrite worker
         self.rewrite_worker = RewriteWorker(
@@ -2154,16 +2253,15 @@ class MainWindow(QMainWindow):
         self.download_btn.setEnabled(True)
         self.status_label.setText("Rewrite complete!")
         self.status_label.setStyleSheet("color: #28a745; font-weight: bold;")
-        QTimer.singleShot(2000, lambda: self.status_label.setText("Ready"))
-        QTimer.singleShot(2000, lambda: self.status_label.setStyleSheet("color: #666;"))
+        self.status_label.show()
+        QTimer.singleShot(2000, lambda: self.status_label.hide())
 
     def on_rewrite_error(self, error: str):
         """Handle rewrite error."""
         QMessageBox.critical(self, "Rewrite Error", error)
         self.rewrite_btn.setEnabled(True)
         self.download_btn.setEnabled(True)
-        self.status_label.setText("Ready")
-        self.status_label.setStyleSheet("color: #666;")
+        self.status_label.hide()
 
     def download_transcript(self):
         """Download transcript with AI-generated title."""
@@ -2185,6 +2283,7 @@ class MainWindow(QMainWindow):
         self.download_btn.setEnabled(False)
         self.status_label.setText("Generating title...")
         self.status_label.setStyleSheet("color: #007bff; font-weight: bold;")
+        self.status_label.show()
 
         # Start title generation worker
         self.title_worker = TitleGeneratorWorker(
@@ -2207,8 +2306,8 @@ class MainWindow(QMainWindow):
         self.download_btn.setEnabled(True)
         self.status_label.setText("Downloaded!")
         self.status_label.setStyleSheet("color: #28a745; font-weight: bold;")
-        QTimer.singleShot(2000, lambda: self.status_label.setText("Ready"))
-        QTimer.singleShot(2000, lambda: self.status_label.setStyleSheet("color: #666;"))
+        self.status_label.show()
+        QTimer.singleShot(2000, lambda: self.status_label.hide())
 
     def on_title_error(self, error: str):
         """Handle title generation error - fall back to timestamp."""
@@ -2222,8 +2321,8 @@ class MainWindow(QMainWindow):
         self.download_btn.setEnabled(True)
         self.status_label.setText("Downloaded (timestamp)")
         self.status_label.setStyleSheet("color: #28a745; font-weight: bold;")
-        QTimer.singleShot(2000, lambda: self.status_label.setText("Ready"))
-        QTimer.singleShot(2000, lambda: self.status_label.setStyleSheet("color: #666;"))
+        self.status_label.show()
+        QTimer.singleShot(2000, lambda: self.status_label.hide())
 
     def _save_transcript_to_file(self, filename: str, text: str):
         """Save transcript to Downloads folder with given filename."""
@@ -2328,15 +2427,7 @@ class MainWindow(QMainWindow):
         # Update icon and status label
         if state == 'idle':
             self.tray.setIcon(self._tray_icon_idle)
-            self.status_label.setText("● Ready")
-            self.status_label.setStyleSheet("""
-                QLabel {
-                    color: #6c757d;
-                    font-weight: bold;
-                    font-size: 13px;
-                    padding: 0 8px;
-                }
-            """)
+            self.status_label.hide()  # No status shown in idle state
         elif state == 'recording':
             self.tray.setIcon(self._tray_icon_recording)
             self.status_label.setText("● Recording")
@@ -2348,6 +2439,7 @@ class MainWindow(QMainWindow):
                     padding: 0 8px;
                 }
             """)
+            self.status_label.show()
         elif state == 'stopped':
             self.tray.setIcon(self._tray_icon_stopped)
             self.status_label.setText("⏸ Stopped")
@@ -2359,6 +2451,7 @@ class MainWindow(QMainWindow):
                     padding: 0 8px;
                 }
             """)
+            self.status_label.show()
         elif state == 'transcribing':
             self.tray.setIcon(self._tray_icon_transcribing)
             self.status_label.setText("⟳ Transcribing")
@@ -2370,6 +2463,7 @@ class MainWindow(QMainWindow):
                     padding: 0 8px;
                 }
             """)
+            self.status_label.show()
         elif state == 'complete':
             self.tray.setIcon(self._tray_icon_complete)
             self.status_label.setText("✓ Complete")
@@ -2381,6 +2475,7 @@ class MainWindow(QMainWindow):
                     padding: 0 8px;
                 }
             """)
+            self.status_label.show()
         # Update menu
         self._update_tray_menu()
 
