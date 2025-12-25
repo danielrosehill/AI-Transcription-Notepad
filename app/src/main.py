@@ -744,6 +744,79 @@ class MainWindow(QMainWindow):
         self.segment_label.hide()
         recording_layout.addWidget(self.segment_label)
 
+        # Thin separator between controls and output mode
+        mode_separator = QFrame()
+        mode_separator.setFrameShape(QFrame.Shape.HLine)
+        mode_separator.setFrameShadow(QFrame.Shadow.Plain)
+        mode_separator.setStyleSheet("background-color: #dee2e6; max-height: 1px; margin: 4px 0;")
+        recording_layout.addWidget(mode_separator)
+
+        # Output mode buttons (where text goes after transcription)
+        mode_layout = QHBoxLayout()
+        mode_layout.setSpacing(8)
+        mode_layout.addStretch()
+
+        # Store buttons for easy access
+        self._mode_buttons = {}
+
+        # Common style for mode buttons
+        self._mode_btn_inactive_style = """
+            QPushButton {
+                background-color: #e9ecef;
+                color: #495057;
+                border: 1px solid #ced4da;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #dee2e6;
+                border-color: #adb5bd;
+            }
+        """
+        self._mode_btn_active_style = """
+            QPushButton {
+                background-color: #d4edda;
+                color: #155724;
+                border: 2px solid #28a745;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #c3e6cb;
+            }
+        """
+
+        # App Only button
+        self.mode_app_btn = QPushButton("App")
+        self.mode_app_btn.setToolTip("App Only: Text appears in app (clipboard untouched)")
+        self.mode_app_btn.clicked.connect(lambda: self._set_output_mode("app_only"))
+        self._mode_buttons["app_only"] = self.mode_app_btn
+        mode_layout.addWidget(self.mode_app_btn)
+
+        # Clipboard button
+        self.mode_clipboard_btn = QPushButton("Clipboard")
+        self.mode_clipboard_btn.setToolTip("Clipboard: Text copied to clipboard")
+        self.mode_clipboard_btn.clicked.connect(lambda: self._set_output_mode("clipboard"))
+        self._mode_buttons["clipboard"] = self.mode_clipboard_btn
+        mode_layout.addWidget(self.mode_clipboard_btn)
+
+        # Inject button
+        self.mode_inject_btn = QPushButton("Inject")
+        self.mode_inject_btn.setToolTip("Inject: Text typed directly at cursor (clipboard untouched)")
+        self.mode_inject_btn.clicked.connect(lambda: self._set_output_mode("inject"))
+        self._mode_buttons["inject"] = self.mode_inject_btn
+        mode_layout.addWidget(self.mode_inject_btn)
+
+        mode_layout.addStretch()
+        recording_layout.addLayout(mode_layout)
+
+        # Apply initial button styles based on current mode
+        self._update_mode_button_styles()
+
         # Add the recording container to main layout
         main_layout.addWidget(recording_container)
 
@@ -833,7 +906,7 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(presets_section_layout)
 
-        # Quick toggles row (Quiet Mode, Text Injection)
+        # Quick toggles row (Quiet Mode)
         toggles_layout = QHBoxLayout()
         toggles_layout.setSpacing(20)
 
@@ -843,14 +916,7 @@ class MainWindow(QMainWindow):
         self.quiet_mode_checkbox.toggled.connect(self._on_quiet_mode_changed)
         toggles_layout.addWidget(self.quiet_mode_checkbox)
 
-        self.auto_paste_cb = QCheckBox("📋 Text Injection")
-        self.auto_paste_cb.setChecked(self.config.auto_paste)
-        self.auto_paste_cb.setToolTip(
-            "Auto-paste (Ctrl+V) after copying to clipboard.\n"
-            "Requires ydotool on Wayland. See docs/text-injection.md for setup."
-        )
-        self.auto_paste_cb.toggled.connect(self._on_auto_paste_toggled)
-        toggles_layout.addWidget(self.auto_paste_cb)
+        # Note: Output mode (App Only / Clipboard / Inject) is in the control bar
 
         toggles_layout.addStretch()
         layout.addLayout(toggles_layout)
@@ -1379,14 +1445,24 @@ class MainWindow(QMainWindow):
         self.config.quiet_mode = checked
         save_config(self.config)
 
-    def _on_auto_paste_toggled(self, checked: bool):
-        """Handle Text Injection (auto-paste) checkbox toggle.
+    def _set_output_mode(self, mode: str):
+        """Set the output mode and update button styles.
 
-        When enabled, automatically simulates Ctrl+V after copying transcription
-        to clipboard, pasting the text wherever the cursor is focused.
+        Args:
+            mode: One of "app_only", "clipboard", or "inject"
         """
-        self.config.auto_paste = checked
+        self.config.output_mode = mode
         save_config(self.config)
+        self._update_mode_button_styles()
+
+    def _update_mode_button_styles(self):
+        """Update mode button styles based on current selection."""
+        current_mode = self.config.output_mode
+        for mode_key, btn in self._mode_buttons.items():
+            if mode_key == current_mode:
+                btn.setStyleSheet(self._mode_btn_active_style)
+            else:
+                btn.setStyleSheet(self._mode_btn_inactive_style)
 
     def _on_tldr_toggled(self, checked: bool):
         """Handle TLDR checkbox toggle.
@@ -1812,29 +1888,37 @@ class MainWindow(QMainWindow):
 
     def on_transcription_complete(self, result: TranscriptionResult):
         """Handle completed transcription."""
-        if self.append_mode:
-            existing_text = self.text_output.toPlainText()
-            if existing_text:
-                if self.config.append_position == "cursor":
-                    # Insert at cursor position
-                    cursor = self.text_output.source_view.textCursor()
-                    cursor.insertText("\n\n" + result.text)
-                    self.text_output.source_view.setTextCursor(cursor)
+        output_mode = self.config.output_mode
+
+        # Only show text in app for "app_only" mode
+        if output_mode == "app_only":
+            if self.append_mode:
+                existing_text = self.text_output.toPlainText()
+                if existing_text:
+                    if self.config.append_position == "cursor":
+                        # Insert at cursor position
+                        cursor = self.text_output.source_view.textCursor()
+                        cursor.insertText("\n\n" + result.text)
+                        self.text_output.source_view.setTextCursor(cursor)
+                    else:
+                        # Append at end (default)
+                        combined_text = existing_text + "\n\n" + result.text
+                        self.text_output.setMarkdown(combined_text)
+                        # Move cursor to end of document after appending
+                        cursor = self.text_output.source_view.textCursor()
+                        cursor.movePosition(cursor.MoveOperation.End)
+                        self.text_output.source_view.setTextCursor(cursor)
                 else:
-                    # Append at end (default)
-                    combined_text = existing_text + "\n\n" + result.text
-                    self.text_output.setMarkdown(combined_text)
-                    # Move cursor to end of document after appending
-                    cursor = self.text_output.source_view.textCursor()
-                    cursor.movePosition(cursor.MoveOperation.End)
-                    self.text_output.source_view.setTextCursor(cursor)
+                    self.text_output.setMarkdown(result.text)
+                # Reset append mode
+                self.append_mode = False
             else:
+                # Replace text (normal mode)
                 self.text_output.setMarkdown(result.text)
-            # Reset append mode
-            self.append_mode = False
         else:
-            # Replace text (normal mode)
-            self.text_output.setMarkdown(result.text)
+            # For clipboard/inject modes, clear the text area
+            self.text_output.setMarkdown("")
+            self.append_mode = False
 
         # Get provider/model info
         provider = self.config.selected_provider
@@ -1895,24 +1979,30 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'last_vad_duration'):
             del self.last_vad_duration
 
-        # Auto-copy to clipboard (using wl-copy for Wayland)
-        self._copy_to_clipboard_wayland(result.text)
+        # Handle output based on mode
+        status_text = "Done!"
+        if output_mode == "clipboard":
+            # Copy to clipboard only
+            self._copy_to_clipboard_wayland(result.text)
+            status_text = "Copied!"
+        elif output_mode == "inject":
+            # Type directly at cursor (no clipboard)
+            self._inject_text_at_cursor(result.text)
+            status_text = "Injected!"
+        # app_only mode: no clipboard, no injection - text is already in app
 
-        # Auto-paste if enabled (inject text at cursor using ydotool)
-        if self.config.auto_paste:
-            self._paste_wayland()
-
-        # Play clipboard beep (unless in Quiet Mode)
-        feedback = get_feedback()
-        feedback.enabled = self.config.beep_on_clipboard and not self.config.quiet_mode
-        feedback.play_clipboard_beep()
+        # Play beep (unless in Quiet Mode)
+        if output_mode != "app_only":
+            feedback = get_feedback()
+            feedback.enabled = self.config.beep_on_clipboard and not self.config.quiet_mode
+            feedback.play_clipboard_beep()
 
         self.reset_ui()
 
-        # Enable append button now that we have a transcription
-        self.append_btn.setEnabled(True)
+        # Enable append button only for app_only mode (where text is visible)
+        self.append_btn.setEnabled(output_mode == "app_only")
 
-        self.status_label.setText("Copied!")
+        self.status_label.setText(status_text)
         self.status_label.setStyleSheet("color: rgba(40, 167, 69, 0.7); font-size: 11px;")
 
         # Show complete state (green tick) then transition to idle after 3 seconds
@@ -2191,6 +2281,17 @@ class MainWindow(QMainWindow):
         """
         from .text_injection import paste_clipboard_with_fallback
         paste_clipboard_with_fallback(delay_before=0.1)
+
+    def _inject_text_at_cursor(self, text: str):
+        """Type text directly at cursor using ydotool type.
+
+        This method types text character-by-character without using the
+        clipboard. The clipboard contents are not modified.
+
+        Requires ydotool installed and ydotoold daemon running.
+        """
+        from .text_injection import type_text
+        type_text(text, delay_before=0.1)
 
     def copy_to_clipboard(self):
         """Copy transcription to clipboard."""

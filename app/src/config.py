@@ -2,9 +2,31 @@
 
 import json
 import os
+from enum import Enum
 from pathlib import Path
 from dataclasses import dataclass, asdict, field
 from typing import Optional
+
+
+class OutputMode(Enum):
+    """Output mode for transcribed text.
+
+    Determines where the transcribed text is sent after processing.
+
+    APP_ONLY: Text appears in the app UI only (for viewing/editing).
+              Clipboard is not modified. No text injection.
+
+    CLIPBOARD: Text is copied to clipboard via wl-copy.
+               Does not appear in the app text area.
+               User can paste manually wherever needed.
+
+    INJECT: Text is typed directly at cursor via ydotool type.
+            Does not use or modify the clipboard.
+            Does not appear in the app text area.
+    """
+    APP_ONLY = "app_only"
+    CLIPBOARD = "clipboard"
+    INJECT = "inject"
 
 
 CONFIG_DIR = Path.home() / ".config" / "voice-notepad-v3"
@@ -130,11 +152,17 @@ class Config:
 
     # Audio feedback
     beep_on_record: bool = True  # Play beep when recording starts/stops
-    beep_on_clipboard: bool = True  # Play beep when text copied to clipboard
+    beep_on_clipboard: bool = True  # Play beep when text copied/injected
     quiet_mode: bool = False  # Suppress all beeps (overrides above settings when True)
 
-    # Text injection (auto-paste after clipboard copy)
-    auto_paste: bool = False  # Automatically paste (Ctrl+V) after copying to clipboard
+    # Output mode: where transcribed text is sent
+    # - "app_only": Text appears in app UI only (clipboard untouched)
+    # - "clipboard": Text copied to clipboard (does not appear in app)
+    # - "inject": Text typed directly at cursor via ydotool (clipboard untouched, not in app)
+    output_mode: str = "clipboard"  # Default to clipboard for backward compatibility
+
+    # Legacy field - kept for migration, use output_mode instead
+    auto_paste: bool = False
 
     # Append mode behavior
     append_position: str = "end"  # "end" (append at document end) or "cursor" (insert at cursor)
@@ -268,6 +296,11 @@ def _apply_migrations(config: Config) -> Config:
     # Migration: move user_phone to phone_business
     if config.user_phone and not config.phone_business:
         config.phone_business = config.user_phone
+
+    # Migration: auto_paste -> output_mode
+    # If auto_paste was enabled, migrate to inject mode
+    if config.auto_paste and config.output_mode == "clipboard":
+        config.output_mode = "inject"
 
     return config
 
