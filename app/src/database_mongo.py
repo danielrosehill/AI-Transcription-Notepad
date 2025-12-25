@@ -826,6 +826,128 @@ class TranscriptionDB:
         self._client = None
         self._db = None
 
+    # ===== SETTINGS OPERATIONS =====
+    # Settings are stored as a single document in the 'settings' collection.
+    # This provides more robustness than JSON files (atomic writes, no corruption on crash).
+
+    def get_settings(self) -> Dict[str, Any]:
+        """Get all settings as a dictionary.
+
+        Returns empty dict if no settings exist yet.
+        """
+        with self._lock:
+            db = self._get_db()
+            doc = db.settings.find_one({'_id': 'user_settings'})
+            if doc:
+                # Remove internal fields
+                doc.pop('_id', None)
+                doc.pop('_schema_version', None)
+                return doc
+            return {}
+
+    def save_settings(self, settings: Dict[str, Any]) -> bool:
+        """Save all settings (full replacement).
+
+        Args:
+            settings: Dictionary of all settings to save
+
+        Returns:
+            True if successful
+        """
+        with self._lock:
+            db = self._get_db()
+            doc = settings.copy()
+            doc['_id'] = 'user_settings'
+            doc['_schema_version'] = 1
+            doc['_modified_at'] = datetime.now().isoformat()
+
+            try:
+                db.settings.replace_one(
+                    {'_id': 'user_settings'},
+                    doc,
+                    upsert=True
+                )
+                return True
+            except Exception as e:
+                print(f"Failed to save settings: {e}")
+                return False
+
+    def update_settings(self, updates: Dict[str, Any]) -> bool:
+        """Update specific settings (partial update).
+
+        Args:
+            updates: Dictionary of settings to update
+
+        Returns:
+            True if successful
+        """
+        with self._lock:
+            db = self._get_db()
+            updates['_modified_at'] = datetime.now().isoformat()
+
+            try:
+                result = db.settings.update_one(
+                    {'_id': 'user_settings'},
+                    {'$set': updates},
+                    upsert=True
+                )
+                return True
+            except Exception as e:
+                print(f"Failed to update settings: {e}")
+                return False
+
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        """Get a single setting value.
+
+        Args:
+            key: Setting key name
+            default: Default value if key doesn't exist
+
+        Returns:
+            The setting value or default
+        """
+        settings = self.get_settings()
+        return settings.get(key, default)
+
+    def set_setting(self, key: str, value: Any) -> bool:
+        """Set a single setting value.
+
+        Args:
+            key: Setting key name
+            value: Value to set
+
+        Returns:
+            True if successful
+        """
+        return self.update_settings({key: value})
+
+    def delete_setting(self, key: str) -> bool:
+        """Delete a single setting.
+
+        Args:
+            key: Setting key name to delete
+
+        Returns:
+            True if successful
+        """
+        with self._lock:
+            db = self._get_db()
+            try:
+                result = db.settings.update_one(
+                    {'_id': 'user_settings'},
+                    {'$unset': {key: ''}}
+                )
+                return True
+            except Exception as e:
+                print(f"Failed to delete setting: {e}")
+                return False
+
+    def settings_exist(self) -> bool:
+        """Check if settings document exists in database."""
+        with self._lock:
+            db = self._get_db()
+            return db.settings.count_documents({'_id': 'user_settings'}) > 0
+
 
 # Global instance with thread-safe initialization
 _db: Optional[TranscriptionDB] = None

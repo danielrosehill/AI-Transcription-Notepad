@@ -91,7 +91,33 @@ class StackBuilderWidget(QWidget):
         """Set up the columnar UI layout with collapsible accordion."""
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        main_layout.setSpacing(4)
+
+        # Quick options row (above accordion)
+        quick_options_layout = QHBoxLayout()
+        quick_options_layout.setContentsMargins(0, 0, 0, 4)
+        quick_options_layout.setSpacing(16)
+
+        # Inferred Format checkbox
+        self.infer_format_checkbox = QCheckBox("Infer Format")
+        self.infer_format_checkbox.setToolTip(
+            "Let the AI infer the intended format (email, to-do list, meeting notes, etc.) "
+            "from the content and format the output accordingly"
+        )
+        self.infer_format_checkbox.setStyleSheet("""
+            QCheckBox {
+                font-size: 11px;
+                color: #444;
+            }
+            QCheckBox::indicator {
+                width: 14px;
+                height: 14px;
+            }
+        """)
+        quick_options_layout.addWidget(self.infer_format_checkbox)
+
+        quick_options_layout.addStretch()
+        main_layout.addLayout(quick_options_layout)
 
         # Collapsible header (clickable to expand/collapse)
         self.header_frame = QFrame()
@@ -372,6 +398,9 @@ class StackBuilderWidget(QWidget):
 
     def _connect_signals(self):
         """Connect all widget signals to emit prompt_changed."""
+        # Quick options (above accordion)
+        self.infer_format_checkbox.stateChanged.connect(self._on_infer_format_changed)
+
         # Base column
         self.base_button_group.buttonClicked.connect(self._on_setting_changed)
 
@@ -389,6 +418,11 @@ class StackBuilderWidget(QWidget):
 
         # Reset button
         self.reset_btn.clicked.connect(self._on_reset_clicked)
+
+    def _on_infer_format_changed(self, state: int):
+        """Handle Infer Format checkbox change."""
+        self.config.prompt_infer_format = (state == Qt.CheckState.Checked.value)
+        self.prompt_changed.emit()
 
     def _on_setting_changed(self):
         """Handle any setting change."""
@@ -436,6 +470,11 @@ class StackBuilderWidget(QWidget):
         """Load current settings from config."""
         # Block signals during load
         self._block_all_signals(True)
+
+        # Quick options (above accordion)
+        self.infer_format_checkbox.setChecked(
+            getattr(self.config, 'prompt_infer_format', True)
+        )
 
         # Base selection
         base_preset = self.config.format_preset
@@ -523,6 +562,7 @@ class StackBuilderWidget(QWidget):
 
     def _block_all_signals(self, block: bool):
         """Block or unblock all widget signals."""
+        self.infer_format_checkbox.blockSignals(block)
         self.base_button_group.blockSignals(block)
         self.format_button_group.blockSignals(block)
         self.format_combo.blockSignals(block)
@@ -534,6 +574,10 @@ class StackBuilderWidget(QWidget):
     def _on_reset_clicked(self):
         """Reset stack to General with no modifiers."""
         self._block_all_signals(True)
+
+        # Reset quick options to defaults (infer_format is experimental, default off)
+        self.infer_format_checkbox.setChecked(False)
+        self.config.prompt_infer_format = False
 
         # Reset to General
         self.base_buttons["general"].setChecked(True)

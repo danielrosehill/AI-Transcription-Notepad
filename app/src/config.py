@@ -146,6 +146,7 @@ class Config:
     prompt_markdown_formatting: bool = False  # Use bold, lists, etc.
     prompt_remove_unintentional_dialogue: bool = False  # Remove accidental dialogue from others
     prompt_enhancement_enabled: bool = False  # Enhance prompts for maximum AI effectiveness
+    prompt_infer_format: bool = False  # Infer output format (email, todo, etc.) from content (experimental)
 
     # Legacy field - kept for backwards compatibility but not used directly
     # The prompt is now built from the above boolean flags
@@ -232,68 +233,149 @@ class Config:
     prompt_stack_collapsed: bool = True  # Whether the prompt stack is collapsed (default: collapsed)
 
 
+def _apply_migrations(config: Config) -> Config:
+    """Apply any necessary field migrations to a Config object."""
+    # Migration: copy selected_microphone to preferred_mic_name if not set
+    if config.selected_microphone and not config.preferred_mic_name:
+        # Only migrate non-default values (not "pulse" or "default")
+        if config.selected_microphone not in ("pulse", "default"):
+            config.preferred_mic_name = config.selected_microphone
+
+    # Migration: move user_email to email_business if email_business is empty
+    if config.user_email and not config.email_business:
+        config.email_business = config.user_email
+
+    # Migration: move legacy business_email to email_business
+    if config.business_email and not config.email_business:
+        config.email_business = config.business_email
+
+    # Migration: move legacy personal_email to email_personal
+    if config.personal_email and not config.email_personal:
+        config.email_personal = config.personal_email
+
+    # Migration: move legacy business_signature to signature_business
+    if config.business_signature and not config.signature_business:
+        config.signature_business = config.business_signature
+
+    # Migration: move legacy personal_signature to signature_personal
+    if config.personal_signature and not config.signature_personal:
+        config.signature_personal = config.personal_signature
+
+    # Migration: move email_signature to signature_business if not default
+    if config.email_signature and config.email_signature != "Best regards" and not config.signature_business:
+        config.signature_business = config.email_signature
+
+    # Migration: move user_phone to phone_business
+    if config.user_phone and not config.phone_business:
+        config.phone_business = config.user_phone
+
+    return config
+
+
+def _load_from_json() -> Optional[Config]:
+    """Load configuration from legacy JSON file.
+
+    Returns Config if JSON file exists and is valid, None otherwise.
+    """
+    if not CONFIG_FILE.exists():
+        return None
+
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            data = json.load(f)
+        # Filter to only known fields to handle schema changes gracefully
+        known_fields = {f.name for f in Config.__dataclass_fields__.values()}
+        filtered_data = {k: v for k, v in data.items() if k in known_fields}
+        return Config(**filtered_data)
+    except (json.JSONDecodeError, TypeError) as e:
+        print(f"Warning: Could not load JSON config: {e}")
+        return None
+
+
+def _migrate_json_to_db() -> Optional[Config]:
+    """Migrate settings from JSON to Mongita database.
+
+    Returns the migrated Config if successful, None otherwise.
+    """
+    config = _load_from_json()
+    if config is None:
+        return None
+
+    # Apply field migrations
+    config = _apply_migrations(config)
+
+    # Save to Mongita
+    try:
+        from .database_mongo import get_db
+    except ImportError:
+        from database_mongo import get_db
+
+    db = get_db()
+    if db.save_settings(asdict(config)):
+        # Successfully migrated - rename old JSON file as backup
+        backup_file = CONFIG_FILE.with_suffix('.json.migrated')
+        try:
+            CONFIG_FILE.rename(backup_file)
+            print(f"Settings migrated to database. JSON backup: {backup_file}")
+        except OSError as e:
+            print(f"Warning: Could not rename old config file: {e}")
+        return config
+
+    return None
+
+
 def load_config() -> Config:
-    """Load configuration from disk, or create default."""
+    """Load configuration from Mongita database.
+
+    Migration path:
+    1. If settings exist in Mongita, load from there
+    2. If not, check for legacy JSON config and migrate it
+    3. If neither exists, return default config
+
+    All settings are now stored in the Mongita database for better
+    reliability and consistency with transcript storage.
+    """
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
+    try:
+        from .database_mongo import get_db
+    except ImportError:
+        from database_mongo import get_db
+
+    db = get_db()
+
+    # Check if settings exist in Mongita
+    if db.settings_exist():
+        data = db.get_settings()
+        # Filter to only known fields to handle schema changes gracefully
+        known_fields = {f.name for f in Config.__dataclass_fields__.values()}
+        filtered_data = {k: v for k, v in data.items() if k in known_fields}
+        config = Config(**filtered_data)
+        return _apply_migrations(config)
+
+    # Check for legacy JSON config and migrate
     if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                data = json.load(f)
-            # Filter to only known fields to handle schema changes gracefully
-            known_fields = {f.name for f in Config.__dataclass_fields__.values()}
-            filtered_data = {k: v for k, v in data.items() if k in known_fields}
-            config = Config(**filtered_data)
-
-            # Migration: copy selected_microphone to preferred_mic_name if not set
-            if config.selected_microphone and not config.preferred_mic_name:
-                # Only migrate non-default values (not "pulse" or "default")
-                if config.selected_microphone not in ("pulse", "default"):
-                    config.preferred_mic_name = config.selected_microphone
-
-            # Migration: move user_email to email_business if email_business is empty
-            if config.user_email and not config.email_business:
-                config.email_business = config.user_email
-
-            # Migration: move legacy business_email to email_business
-            if config.business_email and not config.email_business:
-                config.email_business = config.business_email
-
-            # Migration: move legacy personal_email to email_personal
-            if config.personal_email and not config.email_personal:
-                config.email_personal = config.personal_email
-
-            # Migration: move legacy business_signature to signature_business
-            if config.business_signature and not config.signature_business:
-                config.signature_business = config.business_signature
-
-            # Migration: move legacy personal_signature to signature_personal
-            if config.personal_signature and not config.signature_personal:
-                config.signature_personal = config.personal_signature
-
-            # Migration: move email_signature to signature_business if not default
-            if config.email_signature and config.email_signature != "Best regards" and not config.signature_business:
-                config.signature_business = config.email_signature
-
-            # Migration: move user_phone to phone_business
-            if config.user_phone and not config.phone_business:
-                config.phone_business = config.user_phone
-
+        config = _migrate_json_to_db()
+        if config is not None:
             return config
-        except (json.JSONDecodeError, TypeError) as e:
-            print(f"Warning: Could not load config: {e}")
-            pass
 
-    # Return default config
-    return Config()
+    # Return default config and save it
+    config = Config()
+    save_config(config)
+    return config
 
 
 def save_config(config: Config) -> None:
-    """Save configuration to disk."""
+    """Save configuration to Mongita database."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(asdict(config), f, indent=2)
+    try:
+        from .database_mongo import get_db
+    except ImportError:
+        from database_mongo import get_db
+
+    db = get_db()
+    db.save_settings(asdict(config))
 
 
 def load_env_keys(config: Config) -> Config:
@@ -946,8 +1028,13 @@ def build_cleanup_prompt(config: Config, use_prompt_library: bool = False) -> st
 
     # ===== LAYER 1: FOUNDATION (ALWAYS APPLIED) =====
     lines.append("\n## Foundation Cleanup (Always Applied)")
-    for instruction in FOUNDATION_PROMPT_COMPONENTS:
-        lines.append(f"- {instruction}")
+    # Iterate over sections to conditionally include format_detection
+    for section_key, section_data in FOUNDATION_PROMPT_SECTIONS.items():
+        # Skip format_detection if prompt_infer_format is disabled
+        if section_key == "format_detection" and not getattr(config, 'prompt_infer_format', True):
+            continue
+        for instruction in section_data["instructions"]:
+            lines.append(f"- {instruction}")
 
     # ===== LAYER 2: OPTIONAL ENHANCEMENTS =====
     optional_instructions = []
