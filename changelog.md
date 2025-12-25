@@ -7,12 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.5] - 2024-12-25
+
+### Added
+- **Text Injection Validated**: Wayland text injection fully supported and documented
+  - Tested on Ubuntu 25.10, KDE Plasma 6, Wayland
+  - New setup script: `./scripts/setup-text-injection.sh`
+  - Comprehensive documentation at `docs/text-injection.md`
+- **Automated Setup Script**: `scripts/setup-text-injection.sh`
+  - Detects environment (OS, desktop, Wayland/X11)
+  - Checks ydotool installation and offers to install
+  - Verifies daemon permissions and provides remediation
+
 ### Changed
-- **Development Workflow**: Adopted feature branch workflow for development
-  - `main` branch is always stable and releasable
-  - New features developed on `feature/*` branches
-  - No development releases—only stable releases from main
-  - Added branching note to README
+- Removed "(Beta)" label from Text Injection UI
+- Simplified text injection to use ydotool with automatic socket discovery
+
+### Fixed
+- Text injection now works reliably on Wayland when ydotoold runs as user
+
+### Documentation
+- New `docs/text-injection.md` - Complete Wayland setup guide
+- Updated `docs/troubleshooting.md` - Added Text Injection section
+
+## [1.9.4] - 2024-12-24
+
+### Added
+- **Inferred Format Detection**: AI automatically detects content type
+- **Unified Mongita Backend**: Single database backend for all data
 
 ## [1.6.0] - 2025-12-16
 
