@@ -2,12 +2,23 @@
 
 Plays pre-generated voice announcements for status changes.
 Uses British English male voice (en-GB-RyanNeural) via Edge TTS.
+
+Also supports dynamic TTS generation for stats readout.
 """
 
+import asyncio
 import os
+import tempfile
 import threading
 from pathlib import Path
 from typing import Optional
+
+# Edge TTS for dynamic speech generation
+try:
+    import edge_tts
+    HAS_EDGE_TTS = True
+except ImportError:
+    HAS_EDGE_TTS = False
 
 # Try to use simpleaudio for playback (non-blocking, can load WAV files)
 try:
@@ -75,6 +86,10 @@ class TTSAnnouncer:
             "transcribing", "complete", "error",
             # Output modes
             "text_in_app", "text_on_clipboard", "text_injected", "injection_failed",
+            # Prompt stack changes
+            "format_updated", "format_inference", "tone_updated", "style_updated", "verbatim_mode", "general_mode",
+            # Audio feedback mode changes
+            "tts_activated", "tts_deactivated",
             # Legacy (kept for compatibility)
             "copied", "injected", "cleared",
         ]
@@ -231,6 +246,46 @@ class TTSAnnouncer:
         self._play_async("injection_failed")
 
     # -------------------------------------------------------------------------
+    # Prompt stack change announcements
+    # -------------------------------------------------------------------------
+
+    def announce_format_updated(self) -> None:
+        """Announce: Format preset changed."""
+        self._play_async("format_updated")
+
+    def announce_format_inference(self) -> None:
+        """Announce: Format inference activated (Infer format selected)."""
+        self._play_async("format_inference")
+
+    def announce_tone_updated(self) -> None:
+        """Announce: Tone changed."""
+        self._play_async("tone_updated")
+
+    def announce_style_updated(self) -> None:
+        """Announce: Style changed."""
+        self._play_async("style_updated")
+
+    def announce_verbatim_mode(self) -> None:
+        """Announce: Verbatim mode selected."""
+        self._play_async("verbatim_mode")
+
+    def announce_general_mode(self) -> None:
+        """Announce: General mode selected (returning from verbatim)."""
+        self._play_async("general_mode")
+
+    # -------------------------------------------------------------------------
+    # Audio feedback mode announcements
+    # -------------------------------------------------------------------------
+
+    def announce_tts_activated(self) -> None:
+        """Announce: TTS mode activated."""
+        self._play_async("tts_activated")
+
+    def announce_tts_deactivated(self) -> None:
+        """Announce: TTS mode deactivated (switching to beeps or silent)."""
+        self._play_async("tts_deactivated")
+
+    # -------------------------------------------------------------------------
     # Legacy methods (kept for compatibility)
     # -------------------------------------------------------------------------
 
@@ -245,6 +300,108 @@ class TTSAnnouncer:
     def announce_cleared(self) -> None:
         """Announce: Cleared (legacy, use announce_discarded)."""
         self._play_async("cleared")
+
+    # -------------------------------------------------------------------------
+    # Dynamic TTS generation (for stats readout)
+    # -------------------------------------------------------------------------
+
+    def speak_text(self, text: str, blocking: bool = False) -> bool:
+        """Generate and play TTS for arbitrary text using Edge TTS.
+
+        Args:
+            text: The text to speak
+            blocking: If True, wait for speech to complete before returning
+
+        Returns:
+            True if speech was generated and played, False if Edge TTS unavailable
+        """
+        if not HAS_EDGE_TTS:
+            print("Edge TTS not available for dynamic speech")
+            return False
+
+        if blocking:
+            self._speak_text_sync(text)
+        else:
+            thread = threading.Thread(target=self._speak_text_sync, args=(text,), daemon=True)
+            thread.start()
+        return True
+
+    def _speak_text_sync(self, text: str) -> None:
+        """Generate and play TTS synchronously (internal method)."""
+        try:
+            # Create temp file for generated audio
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp_path = tmp.name
+
+            # Generate speech using Edge TTS (async)
+            asyncio.run(self._generate_tts(text, tmp_path))
+
+            # Play the generated audio
+            self._play_temp_file(tmp_path)
+
+        except Exception as e:
+            print(f"Error generating TTS: {e}")
+        finally:
+            # Clean up temp file
+            try:
+                if 'tmp_path' in locals():
+                    os.unlink(tmp_path)
+            except Exception:
+                pass
+
+    async def _generate_tts(self, text: str, output_path: str) -> None:
+        """Generate TTS audio file using Edge TTS."""
+        # Use same voice as pre-generated assets
+        voice = "en-GB-RyanNeural"
+        communicate = edge_tts.Communicate(text, voice)
+        await communicate.save(output_path)
+
+    def _play_temp_file(self, filepath: str) -> None:
+        """Play a temporary audio file."""
+        if HAS_SIMPLEAUDIO:
+            try:
+                wave_obj = sa.WaveObject.from_wave_file(filepath)
+                play_obj = wave_obj.play()
+                play_obj.wait_done()
+                return
+            except Exception:
+                pass
+
+        if HAS_PYAUDIO:
+            try:
+                import wave
+                with wave.open(filepath, 'rb') as wf:
+                    p = pyaudio.PyAudio()
+                    stream = p.open(
+                        format=p.get_format_from_width(wf.getsampwidth()),
+                        channels=wf.getnchannels(),
+                        rate=wf.getframerate(),
+                        output=True
+                    )
+                    data = wf.readframes(1024)
+                    while data:
+                        stream.write(data)
+                        data = wf.readframes(1024)
+                    stream.stop_stream()
+                    stream.close()
+                    p.terminate()
+                return
+            except Exception:
+                pass
+
+    def speak_stats(self, total_transcripts: int, total_words: int) -> bool:
+        """Speak usage statistics.
+
+        Args:
+            total_transcripts: Total number of transcriptions
+            total_words: Total word count
+
+        Returns:
+            True if speech was initiated, False if Edge TTS unavailable
+        """
+        # Format numbers with commas for natural speech
+        text = f"You have completed {total_transcripts:,} transcriptions, totaling {total_words:,} words."
+        return self.speak_text(text, blocking=False)
 
 
 # Global singleton instance

@@ -54,8 +54,8 @@ Voice-Notepad-V3/
 - `analysis_widget.py` - Analytics tab for model performance stats
 - `models_widget.py` - Models tab showing available AI models by provider
 - `about_widget.py` - About tab with app info and keyboard shortcuts
-- `audio_feedback.py` - Audio beep notifications for recording start/stop
-- `tts_announcer.py` - TTS accessibility announcements (pre-generated voice)
+- `audio_feedback.py` - Beep sounds for audio feedback mode
+- `tts_announcer.py` - Voice announcements for TTS audio feedback mode
 
 ### Configuration
 
@@ -68,37 +68,43 @@ Settings stored in `~/.config/voice-notepad-v3/`:
 
 ### Global Hotkeys
 
-The app supports global hotkeys that work system-wide, even when the window is minimized or unfocused.
+The app supports global hotkeys that work system-wide, even when the window is minimized or unfocused. **All hotkeys are configurable** via Settings → Hotkeys, using F13-F24 keys.
 
-**FIXED F-KEY MAPPING (Current Implementation):**
+**Configurable Hotkey Functions:**
 
-| Key | Action | Description |
-|-----|--------|-------------|
-| **F15** | Simple Toggle | Start recording, or stop and **transcribe immediately**. |
-| **F16** | Tap Toggle | Start recording, or stop and cache audio (for append mode). |
-| **F17** | Transcribe Only | Transcribe cached audio without starting a new recording. If currently recording, stops and transcribes. |
-| **F18** | Clear/Delete | Delete current recording and clear all cached audio. |
-| **F19** | Append | Start a new recording that will be appended to the cached audio. |
+| Function | Default | Description |
+|----------|---------|-------------|
+| **Toggle** | F15 | Start recording, or stop and **transcribe immediately**. |
+| **Tap Toggle** | F16 | Start recording, or stop and cache audio (for append mode). |
+| **Transcribe** | F17 | Transcribe cached audio without starting a new recording. |
+| **Clear** | F18 | Delete current recording and clear all cached audio. |
+| **Append** | F19 | Start a new recording that will be appended to the cached audio. |
+| **Pause** | F20 | Pause/resume current recording. |
 
-**Simple Workflow (F15 only):**
-1. Press **F15** to start recording
-2. Press **F15** again to stop and transcribe
+**Simple Workflow (Toggle only):**
+1. Press **Toggle** to start recording
+2. Press **Toggle** again to stop and transcribe
 
-**Append Workflow (F16/F17/F19):**
-1. Press **F16** to start recording
-2. Press **F16** again to stop and cache (audio is held in memory)
-3. Press **F19** to record another segment (appends to cache)
-4. Press **F17** to transcribe all cached segments together
-5. Press **F18** to clear cache and start over
+**Append Workflow (Tap Toggle/Transcribe/Append):**
+1. Press **Tap Toggle** to start recording
+2. Press **Tap Toggle** again to stop and cache (audio is held in memory)
+3. Press **Append** to record another segment (appends to cache)
+4. Press **Transcribe** to transcribe all cached segments together
+5. Press **Clear** to clear cache and start over
 
-**Note:** The Settings → Hotkeys tab UI is currently disabled. The F15-F19 mapping is hardcoded for simplicity and will be made configurable in a future release.
+**Configuration:**
+- Go to Settings → Hotkeys to configure key mappings
+- Each function can be assigned any key from F13-F24
+- Set to "Disabled" to turn off a hotkey
+- Duplicate detection: assigning a key already in use will clear the previous assignment
+- "Reset to Defaults" button restores F15-F20 mappings
 
 **Technical Details:**
 - Hotkeys work system-wide (even when app is minimized or unfocused)
 - On Wayland, hotkeys work via evdev (reads directly from input-remapper devices)
 - Requires user to be in the 'input' group for evdev access
 - Falls back to pynput/X11 on non-Linux systems
-- Compatible with keyboards that have macro/function keys beyond F12
+- Compatible with macropads and programmable keyboards mapped to F13-F24
 
 ### Supported AI Providers
 
@@ -285,7 +291,7 @@ AGC_MAX_GAIN_DB = 20.0        # Maximum boost to apply
 - [x] **Prompt Stacks**: Layered prompt system for complex workflows (meeting notes + action items, technical docs, etc.)
 - [x] **Dev mode indicator**: Development version shows "(DEV)" in window title for visual distinction
 - [x] **Short audio optimization**: Minimal prompt for recordings < 30s (reduces API overhead by ~93%)
-- [x] **TTS accessibility announcements**: Optional spoken status announcements (Recording, Stopped, Complete, etc.)
+- [x] **Audio feedback modes**: Beeps, Voice (TTS), or Silent mode for recording/transcription events
 
 ### Planned
 
@@ -499,30 +505,45 @@ Prompt Stacks allow you to layer multiple AI instructions for complex transcript
 - `prompt_stack_widget.py` - Prompt Stacks tab UI
 - `prompt_elements.py` - Prompt building utilities
 
-## TTS Accessibility Announcements
+## Audio Feedback
 
-Optional spoken status announcements for accessibility. When enabled (Settings → Behavior → TTS announcements), the app speaks status changes aloud using pre-generated voice files.
+The app provides audio notifications for recording events. Configure via **Settings → Behavior → Audio feedback**.
 
-**Announcements:**
+**Modes:**
+| Mode | Description |
+|------|-------------|
+| **Beeps** | Short beep tones for events (default) |
+| **Voice (TTS)** | Spoken announcements using pre-generated voice files |
+| **Silent** | No audio feedback |
+
+**TTS Announcements:**
 | Event | Message |
 |-------|---------|
 | Recording started | "Recording" |
-| Recording stopped | "Stopped" |
+| Recording stopped | "Recording stopped" |
 | Audio cached (append mode) | "Cached" |
 | Transcription started | "Transcribing" |
 | Transcription complete | "Complete" |
-| Text copied to clipboard | "Copied" |
-| Text injected at cursor | "Injected" |
-| Recording cleared | "Cleared" |
+| Text copied to clipboard | "Text on clipboard" |
+| Recording cleared | "Recording discarded" |
 | Error occurred | "Error" |
+| Format preset changed | "Format updated" |
+| Format inference enabled | "Format inference activated" |
+| Tone changed | "Tone updated" |
+| Style changed | "Style updated" |
+| Verbatim mode selected | "Verbatim mode selected" |
+| General mode selected | "General mode selected" |
+| TTS mode activated | "TTS mode activated" |
+| TTS mode deactivated | "TTS mode deactivated" |
 
-**Technical details:**
+Note: "Text injected" does not have a TTS announcement because the text appearing at the cursor is self-evident.
+
+**Technical details (TTS mode):**
 - Voice: British English male (en-GB-RyanNeural via Edge TTS)
-- Audio files: Pre-generated WAV files (~475KB total) in `app/assets/tts/`
-- Respects Quiet Mode setting (disabled when Quiet Mode is on)
+- Audio files: Pre-generated WAV files (~1.7MB total) in `app/assets/tts/`
 - Uses same audio playback system as beep notifications
 
-**Regenerating assets:**
+**Regenerating TTS assets:**
 ```bash
 ./scripts/generate_tts_assets.sh
 ```

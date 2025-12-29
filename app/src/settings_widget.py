@@ -238,33 +238,22 @@ class BehaviorWidget(QWidget):
         archive_layout.addWidget(archive_help)
         form.addRow("Archive Audio:", archive_layout)
 
-        # Beep on recording
-        self.beep_on_record = QCheckBox()
-        self.beep_on_record.setChecked(self.config.beep_on_record)
-        self.beep_on_record.toggled.connect(lambda v: self._save_bool("beep_on_record", v))
-        form.addRow("Beep on recording start/stop:", self.beep_on_record)
-
-        # Beep on clipboard/inject
-        beep_clipboard_layout = QVBoxLayout()
-        self.beep_on_clipboard = QCheckBox()
-        self.beep_on_clipboard.setChecked(self.config.beep_on_clipboard)
-        self.beep_on_clipboard.toggled.connect(lambda v: self._save_bool("beep_on_clipboard", v))
-        beep_clipboard_layout.addWidget(self.beep_on_clipboard)
-        beep_clipboard_help = QLabel("Plays when text is copied to clipboard or injected at cursor.")
-        beep_clipboard_help.setStyleSheet("color: #666; font-size: 10px;")
-        beep_clipboard_layout.addWidget(beep_clipboard_help)
-        form.addRow("Beep on output:", beep_clipboard_layout)
-
-        # TTS Announcements (accessibility)
-        tts_layout = QVBoxLayout()
-        self.tts_enabled = QCheckBox()
-        self.tts_enabled.setChecked(self.config.tts_announcements_enabled)
-        self.tts_enabled.toggled.connect(lambda v: self._save_bool("tts_announcements_enabled", v))
-        tts_layout.addWidget(self.tts_enabled)
-        tts_help = QLabel("Speaks status changes aloud (Recording, Stopped, Complete, etc.)")
-        tts_help.setStyleSheet("color: #666; font-size: 10px;")
-        tts_layout.addWidget(tts_help)
-        form.addRow("TTS announcements:", tts_layout)
+        # Audio feedback mode
+        audio_feedback_layout = QVBoxLayout()
+        self.audio_feedback_mode = QComboBox()
+        self.audio_feedback_mode.addItem("Beeps", "beeps")
+        self.audio_feedback_mode.addItem("Voice (TTS)", "tts")
+        self.audio_feedback_mode.addItem("Silent", "silent")
+        # Set current value
+        idx = self.audio_feedback_mode.findData(self.config.audio_feedback_mode)
+        if idx >= 0:
+            self.audio_feedback_mode.setCurrentIndex(idx)
+        self.audio_feedback_mode.currentIndexChanged.connect(self._on_audio_feedback_mode_changed)
+        audio_feedback_layout.addWidget(self.audio_feedback_mode)
+        audio_feedback_help = QLabel("Audio notifications for recording start/stop, transcription complete, etc.")
+        audio_feedback_help.setStyleSheet("color: #666; font-size: 10px;")
+        audio_feedback_layout.addWidget(audio_feedback_help)
+        form.addRow("Audio feedback:", audio_feedback_layout)
 
         # Note: Output mode (App Only / Clipboard / Inject) is now on the main recording page
 
@@ -297,6 +286,26 @@ class BehaviorWidget(QWidget):
         value = self.append_position.itemData(index)
         self.config.append_position = value
         save_config(self.config)
+
+    def _on_audio_feedback_mode_changed(self, index: int):
+        """Save audio feedback mode setting."""
+        old_value = self.config.audio_feedback_mode
+        new_value = self.audio_feedback_mode.itemData(index)
+
+        # Play TTS announcement for mode change (before saving, while TTS is still active)
+        if old_value == "tts" and new_value != "tts":
+            # TTS is being deactivated - announce before changing
+            from .tts_announcer import get_announcer
+            get_announcer().announce_tts_deactivated()
+
+        self.config.audio_feedback_mode = new_value
+        save_config(self.config)
+
+        # Play TTS announcement for mode change (after saving, when TTS is now active)
+        if old_value != "tts" and new_value == "tts":
+            # TTS is being activated - announce after changing
+            from .tts_announcer import get_announcer
+            get_announcer().announce_tts_activated()
 
 
 class PersonalizationWidget(QWidget):
@@ -403,9 +412,40 @@ class PersonalizationWidget(QWidget):
 class HotkeysWidget(QWidget):
     """Hotkeys configuration section."""
 
+    # Signal emitted when hotkeys change (so main window can re-register)
+    hotkeys_changed = pyqtSignal()
+
+    # Available F-keys for hotkey mapping (F13-F24)
+    AVAILABLE_KEYS = [
+        ("", "Disabled"),
+        ("f13", "F13"),
+        ("f14", "F14"),
+        ("f15", "F15"),
+        ("f16", "F16"),
+        ("f17", "F17"),
+        ("f18", "F18"),
+        ("f19", "F19"),
+        ("f20", "F20"),
+        ("f21", "F21"),
+        ("f22", "F22"),
+        ("f23", "F23"),
+        ("f24", "F24"),
+    ]
+
+    # Hotkey function definitions: (config_field, display_name, description)
+    HOTKEY_FUNCTIONS = [
+        ("hotkey_toggle", "Toggle", "Start recording / Stop and transcribe"),
+        ("hotkey_tap_toggle", "Tap Toggle", "Start recording / Stop and cache (for append mode)"),
+        ("hotkey_transcribe", "Transcribe", "Transcribe cached audio only"),
+        ("hotkey_clear", "Clear", "Clear cache / Delete recording"),
+        ("hotkey_append", "Append", "Start new recording to add to cache"),
+        ("hotkey_pause", "Pause", "Pause / Resume current recording"),
+    ]
+
     def __init__(self, config: Config, parent=None):
         super().__init__(parent)
         self.config = config
+        self._combos = {}  # Store combo references for updates
         self._init_ui()
 
     def _init_ui(self):
@@ -419,34 +459,138 @@ class HotkeysWidget(QWidget):
         layout.addWidget(title)
 
         desc = QLabel(
-            "Global hotkeys are currently fixed to F15-F19. "
-            "Customizable hotkeys will be available in a future release."
+            "Configure global hotkeys for macropad or keyboard control. "
+            "Use F13-F24 keys to avoid conflicts with other applications. "
+            "Changes take effect immediately."
         )
         desc.setWordWrap(True)
         desc.setStyleSheet("color: #666; margin-bottom: 12px;")
         layout.addWidget(desc)
 
-        # Hotkey reference
-        ref_group = QGroupBox("Fixed Hotkey Mapping")
-        ref_layout = QFormLayout(ref_group)
-        ref_layout.setSpacing(8)
+        # Hotkey configuration group with two-column layout
+        config_group = QGroupBox("Hotkey Mappings")
+        columns_layout = QHBoxLayout(config_group)
+        columns_layout.setSpacing(24)
 
-        hotkeys = [
-            ("F15", "Toggle Recording"),
-            ("F16", "Tap (same as F15)"),
-            ("F17", "Transcribe Only"),
-            ("F18", "Clear/Delete"),
-            ("F19", "Append"),
+        # Split hotkey functions into two columns
+        left_functions = self.HOTKEY_FUNCTIONS[:3]  # Toggle, Tap Toggle, Transcribe
+        right_functions = self.HOTKEY_FUNCTIONS[3:]  # Clear, Append, Pause
+
+        for column_functions in [left_functions, right_functions]:
+            column_form = QFormLayout()
+            column_form.setSpacing(12)
+            column_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+            for field_name, display_name, description in column_functions:
+                # Create combo box for key selection
+                combo = QComboBox()
+                combo.setMinimumWidth(100)
+
+                # Add available keys
+                for key_value, key_display in self.AVAILABLE_KEYS:
+                    combo.addItem(key_display, key_value)
+
+                # Set current value from config
+                current_value = getattr(self.config, field_name, "").lower()
+                idx = combo.findData(current_value)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+
+                # Connect change handler
+                combo.currentIndexChanged.connect(
+                    lambda _, f=field_name, c=combo: self._on_hotkey_changed(f, c)
+                )
+
+                # Store reference
+                self._combos[field_name] = combo
+
+                # Create row with label and description
+                row_layout = QVBoxLayout()
+                row_layout.setSpacing(2)
+                row_layout.addWidget(combo)
+                desc_label = QLabel(description)
+                desc_label.setStyleSheet("color: #666; font-size: 10px;")
+                row_layout.addWidget(desc_label)
+
+                column_form.addRow(f"{display_name}:", row_layout)
+
+            columns_layout.addLayout(column_form)
+
+        layout.addWidget(config_group)
+
+        # Quick reference for workflow
+        ref_group = QGroupBox("Workflow Reference")
+        ref_layout = QVBoxLayout(ref_group)
+        ref_layout.setSpacing(6)
+
+        workflows = [
+            ("<b>Simple Workflow:</b> Toggle → Dictate → Toggle (transcribes automatically)", "#495057"),
+            ("<b>Append Workflow:</b> Tap Toggle → Dictate → Tap Toggle (caches) → Append → Dictate → Transcribe", "#495057"),
         ]
 
-        for key, action in hotkeys:
-            key_label = QLabel(f"<b>{key}</b>")
-            action_label = QLabel(action)
-            action_label.setStyleSheet("color: #666;")
-            ref_layout.addRow(key_label, action_label)
+        for text, color in workflows:
+            label = QLabel(text)
+            label.setWordWrap(True)
+            label.setStyleSheet(f"color: {color}; font-size: 11px; padding: 4px;")
+            ref_layout.addWidget(label)
 
         layout.addWidget(ref_group)
+
+        # Reset to defaults button
+        reset_layout = QHBoxLayout()
+        reset_layout.addStretch()
+        reset_btn = QPushButton("Reset to Defaults")
+        reset_btn.setToolTip("Reset all hotkeys to default values (F15-F20)")
+        reset_btn.clicked.connect(self._reset_to_defaults)
+        reset_layout.addWidget(reset_btn)
+        layout.addLayout(reset_layout)
+
         layout.addStretch()
+
+    def _on_hotkey_changed(self, field_name: str, combo: QComboBox):
+        """Handle hotkey selection change."""
+        new_value = combo.currentData()
+
+        # Check for duplicate key assignment
+        if new_value:  # Only check if not disabled
+            for other_field, other_combo in self._combos.items():
+                if other_field != field_name and other_combo.currentData() == new_value:
+                    # Duplicate found - show warning and clear the other one
+                    other_combo.blockSignals(True)
+                    other_combo.setCurrentIndex(0)  # Set to "Disabled"
+                    other_combo.blockSignals(False)
+                    setattr(self.config, other_field, "")
+
+        # Save the new value
+        setattr(self.config, field_name, new_value)
+        save_config(self.config)
+
+        # Emit signal so main window can re-register hotkeys
+        self.hotkeys_changed.emit()
+
+    def _reset_to_defaults(self):
+        """Reset all hotkeys to default values."""
+        defaults = {
+            "hotkey_toggle": "f15",
+            "hotkey_tap_toggle": "f16",
+            "hotkey_transcribe": "f17",
+            "hotkey_clear": "f18",
+            "hotkey_append": "f19",
+            "hotkey_pause": "f20",
+        }
+
+        for field_name, default_value in defaults.items():
+            setattr(self.config, field_name, default_value)
+            combo = self._combos.get(field_name)
+            if combo:
+                combo.blockSignals(True)
+                idx = combo.findData(default_value)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+                combo.blockSignals(False)
+
+        save_config(self.config)
+        self.hotkeys_changed.emit()
 
 
 class DatabaseWidget(QWidget):
@@ -865,6 +1009,9 @@ class ModelSelectionWidget(QWidget):
 class SettingsWidget(QWidget):
     """Unified settings widget with tabbed sections."""
 
+    # Signal emitted when hotkeys are changed
+    hotkeys_changed = pyqtSignal()
+
     def __init__(self, config: Config, recorder, parent=None):
         super().__init__(parent)
         self.config = config
@@ -886,7 +1033,12 @@ class SettingsWidget(QWidget):
         self.tabs.addTab(AudioMicWidget(self.config, self.recorder), "Mic")
         self.tabs.addTab(BehaviorWidget(self.config), "Behavior")
         self.tabs.addTab(PersonalizationWidget(self.config), "Personalization")
-        self.tabs.addTab(HotkeysWidget(self.config), "Hotkeys")
+
+        # Hotkeys tab - connect signal to propagate changes
+        self.hotkeys_widget = HotkeysWidget(self.config)
+        self.hotkeys_widget.hotkeys_changed.connect(self.hotkeys_changed.emit)
+        self.tabs.addTab(self.hotkeys_widget, "Hotkeys")
+
         self.tabs.addTab(DatabaseWidget(self.config), "Database")
 
         layout.addWidget(self.tabs)
@@ -901,6 +1053,9 @@ class SettingsDialog(QDialog):
 
     # Signal emitted when settings dialog is closed (settings may have changed)
     settings_closed = pyqtSignal()
+
+    # Signal emitted when hotkeys are changed (for immediate re-registration)
+    hotkeys_changed = pyqtSignal()
 
     def __init__(self, config: Config, recorder, parent=None):
         super().__init__(parent)
@@ -919,6 +1074,7 @@ class SettingsDialog(QDialog):
 
         # Embed the settings widget
         self.settings_widget = SettingsWidget(self.config, self.recorder, self)
+        self.settings_widget.hotkeys_changed.connect(self.hotkeys_changed.emit)
         layout.addWidget(self.settings_widget)
 
         # Bottom bar with auto-save note and close button

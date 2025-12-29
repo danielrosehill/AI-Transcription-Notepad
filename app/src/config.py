@@ -18,7 +18,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 # Available models per provider (model_id, display_name)
 # Gemini Direct (recommended) - uses Google's dynamic "latest" endpoint
 GEMINI_MODELS = [
-    ("gemini-flash-latest", "Gemini Flash (Latest) ⭐"),
+    ("gemini-flash-latest", "Gemini Flash (Latest)"),
     ("gemini-2.5-flash", "Gemini 2.5 Flash"),
     ("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite (Budget)"),
     ("gemini-2.5-pro", "Gemini 2.5 Pro"),
@@ -112,46 +112,52 @@ class Config:
     fallback_mic_nickname: str = ""    # Fallback nickname
 
     # UI settings
-    window_width: int = 500
-    window_height: int = 600
+    window_width: int = 850
+    window_height: int = 800
     start_minimized: bool = False
 
     # Hotkeys (global keyboard shortcuts)
-    # Supported keys: F14-F20 (macro keys), F1-F12, or modifier combinations
+    # Each function can be mapped to an F-key from F13-F24, or left empty to disable.
+    # These are designed for use with a macropad or programmable keyboard.
     #
-    # Four hotkey modes:
-    # - "single_key": One key for everything - press to start, press again to stop & transcribe (RECOMMENDED)
-    # - "tap_toggle": One key toggles start/stop and caches audio, separate key transcribes all cached audio
-    # - "separate": Different keys for start, stop (discard), and stop & transcribe
-    # - "ptt": Push-to-talk - hold key to record, release to stop
-    hotkey_mode: str = "single_key"
+    # Available functions:
+    # - toggle: Simple toggle - press to start, press again to stop & transcribe
+    # - tap_toggle: Tap toggle - press to start, press again to stop & cache (for append mode)
+    # - transcribe: Transcribe cached audio without starting new recording
+    # - clear: Clear/delete current recording and cached audio
+    # - append: Start new recording that appends to cached audio
+    # - pause: Pause/resume current recording
+    #
+    # Default mappings (F15-F20):
+    hotkey_toggle: str = "f15"       # Simple toggle: start/stop+transcribe
+    hotkey_tap_toggle: str = "f16"   # Tap toggle: start/stop+cache (for append workflow)
+    hotkey_transcribe: str = "f17"   # Transcribe cached audio
+    hotkey_clear: str = "f18"        # Clear/delete recording and cache
+    hotkey_append: str = "f19"       # Append: start recording to add to cache
+    hotkey_pause: str = "f20"        # Pause/resume current recording
 
-    # Single Key mode (recommended - simplest workflow)
-    hotkey_single_key: str = "f15"  # One key: press to start, press again to stop & transcribe
-
-    # Tap-to-Toggle mode hotkeys
-    hotkey_record_toggle: str = "f16"  # Toggle recording on/off (caches for append mode)
-    hotkey_stop_and_transcribe: str = "f17"  # Transcribe all cached audio
-
-    # Separate mode hotkeys
-    hotkey_start: str = ""  # Start recording only
-    hotkey_stop_discard: str = ""  # Stop and discard
-
-    # PTT mode settings
-    hotkey_ptt: str = ""  # Push-to-talk key (hold to record)
-    ptt_release_action: str = "transcribe"  # "transcribe" or "discard" on key release
+    # Legacy hotkey fields - kept for migration, mapped to new fields
+    hotkey_mode: str = ""  # Deprecated
+    hotkey_single_key: str = ""  # Migrated to hotkey_toggle
+    hotkey_record_toggle: str = ""  # Migrated to hotkey_tap_toggle
+    hotkey_stop_and_transcribe: str = ""  # Migrated to hotkey_transcribe
+    hotkey_start: str = ""  # Deprecated (use hotkey_toggle)
+    hotkey_stop_discard: str = ""  # Deprecated (use hotkey_clear)
+    hotkey_ptt: str = ""  # Deprecated (PTT mode removed)
+    ptt_release_action: str = ""  # Deprecated
 
     # Storage settings
     store_audio: bool = False  # Archive audio recordings
     vad_enabled: bool = True   # Enable Voice Activity Detection (silence removal)
 
-    # Audio feedback
-    beep_on_record: bool = True  # Play beep when recording starts/stops
-    beep_on_clipboard: bool = True  # Play beep when text copied/injected
-    quiet_mode: bool = False  # Suppress all beeps (overrides above settings when True)
+    # Audio feedback mode: "beeps" (default), "tts" (voice announcements), "silent" (no audio)
+    audio_feedback_mode: str = "beeps"
 
-    # Accessibility TTS announcements
-    tts_announcements_enabled: bool = False  # Speak status changes aloud (accessibility)
+    # Legacy audio settings - kept for migration
+    beep_on_record: bool = True
+    beep_on_clipboard: bool = True
+    quiet_mode: bool = False
+    tts_announcements_enabled: bool = False
 
     # Output modes: where transcribed text is sent (can combine multiple)
     # These are independent toggles - any combination is valid
@@ -318,6 +324,32 @@ def _apply_migrations(config: Config) -> Config:
         # Legacy auto_paste was enabled, migrate to inject mode
         config.output_to_inject = True
         config.auto_paste = False
+
+    # Migration: legacy hotkey fields to new hotkey fields
+    # Only migrate if new field is at default AND legacy field has a value
+    if config.hotkey_single_key and config.hotkey_toggle == "f15":
+        # If user had customized single_key, use that for toggle
+        if config.hotkey_single_key.lower() != "f15":
+            config.hotkey_toggle = config.hotkey_single_key.lower()
+        config.hotkey_single_key = ""
+
+    if config.hotkey_record_toggle and config.hotkey_tap_toggle == "f16":
+        if config.hotkey_record_toggle.lower() != "f16":
+            config.hotkey_tap_toggle = config.hotkey_record_toggle.lower()
+        config.hotkey_record_toggle = ""
+
+    if config.hotkey_stop_and_transcribe and config.hotkey_transcribe == "f17":
+        if config.hotkey_stop_and_transcribe.lower() != "f17":
+            config.hotkey_transcribe = config.hotkey_stop_and_transcribe.lower()
+        config.hotkey_stop_and_transcribe = ""
+
+    # Migration: legacy audio feedback settings -> audio_feedback_mode
+    # Only migrate if audio_feedback_mode is at default AND legacy fields were customized
+    if config.audio_feedback_mode == "beeps":
+        if config.quiet_mode:
+            config.audio_feedback_mode = "silent"
+        elif config.tts_announcements_enabled:
+            config.audio_feedback_mode = "tts"
 
     return config
 
@@ -1024,9 +1056,9 @@ STYLE_DISPLAY_NAMES = {
     "persuasive": "Persuasive",
     "serious": "Serious",
     # Fun styles
-    "medieval": "Medieval 🏰",
-    "pirate_speak": "Pirate 🏴‍☠️",
-    "shakespearean": "Shakespearean 🎭",
+    "medieval": "Medieval",
+    "pirate_speak": "Pirate",
+    "shakespearean": "Shakespearean",
 }
 
 # Word limit templates for up/down direction

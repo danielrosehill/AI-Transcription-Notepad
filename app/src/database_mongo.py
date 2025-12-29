@@ -313,10 +313,10 @@ class TranscriptionDB:
                     }
 
                 grouped[key]['count'] += 1
-                grouped[key]['total_inference_ms'] += r.get('inference_time_ms', 0)
-                grouped[key]['total_cost'] += r.get('estimated_cost', 0)
-                grouped[key]['total_audio_duration'] += r.get('audio_duration_seconds', 0)
-                grouped[key]['total_text_length'] += r.get('text_length', 0)
+                grouped[key]['total_inference_ms'] += r.get('inference_time_ms') or 0
+                grouped[key]['total_cost'] += r.get('estimated_cost') or 0
+                grouped[key]['total_audio_duration'] += r.get('audio_duration_seconds') or 0
+                grouped[key]['total_text_length'] += r.get('text_length') or 0
 
             # Convert to output format and sort by count
             output = []
@@ -353,11 +353,11 @@ class TranscriptionDB:
 
             if results:
                 count = len(results)
-                total_cost = sum(r.get('estimated_cost', 0) for r in results)
-                inference_times = [r.get('inference_time_ms', 0) for r in results if r.get('inference_time_ms')]
+                total_cost = sum((r.get('estimated_cost') or 0) for r in results)
+                inference_times = [(r.get('inference_time_ms') or 0) for r in results if r.get('inference_time_ms')]
                 avg_inference_ms = sum(inference_times) / len(inference_times) if inference_times else 0
-                total_chars = sum(r.get('text_length', 0) for r in results)
-                total_words = sum(r.get('word_count', 0) for r in results)
+                total_chars = sum((r.get('text_length') or 0) for r in results)
+                total_words = sum((r.get('word_count') or 0) for r in results)
 
                 return {
                     "count": count,
@@ -385,7 +385,7 @@ class TranscriptionDB:
 
             if results:
                 count = len(results)
-                total_cost = sum(r.get('estimated_cost', 0) for r in results)
+                total_cost = sum((r.get('estimated_cost') or 0) for r in results)
                 return {
                     "count": count,
                     "total_cost": round(total_cost, 6),
@@ -439,6 +439,35 @@ class TranscriptionDB:
         """Get total cost for all transcriptions."""
         return self._get_cost_stats({})
 
+    def get_all_time_stats(self) -> dict:
+        """Get all-time statistics including word count.
+
+        Returns dict with keys: count, total_words, total_chars, total_cost
+        """
+        with self._lock:
+            db = self._get_db()
+            results = list(db.transcriptions.find({}))
+
+            if results:
+                count = len(results)
+                total_words = sum((r.get('word_count') or 0) for r in results)
+                total_chars = sum((r.get('text_length') or 0) for r in results)
+                total_cost = sum((r.get('estimated_cost') or 0) for r in results)
+
+                return {
+                    "count": count,
+                    "total_words": total_words,
+                    "total_chars": total_chars,
+                    "total_cost": round(total_cost, 4),
+                }
+
+            return {
+                "count": 0,
+                "total_words": 0,
+                "total_chars": 0,
+                "total_cost": 0,
+            }
+
     def get_daily_cost_breakdown(self, days: int = 30) -> List[dict]:
         """Get cost breakdown by day for the last N days.
 
@@ -458,7 +487,7 @@ class TranscriptionDB:
             for r in results:
                 date_str = r['timestamp'][:10]  # YYYY-MM-DD
                 daily[date_str]['count'] += 1
-                daily[date_str]['cost'] += r.get('estimated_cost', 0)
+                daily[date_str]['cost'] += r.get('estimated_cost') or 0
 
             # Convert to list and calculate averages
             output = []
@@ -491,7 +520,7 @@ class TranscriptionDB:
                     grouped[provider] = {'count': 0, 'total_cost': 0}
 
                 grouped[provider]['count'] += 1
-                grouped[provider]['total_cost'] += r.get('estimated_cost', 0)
+                grouped[provider]['total_cost'] += r.get('estimated_cost') or 0
 
             # Convert to output format and sort by total_cost descending
             output = [
@@ -521,7 +550,7 @@ class TranscriptionDB:
                     grouped[key] = {'count': 0, 'total_cost': 0}
 
                 grouped[key]['count'] += 1
-                grouped[key]['total_cost'] += r.get('estimated_cost', 0)
+                grouped[key]['total_cost'] += r.get('estimated_cost') or 0
 
             # Convert to output format and sort by total_cost descending
             output = [

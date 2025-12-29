@@ -46,6 +46,18 @@ declare -A ANNOUNCEMENTS=(
     ["text_injected"]="Text injected"
     ["injection_failed"]="Injection failed"
 
+    # Prompt stack changes
+    ["format_updated"]="Format updated"
+    ["format_inference"]="Format inference activated"
+    ["tone_updated"]="Tone updated"
+    ["style_updated"]="Style updated"
+    ["verbatim_mode"]="Verbatim mode selected"
+    ["general_mode"]="General mode selected"
+
+    # Audio feedback mode changes
+    ["tts_activated"]="TTS mode activated"
+    ["tts_deactivated"]="TTS mode deactivated"
+
     # Legacy (kept for compatibility)
     ["copied"]="Copied"
     ["injected"]="Injected"

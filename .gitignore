@@ -47,5 +47,11 @@ decisions/
 # Planning materials (developer notes)
 planning/
 
+# Archives
+archive/
+*.tar.gz
+*.zip
+*.7z
+
 # MkDocs build output
 site/

@@ -48,7 +48,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPropertyAnimat
 import time
 from PyQt6.QtGui import QIcon, QAction, QFont, QClipboard, QShortcut, QKeySequence, QActionGroup
 from PyQt6.QtWidgets import QGraphicsOpacityEffect
-from PyQt6.QtWidgets import QCompleter
+from PyQt6.QtWidgets import QCompleter, QToolButton
 
 from .config import (
     Config, load_config, save_config, load_env_keys, CONFIG_DIR,
@@ -983,6 +983,26 @@ class MainWindow(QMainWindow):
         self.model_label.setStyleSheet("color: #888; font-size: 11px;")
         status_bar.addWidget(self.model_label)
 
+        # Stats speaker button (plays usage stats via TTS)
+        self.stats_speaker_btn = QToolButton()
+        self.stats_speaker_btn.setIcon(QIcon.fromTheme(
+            "audio-speakers",
+            self.style().standardIcon(self.style().StandardPixmap.SP_MediaVolume)
+        ))
+        self.stats_speaker_btn.setToolTip("Play usage stats")
+        self.stats_speaker_btn.setStyleSheet("""
+            QToolButton {
+                border: none;
+                padding: 2px;
+            }
+            QToolButton:hover {
+                background-color: rgba(0, 0, 0, 0.1);
+                border-radius: 4px;
+            }
+        """)
+        self.stats_speaker_btn.clicked.connect(self._play_stats)
+        status_bar.addWidget(self.stats_speaker_btn)
+
         layout.addLayout(status_bar)
 
         # Initialize mic and model displays
@@ -1561,6 +1581,20 @@ class MainWindow(QMainWindow):
         Args:
             mode: One of "silent", "tts", or "beeps"
         """
+        old_mode = self.config.audio_feedback_mode
+
+        # Announce TTS mode changes (before changing the mode)
+        if old_mode == "tts" and mode != "tts":
+            # Leaving TTS mode - announce deactivation while TTS is still active
+            get_announcer().announce_tts_deactivated()
+        elif old_mode != "tts" and mode == "tts":
+            # Entering TTS mode - announce after setting mode
+            self.config.audio_feedback_mode = mode
+            save_config(self.config)
+            self._update_feedback_buttons()
+            get_announcer().announce_tts_activated()
+            return
+
         self.config.audio_feedback_mode = mode
         save_config(self.config)
         self._update_feedback_buttons()
@@ -2388,6 +2422,20 @@ class MainWindow(QMainWindow):
             display_name = display_name[:27] + "..."
         self.model_label.setText(display_name)
         self.model_label.setToolTip(f"Provider: {provider}\nModel: {model}\nChange in Settings → Model")
+
+    def _play_stats(self):
+        """Play usage statistics via TTS."""
+        db = get_db()
+        stats = db.get_all_time_stats()
+        total_transcripts = stats["count"]
+        total_words = stats["total_words"]
+
+        # Use TTS announcer to speak the stats
+        announcer = get_announcer()
+        if not announcer.speak_stats(total_transcripts, total_words):
+            # Edge TTS not available - show message instead
+            self.status_label.setText(f"Stats: {total_transcripts:,} transcriptions, {total_words:,} words")
+            self.status_label.show()
 
     def _get_current_model(self) -> tuple[str, str]:
         """Get the currently selected provider and model.
