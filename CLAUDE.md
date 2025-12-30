@@ -8,7 +8,7 @@ AI Transcription Notepad V3 is a PyQt6 desktop application for voice recording w
 
 Instead of separate speech-to-text followed by text cleanup, this app sends audio directly to Google's Gemini multimodal models along with a cleanup prompt. The model handles both transcription and text cleanup simultaneously.
 
-**Why Gemini?** After extensive testing (~1000 transcriptions), Gemini Flash models have proven highly cost-effective for voice transcription—typically just a few dollars for heavy usage. The recommended `gemini-flash-latest` endpoint automatically points to Google's latest Flash model, eliminating manual updates.
+**Why Gemini?** After extensive testing (~2000 transcriptions), Gemini Flash models have proven highly cost-effective for voice transcription—typically just a few dollars for heavy usage. The recommended `gemini-flash-latest` endpoint automatically points to Google's latest Flash model, eliminating manual updates. See [data/](data/) for anonymized performance benchmarks.
 
 ## Architecture
 
@@ -21,6 +21,8 @@ Voice-Notepad-V3/
 │   ├── assets/            # Static assets
 │   │   └── tts/           # Pre-generated TTS audio files
 │   └── requirements.txt   # Python dependencies
+├── data/                   # Anonymized usage statistics for benchmarking
+├── docs/                   # Project documentation
 ├── planning/              # Planning notes and API docs
 ├── scripts/
 │   ├── build/             # Build scripts
@@ -49,7 +51,7 @@ Voice-Notepad-V3/
 - `cost_tracker.py` - Daily API cost tracking based on token usage
 - `cost_widget.py` - Cost tab for detailed spend tracking by time period
 - `database.py` - SQLite database for transcription history
-- `vad_processor.py` - Voice Activity Detection (silence removal) using Silero VAD
+- `vad_processor.py` - Voice Activity Detection (silence removal) using TEN VAD
 - `history_widget.py` - History tab for browsing past transcriptions
 - `analysis_widget.py` - Analytics tab for model performance stats
 - `models_widget.py` - Models tab showing available AI models by provider
@@ -64,7 +66,7 @@ Settings stored in `~/.config/voice-notepad-v3/`:
 - `transcriptions.db` - SQLite database for transcript history
 - `usage/` - Daily cost tracking JSON files
 - `audio-archive/` - Opus audio archives (if enabled)
-- `models/` - Downloaded VAD model (silero_vad.onnx)
+- `models/` - Downloaded models (legacy, TEN VAD is bundled)
 
 ### Global Hotkeys
 
@@ -255,7 +257,7 @@ Audio goes through a multi-stage pipeline before transcription:
    - Only boosts quiet audio—never attenuates loud audio
 
 3. **Voice Activity Detection (VAD)** (`vad_processor.py`)
-   - Silero VAD removes silence segments before API upload
+   - TEN VAD removes silence segments before API upload
    - Reduces file size and API costs
    - See VAD section below for technical parameters
 
@@ -535,6 +537,8 @@ The app provides audio notifications for recording events. Configure via **Setti
 | General mode selected | "General mode selected" |
 | TTS mode activated | "TTS mode activated" |
 | TTS mode deactivated | "TTS mode deactivated" |
+| Reset button pressed | "Default prompt configured" |
+| Manual copy to clipboard | "Copied to clipboard" |
 
 Note: "Text injected" does not have a TTS announcement because the text appearing at the cursor is self-evident.
 
@@ -551,7 +555,7 @@ Requires `edge-tts` package (`pip install edge-tts`).
 
 ## Voice Activity Detection (VAD)
 
-VAD is enabled by default (Settings → Behavior → Enable VAD). It uses [Silero VAD](https://github.com/snakers4/silero-vad) (ONNX model) to detect speech segments and remove silence before sending audio to the API.
+VAD is toggled via a checkbox on the main recording page. It uses [TEN VAD](https://github.com/TEN-framework/ten-vad) to detect speech segments and remove silence before sending audio to the API.
 
 **Benefits:**
 - Reduces audio file size by removing silence
@@ -559,16 +563,20 @@ VAD is enabled by default (Settings → Behavior → Enable VAD). It uses [Siler
 - Faster upload times
 
 **Model:**
-- **Silero VAD** - lightweight ONNX model (~1.4MB)
-- Downloaded automatically on first use to `~/.config/voice-notepad-v3/models/silero_vad.onnx`
-- GitHub: https://github.com/snakers4/silero-vad
+- **TEN VAD** - lightweight native library (~306KB)
+- Bundled with the `ten-vad` pip package (no download required)
+- GitHub: https://github.com/TEN-framework/ten-vad
+- Faster and more accurate than Silero VAD for real-time use
 
 **Technical parameters:**
 - Sample rate: 16kHz
-- Window size: 512 samples (~32ms)
+- Hop size: 256 samples (~16ms)
 - Speech probability threshold: 0.5
 - Minimum speech segment: 250ms
 - Speech padding: 30ms
+
+**System requirements (Linux):**
+- Requires `libc++1`: `sudo apt install libc++1`
 
 ## Transcript History
 
@@ -588,9 +596,23 @@ All transcriptions are automatically saved to a local SQLite database with:
 - Delete individual transcriptions
 
 **Analysis Tab:**
-- Summary stats for last 7 days
-- Model performance comparison (avg inference time, chars/sec)
+- **Time period selector**: View stats for Today, 7 Days, 30 Days, or All Time
+- **Summary stats**: Transcriptions, words, characters, and average inference time
+- **Daily activity chart**: Visual bar chart with metric toggle (Transcripts/Characters/Words)
+  - For "Today" view: shows hourly breakdown
+  - For other periods: shows daily breakdown
+- **Model performance table**: All-time comparison (avg inference time, chars/sec, avg audio duration)
+- **Export Stats**: Export anonymized statistics to JSON for analysis or sharing
 - Total storage usage breakdown
+
+**Usage Statistics Export:**
+
+The Analytics tab includes an "Export Stats" button that exports anonymized statistics to JSON. Exported data includes:
+- Total transcription counts and volume
+- Model performance metrics (no transcript content)
+- Daily activity breakdown
+
+Example exports are available in [data/](data/).
 
 ## Audio Archival
 

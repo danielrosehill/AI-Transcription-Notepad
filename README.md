@@ -118,6 +118,21 @@ This includes the full cleanup prompt that handles formatting, punctuation, fill
 
 ![Cost Tracking Example](screenshots/cost-example.png)
 
+## Benchmark Data
+
+The [data/](data/) folder contains anonymized usage statistics from ~2,000 real transcriptions. This data is shared for benchmarking purposes and includes model performance metrics, daily activity counts, and inference times (no transcript content).
+
+**Interesting finding:** OpenRouter's Gemini 2.5 Flash showed significantly faster inference compared to direct Gemini API access:
+
+![Gemini Performance Comparison](data/gemini-performance-comparison.png)
+
+| Provider | Model | Count | Avg Inference | Chars/sec |
+|----------|-------|-------|---------------|-----------|
+| Gemini Direct | gemini-flash-latest | 1,028 | 5.1s | 90 |
+| OpenRouter | google/gemini-2.5-flash | 868 | 2.5s | 204 |
+
+Both were tested with similar ~42 second average audio clips. The OpenRouter route delivered roughly 2x faster inference and throughput. Results may vary based on API load and routing.
+
 ## Installation
 
 Download from [Releases](https://github.com/danielrosehill/Voice-Notepad/releases).
@@ -140,6 +155,24 @@ The script creates a virtual environment using `uv` (fast Python package manager
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
+
+### System Dependencies
+
+**Linux:** Run the dependency checker to install required packages:
+```bash
+./scripts/install-deps.sh
+```
+
+This checks for and installs:
+- `libc++1` - Required for Voice Activity Detection (TEN VAD)
+- `ffmpeg` - Required for audio processing
+
+**macOS:**
+```bash
+brew install ffmpeg
+```
+
+**Windows:** Download FFmpeg from https://ffmpeg.org/download.html
 
 ### Development
 

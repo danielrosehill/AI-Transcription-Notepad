@@ -90,6 +90,8 @@ class TTSAnnouncer:
             "format_updated", "format_inference", "tone_updated", "style_updated", "verbatim_mode", "general_mode",
             # Audio feedback mode changes
             "tts_activated", "tts_deactivated",
+            # Settings/config actions
+            "default_prompt_configured", "copied_to_clipboard",
             # Legacy (kept for compatibility)
             "copied", "injected", "cleared",
         ]
@@ -284,6 +286,27 @@ class TTSAnnouncer:
     def announce_tts_deactivated(self) -> None:
         """Announce: TTS mode deactivated (switching to beeps or silent)."""
         self._play_async("tts_deactivated")
+
+    # -------------------------------------------------------------------------
+    # Settings/config action announcements
+    # -------------------------------------------------------------------------
+
+    def announce_default_prompt_configured(self) -> None:
+        """Announce: Default prompt configured (Reset button pressed)."""
+        self._play_async("default_prompt_configured")
+
+    def announce_copied_to_clipboard(self) -> None:
+        """Announce: Copied to clipboard."""
+        self._play_async("copied_to_clipboard")
+
+    def announce_model_changed(self, model_name: str) -> None:
+        """Announce: Model changed to a new preset.
+
+        Args:
+            model_name: Display name of the new model/preset
+        """
+        # Use dynamic TTS for model name since it varies
+        self.speak_text(f"Model: {model_name}", blocking=False)
 
     # -------------------------------------------------------------------------
     # Legacy methods (kept for compatibility)

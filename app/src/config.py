@@ -100,6 +100,20 @@ class Config:
     gemini_model: str = "gemini-flash-latest"
     openrouter_model: str = "google/gemini-2.5-flash"
 
+    # Model favorites - quick presets for switching between commonly used models
+    # Each favorite stores a name (for display), provider, and model
+    # Empty name means the favorite is not configured
+    favorite_1_name: str = ""
+    favorite_1_provider: str = ""
+    favorite_1_model: str = ""
+
+    favorite_2_name: str = ""
+    favorite_2_provider: str = ""
+    favorite_2_model: str = ""
+
+    # Which model preset is currently active: "default", "favorite_1", "favorite_2"
+    active_model_preset: str = "default"
+
     # Audio settings
     # Legacy field - kept for backwards compatibility, migrated to preferred_mic_name
     selected_microphone: str = "pulse"
@@ -467,6 +481,73 @@ def load_env_keys(config: Config) -> Config:
     if not config.openrouter_api_key:
         config.openrouter_api_key = os.environ.get("OPENROUTER_API_KEY", "")
     return config
+
+
+# =============================================================================
+# MODEL PRESET HELPERS
+# =============================================================================
+
+
+def is_favorite_configured(config: Config, favorite_num: int) -> bool:
+    """Check if a favorite preset is configured (has a name set).
+
+    Args:
+        config: Configuration object
+        favorite_num: 1 or 2
+
+    Returns:
+        True if the favorite has a name configured
+    """
+    if favorite_num == 1:
+        return bool(config.favorite_1_name)
+    elif favorite_num == 2:
+        return bool(config.favorite_2_name)
+    return False
+
+
+def get_active_provider_and_model(config: Config) -> tuple[str, str]:
+    """Get the provider and model based on the active model preset.
+
+    Returns:
+        Tuple of (provider, model) based on active_model_preset.
+        Falls back to default if the active preset is not configured.
+    """
+    preset = config.active_model_preset
+
+    if preset == "favorite_1" and is_favorite_configured(config, 1):
+        return (config.favorite_1_provider, config.favorite_1_model)
+    elif preset == "favorite_2" and is_favorite_configured(config, 2):
+        return (config.favorite_2_provider, config.favorite_2_model)
+
+    # Default: use selected_provider and corresponding model
+    provider = config.selected_provider
+    if provider == "gemini":
+        model = config.gemini_model
+    elif provider == "openrouter":
+        model = config.openrouter_model
+    else:
+        model = config.gemini_model  # Fallback
+    return (provider, model)
+
+
+def get_preset_display_name(config: Config, preset: str) -> str:
+    """Get the display name for a model preset.
+
+    Args:
+        config: Configuration object
+        preset: "default", "favorite_1", or "favorite_2"
+
+    Returns:
+        Display name (e.g., "Default", "Flash Latest", etc.)
+    """
+    if preset == "favorite_1" and config.favorite_1_name:
+        return config.favorite_1_name
+    elif preset == "favorite_2" and config.favorite_2_name:
+        return config.favorite_2_name
+    else:
+        # For default, show the model display name
+        provider, model = get_active_provider_and_model(config)
+        return get_model_display_name(model, provider)
 
 
 # =============================================================================

@@ -58,6 +58,10 @@ declare -A ANNOUNCEMENTS=(
     ["tts_activated"]="TTS mode activated"
     ["tts_deactivated"]="TTS mode deactivated"
 
+    # Settings/config actions
+    ["default_prompt_configured"]="Default prompt configured"
+    ["copied_to_clipboard"]="Copied to clipboard"
+
     # Legacy (kept for compatibility)
     ["copied"]="Copied"
     ["injected"]="Injected"

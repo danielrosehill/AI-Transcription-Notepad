@@ -1,0 +1,136 @@
+{
+  "export_date": "2025-12-30T01:11:06.888595",
+  "export_version": "1.0",
+  "note": "Anonymized usage statistics from Voice Notepad development. No transcript content included.",
+  "summary": {
+    "total_transcriptions": 2075,
+    "total_words": 181437,
+    "total_characters": 1010956
+  },
+  "model_performance": [
+    {
+      "provider": "gemini",
+      "model": "gemini-flash-latest",
+      "count": 1028,
+      "avg_inference_ms": 5092.3,
+      "avg_chars_per_sec": 90.4,
+      "avg_audio_duration_sec": 42.0
+    },
+    {
+      "provider": "openrouter",
+      "model": "google/gemini-2.5-flash",
+      "count": 868,
+      "avg_inference_ms": 2520.3,
+      "avg_chars_per_sec": 203.5,
+      "avg_audio_duration_sec": 42.2
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "count": 119,
+      "avg_inference_ms": 6677.7,
+      "avg_chars_per_sec": 69.7,
+      "avg_audio_duration_sec": 41.8
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-4o-audio-preview",
+      "count": 60,
+      "avg_inference_ms": 4959.4,
+      "avg_chars_per_sec": 124.8,
+      "avg_audio_duration_sec": 43.0
+    }
+  ],
+  "daily_activity": [
+    {
+      "date": "2025-12-16",
+      "transcriptions": 494,
+      "characters": 260632,
+      "words": 46823
+    },
+    {
+      "date": "2025-12-17",
+      "transcriptions": 26,
+      "characters": 11375,
+      "words": 2140
+    },
+    {
+      "date": "2025-12-18",
+      "transcriptions": 117,
+      "characters": 75975,
+      "words": 13492
+    },
+    {
+      "date": "2025-12-19",
+      "transcriptions": 70,
+      "characters": 40052,
+      "words": 7346
+    },
+    {
+      "date": "2025-12-20",
+      "transcriptions": 40,
+      "characters": 18814,
+      "words": 3572
+    },
+    {
+      "date": "2025-12-21",
+      "transcriptions": 44,
+      "characters": 24353,
+      "words": 4534
+    },
+    {
+      "date": "2025-12-22",
+      "transcriptions": 126,
+      "characters": 68533,
+      "words": 12036
+    },
+    {
+      "date": "2025-12-23",
+      "transcriptions": 134,
+      "characters": 69780,
+      "words": 12323
+    },
+    {
+      "date": "2025-12-24",
+      "transcriptions": 139,
+      "characters": 64791,
+      "words": 11347
+    },
+    {
+      "date": "2025-12-25",
+      "transcriptions": 251,
+      "characters": 109150,
+      "words": 19365
+    },
+    {
+      "date": "2025-12-26",
+      "transcriptions": 132,
+      "characters": 51072,
+      "words": 9265
+    },
+    {
+      "date": "2025-12-27",
+      "transcriptions": 170,
+      "characters": 72556,
+      "words": 13131
+    },
+    {
+      "date": "2025-12-28",
+      "transcriptions": 100,
+      "characters": 41213,
+      "words": 7472
+    },
+    {
+      "date": "2025-12-29",
+      "transcriptions": 213,
+      "characters": 93957,
+      "words": 16985
+    },
+    {
+      "date": "2025-12-30",
+      "transcriptions": 19,
+      "characters": 8703,
+      "words": 1606
+    }
+  ]
+}

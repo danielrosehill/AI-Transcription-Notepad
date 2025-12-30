@@ -879,6 +879,106 @@ class ModelSelectionWidget(QWidget):
         self._update_tier_buttons()
 
         layout.addWidget(selection_group)
+
+        # ==========================================================================
+        # FAVORITES SECTION
+        # ==========================================================================
+        favorites_group = QGroupBox("Favorites (Quick Switch)")
+        favorites_layout = QVBoxLayout(favorites_group)
+        favorites_layout.setSpacing(12)
+
+        favorites_desc = QLabel(
+            "Configure up to two favorite model presets for quick switching from the main UI."
+        )
+        favorites_desc.setWordWrap(True)
+        favorites_desc.setStyleSheet("color: #666; font-size: 11px; margin-bottom: 8px;")
+        favorites_layout.addWidget(favorites_desc)
+
+        # Store references for favorites UI elements
+        self._favorite_widgets = {}
+
+        # Style for labels inside favorites (explicit font size to avoid scaling issues)
+        fav_label_style = "font-size: 13px; background: transparent; border: none;"
+
+        # Create Favorite 1 and Favorite 2 sections
+        for fav_num in [1, 2]:
+            fav_frame = QFrame()
+            fav_frame.setFrameShape(QFrame.Shape.StyledPanel)
+            fav_frame.setStyleSheet("""
+                QFrame {
+                    background-color: #f8f9fa;
+                    border: 1px solid #dee2e6;
+                    border-radius: 4px;
+                }
+            """)
+            fav_inner_layout = QVBoxLayout(fav_frame)
+            fav_inner_layout.setSpacing(10)
+            fav_inner_layout.setContentsMargins(12, 10, 12, 10)
+
+            # Favorite header
+            fav_header = QLabel(f"Favorite {fav_num}")
+            fav_header.setStyleSheet("font-size: 14px; font-weight: bold; background: transparent; border: none;")
+            fav_inner_layout.addWidget(fav_header)
+
+            # Name field
+            name_layout = QHBoxLayout()
+            name_label = QLabel("Name:")
+            name_label.setStyleSheet(fav_label_style)
+            name_layout.addWidget(name_label)
+            name_edit = QLineEdit()
+            name_edit.setPlaceholderText(f"e.g., Flash Latest, Budget, Pro...")
+            name_edit.setMaximumWidth(200)
+            current_name = getattr(self.config, f"favorite_{fav_num}_name", "")
+            name_edit.setText(current_name)
+            name_edit.textChanged.connect(lambda text, n=fav_num: self._on_favorite_name_changed(n, text))
+            name_layout.addWidget(name_edit)
+            name_layout.addStretch()
+            fav_inner_layout.addLayout(name_layout)
+
+            # Provider dropdown
+            provider_layout = QHBoxLayout()
+            provider_label = QLabel("Provider:")
+            provider_label.setStyleSheet(fav_label_style)
+            provider_layout.addWidget(provider_label)
+            provider_combo = QComboBox()
+            provider_combo.setIconSize(QSize(16, 16))
+            provider_combo.addItem(self._get_provider_icon("google"), "Google Gemini", "gemini")
+            provider_combo.addItem(self._get_provider_icon("openrouter"), "OpenRouter", "openrouter")
+            current_provider = getattr(self.config, f"favorite_{fav_num}_provider", "") or "gemini"
+            idx = provider_combo.findData(current_provider)
+            if idx >= 0:
+                provider_combo.setCurrentIndex(idx)
+            provider_combo.currentIndexChanged.connect(lambda idx, n=fav_num: self._on_favorite_provider_changed(n))
+            provider_layout.addWidget(provider_combo)
+            provider_layout.addStretch()
+            fav_inner_layout.addLayout(provider_layout)
+
+            # Model dropdown
+            model_layout = QHBoxLayout()
+            model_label = QLabel("Model:")
+            model_label.setStyleSheet(fav_label_style)
+            model_layout.addWidget(model_label)
+            model_combo = QComboBox()
+            model_combo.setIconSize(QSize(16, 16))
+            model_combo.setMinimumWidth(200)
+            model_combo.currentIndexChanged.connect(lambda idx, n=fav_num: self._on_favorite_model_changed(n))
+            model_layout.addWidget(model_combo)
+            model_layout.addStretch()
+            fav_inner_layout.addLayout(model_layout)
+
+            # Store widget references
+            self._favorite_widgets[fav_num] = {
+                "name": name_edit,
+                "provider": provider_combo,
+                "model": model_combo,
+            }
+
+            favorites_layout.addWidget(fav_frame)
+
+            # Populate model dropdown based on current provider
+            self._update_favorite_model_combo(fav_num)
+
+        layout.addWidget(favorites_group)
         layout.addStretch()
 
     def _get_provider_icon(self, provider: str) -> QIcon:
@@ -1004,6 +1104,67 @@ class ModelSelectionWidget(QWidget):
 
         save_config(self.config)
         self._update_tier_buttons()
+
+    # ==========================================================================
+    # FAVORITES HANDLERS
+    # ==========================================================================
+
+    def _on_favorite_name_changed(self, fav_num: int, text: str):
+        """Handle favorite name change."""
+        setattr(self.config, f"favorite_{fav_num}_name", text)
+        save_config(self.config)
+
+    def _on_favorite_provider_changed(self, fav_num: int):
+        """Handle favorite provider change."""
+        widgets = self._favorite_widgets.get(fav_num)
+        if not widgets:
+            return
+        provider = widgets["provider"].currentData()
+        setattr(self.config, f"favorite_{fav_num}_provider", provider)
+        self._update_favorite_model_combo(fav_num)
+        save_config(self.config)
+
+    def _on_favorite_model_changed(self, fav_num: int):
+        """Handle favorite model change."""
+        widgets = self._favorite_widgets.get(fav_num)
+        if not widgets:
+            return
+        model = widgets["model"].currentData()
+        if model:  # Only save if valid model selected
+            setattr(self.config, f"favorite_{fav_num}_model", model)
+            save_config(self.config)
+
+    def _update_favorite_model_combo(self, fav_num: int):
+        """Update the model dropdown for a favorite based on its provider."""
+        widgets = self._favorite_widgets.get(fav_num)
+        if not widgets:
+            return
+
+        model_combo = widgets["model"]
+        provider_combo = widgets["provider"]
+
+        model_combo.blockSignals(True)
+        model_combo.clear()
+
+        provider = provider_combo.currentData() or "gemini"
+        if provider == "gemini":
+            models = GEMINI_MODELS
+        else:
+            models = OPENROUTER_MODELS
+
+        # Add models with icons
+        for model_id, display_name in models:
+            model_icon = self._get_model_icon(model_id)
+            model_combo.addItem(model_icon, display_name, model_id)
+
+        # Select current model if set
+        current_model = getattr(self.config, f"favorite_{fav_num}_model", "")
+        if current_model:
+            idx = model_combo.findData(current_model)
+            if idx >= 0:
+                model_combo.setCurrentIndex(idx)
+
+        model_combo.blockSignals(False)
 
 
 class SettingsWidget(QWidget):

@@ -258,6 +258,28 @@ def build_prompt_from_templates(
 # =============================================================================
 
 
+class PromptType(str, Enum):
+    """Type of prompt for the three-section system.
+
+    This determines which section of the Prompt Manager and StackBuilder
+    a prompt appears in:
+    - FORMAT: Output format presets (email, todo, meeting notes, etc.)
+    - TONE: Formality/emotional register (casual, professional, friendly, etc.)
+    - STYLE: Writing style modifiers (concise, persuasive, analytical, etc.)
+    """
+    FORMAT = "format"
+    TONE = "tone"
+    STYLE = "style"
+
+
+# Display names for prompt types
+PROMPT_TYPE_DISPLAY_NAMES = {
+    PromptType.FORMAT: "Format",
+    PromptType.TONE: "Tone",
+    PromptType.STYLE: "Style",
+}
+
+
 class PromptConfigCategory(str, Enum):
     """User-facing categories for prompt configurations.
 
@@ -323,6 +345,10 @@ class PromptConfig:
     category: str                        # PromptConfigCategory value
     description: str                     # User-facing description
 
+    # Prompt type for three-section system (format, tone, style)
+    # This determines which section of the UI the prompt appears in
+    prompt_type: str = "format"          # PromptType value (format, tone, style)
+
     # How the prompt is built (mutually exclusive)
     # Option A: Direct instruction (simple format)
     instruction: str = ""                # The format instruction
@@ -369,6 +395,7 @@ class PromptConfig:
             "name": self.name,
             "category": self.category,
             "description": self.description,
+            "prompt_type": self.prompt_type,
             "instruction": self.instruction,
             "adherence": self.adherence,
             "elements": self.elements,
@@ -392,6 +419,7 @@ class PromptConfig:
             name=data["name"],
             category=data.get("category", PromptConfigCategory.CUSTOM),
             description=data.get("description", ""),
+            prompt_type=data.get("prompt_type", "format"),  # Default to format for legacy
             instruction=data.get("instruction", ""),
             adherence=data.get("adherence", ""),
             elements=data.get("elements", []),
@@ -889,6 +917,14 @@ class PromptLibrary:
     def get_by_category(self, category: str) -> List[PromptConfig]:
         """Get all prompts in a category."""
         return [p for p in self.get_all() if p.category == category]
+
+    def get_by_type(self, prompt_type: str) -> List[PromptConfig]:
+        """Get all prompts of a specific type (format, tone, style)."""
+        return [p for p in self.get_all() if p.prompt_type == prompt_type]
+
+    def get_custom_by_type(self, prompt_type: str) -> List[PromptConfig]:
+        """Get custom prompts of a specific type (format, tone, style)."""
+        return [p for p in self.get_all() if p.prompt_type == prompt_type and not p.is_builtin]
 
     def create_custom(self, config: PromptConfig) -> PromptConfig:
         """Create a new custom prompt."""

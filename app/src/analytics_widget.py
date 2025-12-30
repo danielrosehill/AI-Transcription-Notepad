@@ -25,13 +25,13 @@ class AnalyticsWidget(QWidget):
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
 
+        # Performance tab (first/default)
+        self.performance_widget = AnalysisWidget()
+        self.tabs.addTab(self.performance_widget, "📊 Performance")
+
         # Cost tab
         self.cost_widget = CostWidget()
         self.tabs.addTab(self.cost_widget, "💰 Cost")
-
-        # Performance tab
-        self.performance_widget = AnalysisWidget()
-        self.tabs.addTab(self.performance_widget, "📊 Performance")
 
         layout.addWidget(self.tabs)
 

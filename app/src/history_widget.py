@@ -1,6 +1,6 @@
 """History tab widget for browsing and retrieving past transcriptions."""
 
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -10,10 +10,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QScrollArea,
     QFrame,
-    QTextEdit,
     QApplication,
-    QSplitter,
-    QMessageBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -45,10 +42,22 @@ def format_relative_time(timestamp_str: str) -> str:
         return timestamp_str[:16] if timestamp_str else "Unknown"
 
 
+def get_preview_text(text: str, max_chars: int = 120) -> str:
+    """Get preview text, truncating at max_chars with ellipsis if needed."""
+    clean_text = text.replace("\n", " ").strip()
+    # Collapse multiple spaces
+    clean_text = " ".join(clean_text.split())
+    if len(clean_text) <= max_chars:
+        return clean_text
+    # Truncate at word boundary
+    truncated = clean_text[:max_chars].rsplit(" ", 1)[0]
+    return truncated + "..."
+
+
 class TranscriptItem(QFrame):
     """A single transcript item in the history list."""
 
-    item_clicked = pyqtSignal(object)  # Emits the TranscriptionRecord
+    copy_clicked = pyqtSignal(object)  # Emits the TranscriptionRecord
 
     def __init__(self, record: TranscriptionRecord, parent=None):
         super().__init__(parent)
@@ -61,61 +70,75 @@ class TranscriptItem(QFrame):
             TranscriptItem {
                 background-color: #ffffff;
                 border: 1px solid #e0e0e0;
-                border-radius: 6px;
-                padding: 8px;
+                border-radius: 4px;
             }
             TranscriptItem:hover {
                 background-color: #f8f9fa;
-                border-color: #007bff;
             }
         """)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(56)
 
-        layout = QVBoxLayout(self)
-        layout.setSpacing(6)
-        layout.setContentsMargins(10, 8, 10, 8)
+        layout = QHBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(12, 8, 8, 8)
 
-        # Header row: relative timestamp
-        header = QHBoxLayout()
-
-        time_str = format_relative_time(self.record.timestamp)
-        time_label = QLabel(time_str)
-        time_label.setStyleSheet("color: #666; font-size: 11px;")
-        header.addWidget(time_label)
-
-        header.addStretch()
-
-        layout.addLayout(header)
-
-        # Preview text (first ~120 chars)
-        preview_text = self.record.transcript_text.replace("\n", " ").strip()
-        if len(preview_text) > 120:
-            preview_text = preview_text[:117] + "..."
-
+        # Preview text (two lines, larger font)
+        preview_text = get_preview_text(self.record.transcript_text, 140)
         preview = QLabel(preview_text)
         preview.setWordWrap(True)
-        preview.setStyleSheet("color: #333; font-size: 12px;")
-        layout.addWidget(preview)
+        preview.setStyleSheet("color: #333; font-size: 13px;")
+        layout.addWidget(preview, 1)  # Stretch factor 1 to take available space
 
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.item_clicked.emit(self.record)
-        super().mousePressEvent(event)
+        # Right side: timestamp and copy button
+        right_layout = QVBoxLayout()
+        right_layout.setSpacing(4)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Timestamp
+        time_str = format_relative_time(self.record.timestamp)
+        time_label = QLabel(time_str)
+        time_label.setStyleSheet("color: #888; font-size: 11px;")
+        time_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        right_layout.addWidget(time_label)
+
+        # Clipboard button
+        copy_btn = QPushButton("📋")
+        copy_btn.setFixedSize(28, 28)
+        copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        copy_btn.setToolTip("Copy to clipboard")
+        copy_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #e8f4fd;
+                border-color: #007bff;
+            }
+            QPushButton:pressed {
+                background-color: #cce5ff;
+            }
+        """)
+        copy_btn.clicked.connect(lambda: self.copy_clicked.emit(self.record))
+        right_layout.addWidget(copy_btn, 0, Qt.AlignmentFlag.AlignRight)
+
+        layout.addLayout(right_layout)
 
 
 class HistoryWidget(QWidget):
     """Widget for browsing and retrieving past transcriptions."""
 
-    transcription_selected = pyqtSignal(str)  # Emitted when user wants to load transcript
+    transcription_selected = pyqtSignal(str)  # Kept for API compatibility
 
     def __init__(self, config: Config = None, parent=None):
         super().__init__(parent)
         self.config = config
         self.current_search = ""
         self.current_offset = 0
-        self.page_size = 20
+        self.page_size = 10
         self.total_count = 0
-        self.selected_record = None
         self.setup_ui()
         self.refresh()
 
@@ -161,15 +184,7 @@ class HistoryWidget(QWidget):
 
         layout.addLayout(header)
 
-        # Main content: splitter with list and preview
-        splitter = QSplitter(Qt.Orientation.Vertical)
-
         # Scrollable list of transcripts
-        list_container = QWidget()
-        list_layout = QVBoxLayout(list_container)
-        list_layout.setContentsMargins(0, 0, 0, 0)
-        list_layout.setSpacing(0)
-
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -183,12 +198,12 @@ class HistoryWidget(QWidget):
 
         self.list_widget = QWidget()
         self.list_layout = QVBoxLayout(self.list_widget)
-        self.list_layout.setSpacing(8)
+        self.list_layout.setSpacing(4)
         self.list_layout.setContentsMargins(8, 8, 8, 8)
         self.list_layout.addStretch()
 
         scroll.setWidget(self.list_widget)
-        list_layout.addWidget(scroll)
+        layout.addWidget(scroll, 1)
 
         # Pagination controls
         pagination = QHBoxLayout()
@@ -210,119 +225,7 @@ class HistoryWidget(QWidget):
         self.next_btn.clicked.connect(self._on_next_page)
         pagination.addWidget(self.next_btn)
 
-        list_layout.addLayout(pagination)
-
-        splitter.addWidget(list_container)
-
-        # Preview panel
-        preview_container = QWidget()
-        preview_layout = QVBoxLayout(preview_container)
-        preview_layout.setContentsMargins(0, 8, 0, 0)
-
-        preview_header = QHBoxLayout()
-        preview_title = QLabel("Preview")
-        preview_title.setFont(QFont("Sans", 11, QFont.Weight.Bold))
-        preview_header.addWidget(preview_title)
-
-        preview_header.addStretch()
-
-        self.preview_info = QLabel("")
-        self.preview_info.setStyleSheet("color: #666; font-size: 11px;")
-        preview_header.addWidget(self.preview_info)
-
-        preview_layout.addLayout(preview_header)
-
-        self.preview_text = QTextEdit()
-        self.preview_text.setReadOnly(True)
-        self.preview_text.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #ddd;
-                border-radius: 6px;
-                padding: 8px;
-                font-size: 13px;
-                background-color: #ffffff;
-            }
-        """)
-        self.preview_text.setPlaceholderText("Click a transcript to preview it here")
-        preview_layout.addWidget(self.preview_text)
-
-        # Preview action buttons
-        preview_actions = QHBoxLayout()
-
-        self.copy_full_btn = QPushButton("Copy Full Text")
-        self.copy_full_btn.setEnabled(False)
-        self.copy_full_btn.clicked.connect(self._on_copy_full)
-        self.copy_full_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #007bff;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 8px 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #0056b3;
-            }
-            QPushButton:disabled {
-                background-color: #6c757d;
-            }
-        """)
-        preview_actions.addWidget(self.copy_full_btn)
-
-        self.load_btn = QPushButton("Load to Editor")
-        self.load_btn.setEnabled(False)
-        self.load_btn.clicked.connect(self._on_load_to_editor)
-        self.load_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #28a745;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 8px 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #218838;
-            }
-            QPushButton:disabled {
-                background-color: #6c757d;
-            }
-        """)
-        preview_actions.addWidget(self.load_btn)
-
-        preview_actions.addStretch()
-
-        self.delete_btn = QPushButton("Delete")
-        self.delete_btn.setEnabled(False)
-        self.delete_btn.clicked.connect(self._on_delete)
-        self.delete_btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #dc3545;
-                border: 1px solid #dc3545;
-                border-radius: 4px;
-                padding: 8px 16px;
-            }
-            QPushButton:hover {
-                background-color: #dc3545;
-                color: white;
-            }
-            QPushButton:disabled {
-                color: #999;
-                border-color: #999;
-            }
-        """)
-        preview_actions.addWidget(self.delete_btn)
-
-        preview_layout.addLayout(preview_actions)
-
-        splitter.addWidget(preview_container)
-
-        # Set initial splitter sizes (60% list, 40% preview)
-        splitter.setSizes([300, 200])
-
-        layout.addWidget(splitter, 1)
+        layout.addLayout(pagination)
 
         # Status bar
         self.status_label = QLabel("")
@@ -352,7 +255,7 @@ class HistoryWidget(QWidget):
         # Add new items
         for record in records:
             item = TranscriptItem(record)
-            item.item_clicked.connect(self._on_item_selected)
+            item.copy_clicked.connect(self._on_copy)
             self.list_layout.insertWidget(self.list_layout.count() - 1, item)
 
         # Update pagination
@@ -391,76 +294,15 @@ class HistoryWidget(QWidget):
         self.current_offset += self.page_size
         self.refresh()
 
-    def _on_item_selected(self, record: TranscriptionRecord):
-        """Show selected transcript in preview and copy to clipboard."""
-        self.selected_record = record
-
-        # Copy to clipboard immediately
+    def _on_copy(self, record: TranscriptionRecord):
+        """Copy transcript to clipboard."""
         clipboard = QApplication.clipboard()
         clipboard.setText(record.transcript_text)
 
-        # Play clipboard beep
+        # Play clipboard feedback
         if self.config:
             feedback = get_feedback()
             feedback.enabled = self.config.beep_on_clipboard
             feedback.play_clipboard_beep()
 
-        # Update preview
-        self.preview_text.setPlainText(record.transcript_text)
-
-        # Update preview info with relative time
-        time_str = format_relative_time(record.timestamp)
-        self.preview_info.setText(f"{time_str} • {record.word_count} words • Copied!")
-
-        # Enable action buttons
-        self.copy_full_btn.setEnabled(True)
-        self.load_btn.setEnabled(True)
-        self.delete_btn.setEnabled(True)
-
-    def _on_copy_full(self):
-        """Copy full transcript to clipboard."""
-        if self.selected_record:
-            clipboard = QApplication.clipboard()
-            clipboard.setText(self.selected_record.transcript_text)
-
-            # Play clipboard beep
-            if self.config:
-                feedback = get_feedback()
-                feedback.enabled = self.config.beep_on_clipboard
-                feedback.play_clipboard_beep()
-
-            self.status_label.setText("Copied to clipboard!")
-
-    def _on_load_to_editor(self):
-        """Load transcript to main editor."""
-        if self.selected_record:
-            self.transcription_selected.emit(self.selected_record.transcript_text)
-            self.status_label.setText("Loaded to editor")
-
-    def _on_delete(self):
-        """Delete selected transcript."""
-        if not self.selected_record:
-            return
-
-        reply = QMessageBox.question(
-            self,
-            "Delete Transcript",
-            "Are you sure you want to delete this transcript?\n\nThis cannot be undone.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            db = get_db()
-            if db.delete_transcription(self.selected_record.id):
-                self.status_label.setText("Transcript deleted")
-                self.selected_record = None
-                self.preview_text.clear()
-                self.preview_info.setText("")
-                self.copy_full_btn.setEnabled(False)
-                self.load_btn.setEnabled(False)
-                self.delete_btn.setEnabled(False)
-                self.refresh()
-            else:
-                self.status_label.setText("Failed to delete transcript")
-
+        self.status_label.setText("Copied to clipboard!")

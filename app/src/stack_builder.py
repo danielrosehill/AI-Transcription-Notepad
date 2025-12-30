@@ -20,6 +20,7 @@ try:
         FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES,
     )
     from .tts_announcer import get_announcer
+    from .prompt_library import PromptLibrary
 except ImportError:
     from config import (
         Config, TONE_TEMPLATES, TONE_DISPLAY_NAMES,
@@ -27,6 +28,7 @@ except ImportError:
         FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES,
     )
     from tts_announcer import get_announcer
+    from prompt_library import PromptLibrary
 
 
 class CollapsibleSection(QWidget):
@@ -197,10 +199,14 @@ class StackBuilderWidget(QWidget):
         ("reassuring", "Reassuring", "Calm, comforting tone"),
     ]
 
-    def __init__(self, config: Config, parent=None):
+    def __init__(self, config: Config, config_dir=None, parent=None):
         super().__init__(parent)
         self.config = config
+        self.config_dir = config_dir
         self._was_verbatim = config.format_preset == "verbatim"
+
+        # Load prompt library for custom prompts
+        self.library = PromptLibrary(config_dir) if config_dir else None
 
         self._setup_ui()
         self._load_from_config()
@@ -351,13 +357,20 @@ class StackBuilderWidget(QWidget):
         more_layout.addWidget(more_label)
 
         self.format_combo = QComboBox()
-        self.format_combo.setMaximumWidth(120)
+        self.format_combo.setMaximumWidth(140)
         self.format_combo.addItem("Select...", "")
 
         quick_keys = {opt[0] for opt in self.FORMAT_QUICK_OPTIONS}
         for key, display_name in sorted(FORMAT_DISPLAY_NAMES.items(), key=lambda x: x[1]):
             if key not in quick_keys and key != "general":
                 self.format_combo.addItem(display_name, key)
+
+        # Add custom format prompts
+        custom_formats = self._get_custom_prompts("format")
+        if custom_formats:
+            self.format_combo.insertSeparator(self.format_combo.count())
+            for prompt in custom_formats:
+                self.format_combo.addItem(f"✦ {prompt.name}", f"custom:{prompt.id}")
 
         more_layout.addWidget(self.format_combo)
         more_layout.addStretch()
@@ -388,11 +401,18 @@ class StackBuilderWidget(QWidget):
         more_layout.addWidget(more_label)
 
         self.tone_combo = QComboBox()
-        self.tone_combo.setMaximumWidth(120)
+        self.tone_combo.setMaximumWidth(140)
         self.tone_combo.addItem("Select...", "")
 
         for key, label, tooltip in self.TONE_MORE_OPTIONS:
             self.tone_combo.addItem(label, key)
+
+        # Add custom tone prompts
+        custom_tones = self._get_custom_prompts("tone")
+        if custom_tones:
+            self.tone_combo.insertSeparator(self.tone_combo.count())
+            for prompt in custom_tones:
+                self.tone_combo.addItem(f"✦ {prompt.name}", f"custom:{prompt.id}")
 
         more_layout.addWidget(self.tone_combo)
         more_layout.addStretch()
@@ -409,6 +429,7 @@ class StackBuilderWidget(QWidget):
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setSpacing(4)
 
+        # Add builtin styles
         sorted_styles = sorted(STYLE_DISPLAY_NAMES.items(), key=lambda x: x[1])
         for i, (key, display_name) in enumerate(sorted_styles):
             tooltip = STYLE_TEMPLATES.get(key, "")
@@ -419,6 +440,19 @@ class StackBuilderWidget(QWidget):
             row = i // 2
             col = i % 2
             grid.addWidget(cb, row, col)
+
+        # Add custom style prompts
+        custom_styles = self._get_custom_prompts("style")
+        if custom_styles:
+            start_row = (len(sorted_styles) + 1) // 2
+            for i, prompt in enumerate(custom_styles):
+                cb = QCheckBox(f"✦ {prompt.name}")
+                cb.setToolTip(prompt.instruction[:100] + "..." if len(prompt.instruction) > 100 else prompt.instruction)
+                cb.setStyleSheet(self._get_checkbox_style())
+                self.style_checkboxes[f"custom:{prompt.id}"] = cb
+                row = start_row + (i // 2)
+                col = i % 2
+                grid.addWidget(cb, row, col)
 
         self.style_section.add_widget(grid_container)
 
@@ -449,6 +483,27 @@ class StackBuilderWidget(QWidget):
                 height: 12px;
             }
         """
+
+    def _get_custom_prompts(self, prompt_type: str) -> list:
+        """Get custom prompts of a specific type from the library."""
+        if not self.library:
+            return []
+        return self.library.get_custom_by_type(prompt_type)
+
+    def refresh_custom_prompts(self):
+        """Refresh the UI to show newly added custom prompts.
+
+        Call this after custom prompts are added/edited/deleted in the Prompt Manager.
+        """
+        if self.library:
+            self.library._load_custom()  # Reload from disk
+
+        # Rebuild the sections to include new custom prompts
+        # This is a simplified refresh - in production you might want to
+        # selectively update only the changed sections
+        self._setup_ui()
+        self._load_from_config()
+        self._connect_signals()
 
     def _connect_signals(self):
         """Connect all widget signals."""
@@ -484,6 +539,8 @@ class StackBuilderWidget(QWidget):
             announcer.announce_general_mode()
         elif announcement_type == 'format_inference':
             announcer.announce_format_inference()
+        elif announcement_type == 'default_prompt_configured':
+            announcer.announce_default_prompt_configured()
 
     def _on_infer_format_changed(self, state: int):
         is_checked = (state == Qt.CheckState.Checked.value)
@@ -701,6 +758,7 @@ class StackBuilderWidget(QWidget):
 
         self._save_to_config()
         self._update_summaries()
+        self._announce_tts('default_prompt_configured')
         self.prompt_changed.emit()
 
     def get_selected_format(self) -> str:

@@ -55,6 +55,7 @@ from .config import (
     GEMINI_MODELS, OPENROUTER_MODELS,
     MODEL_TIERS, build_cleanup_prompt, get_model_display_name,
     FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES, FORMALITY_DISPLAY_NAMES, VERBOSITY_DISPLAY_NAMES, EMAIL_SIGNOFFS,
+    is_favorite_configured, get_active_provider_and_model,
 )
 from .audio_recorder import AudioRecorder
 from .transcription import get_client, TranscriptionResult
@@ -489,8 +490,8 @@ class MainWindow(QMainWindow):
 
         # Recording controls - using icons for compact display
         self.record_btn = QPushButton("●")  # Record icon
-        self.record_btn.setMinimumHeight(36)
-        self.record_btn.setMinimumWidth(44)
+        self.record_btn.setMinimumHeight(42)
+        self.record_btn.setMinimumWidth(50)
         self.record_btn.setToolTip(
             "Record\n"
             "Start a new recording.\n"
@@ -505,7 +506,7 @@ class MainWindow(QMainWindow):
                 border-bottom: 3px solid #a71d2a;
                 border-radius: 6px;
                 font-weight: bold;
-                font-size: 18px;
+                font-size: 24px;
                 padding: 0 8px;
             }
             QPushButton:hover {
@@ -522,7 +523,7 @@ class MainWindow(QMainWindow):
                 border-bottom: 4px solid #cc0000;
                 border-radius: 6px;
                 font-weight: bold;
-                font-size: 18px;
+                font-size: 24px;
                 padding: 0 8px;
             }
             QPushButton:hover {
@@ -820,6 +821,31 @@ class MainWindow(QMainWindow):
         self._mode_buttons["inject"] = self.mode_inject_btn
         mode_layout.addWidget(self.mode_inject_btn)
 
+        # Separator before VAD checkbox
+        mode_separator_vad = QFrame()
+        mode_separator_vad.setFrameShape(QFrame.Shape.VLine)
+        mode_separator_vad.setStyleSheet("background-color: #ced4da; max-width: 1px; margin: 0 8px;")
+        mode_layout.addWidget(mode_separator_vad)
+
+        # VAD checkbox (silence removal)
+        self.vad_checkbox = QCheckBox("VAD")
+        self.vad_checkbox.setToolTip(
+            "Voice Activity Detection\n"
+            "Remove silence from audio before transcription.\n"
+            "Reduces API costs and improves accuracy."
+        )
+        self.vad_checkbox.setChecked(self.config.vad_enabled)
+        self.vad_checkbox.stateChanged.connect(self._on_vad_checkbox_changed)
+        self.vad_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #495057;
+                font-size: 11px;
+                font-weight: bold;
+                spacing: 4px;
+            }
+        """)
+        mode_layout.addWidget(self.vad_checkbox)
+
         mode_layout.addStretch()
         recording_layout.addLayout(mode_layout)
 
@@ -885,7 +911,7 @@ class MainWindow(QMainWindow):
         presets_section_layout.addLayout(search_layout)
 
         # Stack Builder widget (replaces FavoritesBar)
-        self.stack_builder = StackBuilderWidget(self.config)
+        self.stack_builder = StackBuilderWidget(self.config, CONFIG_DIR)
         self.stack_builder.prompt_changed.connect(self._on_stack_changed)
         presets_section_layout.addWidget(self.stack_builder)
 
@@ -929,19 +955,13 @@ class MainWindow(QMainWindow):
         # Connect text changes to word count update
         self.text_output.textChanged.connect(self.update_word_count)
 
-        # Bottom buttons with improved spacing
+        # Bottom buttons - centered Copy button
         bottom = QHBoxLayout()
-        bottom.setSpacing(12)  # Increased spacing between buttons
-
-        self.save_btn = QPushButton("Save As...")
-        self.save_btn.setMinimumHeight(38)
-        self.save_btn.setMinimumWidth(110)
-        self.save_btn.clicked.connect(self.save_to_file)
-        bottom.addWidget(self.save_btn)
+        bottom.setSpacing(12)
 
         bottom.addStretch()
 
-        # Copy button with clipboard icon
+        # Copy button with clipboard icon (centered)
         copy_icon = QIcon.fromTheme(
             "edit-copy",
             self.style().standardIcon(self.style().StandardPixmap.SP_DialogSaveButton)
@@ -952,14 +972,17 @@ class MainWindow(QMainWindow):
         self.copy_btn.clicked.connect(self.copy_to_clipboard)
         bottom.addWidget(self.copy_btn)
 
+        bottom.addStretch()
+
         layout.addLayout(bottom)
 
         # Bottom status bar: microphone (left), status (center), model (right)
         status_bar = QHBoxLayout()
 
-        # Microphone info (left)
+        # Microphone info (left) - with bold "Mic:" prefix
         self.mic_label = QLabel()
         self.mic_label.setStyleSheet("color: #888; font-size: 11px;")
+        self.mic_label.setTextFormat(Qt.TextFormat.RichText)
         status_bar.addWidget(self.mic_label)
 
         status_bar.addStretch()
@@ -978,10 +1001,32 @@ class MainWindow(QMainWindow):
 
         status_bar.addStretch()
 
-        # Model info (right)
-        self.model_label = QLabel()
-        self.model_label.setStyleSheet("color: #888; font-size: 11px;")
-        status_bar.addWidget(self.model_label)
+        # Model selector (right) - bold label + clickable button with dropdown menu
+        model_prefix = QLabel("<b>Model:</b>")
+        model_prefix.setStyleSheet("color: #888; font-size: 11px;")
+        status_bar.addWidget(model_prefix)
+
+        self.model_selector_btn = QToolButton()
+        self.model_selector_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.model_selector_btn.setStyleSheet("""
+            QToolButton {
+                color: #888;
+                font-size: 11px;
+                border: none;
+                padding: 2px 4px;
+            }
+            QToolButton:hover {
+                background-color: rgba(0, 0, 0, 0.05);
+                border-radius: 4px;
+            }
+            QToolButton::menu-indicator {
+                width: 0;
+                height: 0;
+            }
+        """)
+        self.model_selector_btn.setToolTip("Click to change model preset")
+        self._setup_model_preset_menu()
+        status_bar.addWidget(self.model_selector_btn)
 
         # Stats speaker button (plays usage stats via TTS)
         self.stats_speaker_btn = QToolButton()
@@ -1621,6 +1666,14 @@ class MainWindow(QMainWindow):
         self.config.tldr_position = position.lower()
         save_config(self.config)
 
+    def _on_vad_checkbox_changed(self, state: int):
+        """Handle VAD checkbox toggle.
+
+        When enabled, removes silence from audio before transcription.
+        """
+        self.config.vad_enabled = state == Qt.CheckState.Checked.value
+        save_config(self.config)
+
     def _set_quick_format(self, format_key: str):
         """Handle quick format button clicks."""
         # Update the config and current prompt ID
@@ -1648,6 +1701,9 @@ class MainWindow(QMainWindow):
             # Restore selection if possible
             if hasattr(self, 'current_prompt_id') and self.current_prompt_id:
                 self._update_prompt_search_selection(self.current_prompt_id)
+        # Refresh the stack builder to show custom prompts
+        if hasattr(self, 'stack_builder'):
+            self.stack_builder.refresh_custom_prompts()
 
     def _on_stack_changed(self):
         """Handle changes from the stack builder widget.
@@ -1896,14 +1952,12 @@ class MainWindow(QMainWindow):
         # Update tray to transcribing state
         self._set_tray_state('transcribing')
 
-        # Get API key for selected provider
-        provider = self.config.selected_provider
+        # Get provider and model from active preset
+        provider, model = self._get_current_model()
         if provider == "gemini":
             api_key = self.config.gemini_api_key
-            model = self.config.gemini_model
         else:  # openrouter
             api_key = self.config.openrouter_api_key
-            model = self.config.openrouter_model
 
         if not api_key:
             QMessageBox.warning(
@@ -1964,14 +2018,12 @@ class MainWindow(QMainWindow):
         # Update tray to transcribing state
         self._set_tray_state('transcribing')
 
-        # Get API key for selected provider
-        provider = self.config.selected_provider
+        # Get provider and model from active preset
+        provider, model = self._get_current_model()
         if provider == "gemini":
             api_key = self.config.gemini_api_key
-            model = self.config.gemini_model
         else:  # openrouter
             api_key = self.config.openrouter_api_key
-            model = self.config.openrouter_model
 
         if not api_key:
             QMessageBox.warning(
@@ -2097,14 +2149,12 @@ class MainWindow(QMainWindow):
         # Update tray to transcribing state
         self._set_tray_state('transcribing')
 
-        # Get API key for selected provider
-        provider = self.config.selected_provider
+        # Get provider and model from active preset
+        provider, model = self._get_current_model()
         if provider == "gemini":
             api_key = self.config.gemini_api_key
-            model = self.config.gemini_model
         else:  # openrouter
             api_key = self.config.openrouter_api_key
-            model = self.config.openrouter_model
 
         if not api_key:
             QMessageBox.warning(
@@ -2336,8 +2386,8 @@ class MainWindow(QMainWindow):
         words = display_name.split()
         if len(words) > 3:
             display_name = ' '.join(words[:3])
-        self.mic_label.setText(display_name)
-        self.mic_label.setToolTip(f"Active microphone: {full_name}\nChange in Settings → Audio")
+        self.mic_label.setText(f"<b>Mic:</b> {display_name}")
+        self.mic_label.setToolTip(f"Active microphone: {full_name}\nChange in Settings → Mic")
 
     def _get_active_microphone_name(self) -> tuple[str, str]:
         """Get the name of the currently active microphone.
@@ -2413,15 +2463,118 @@ class MainWindow(QMainWindow):
         return (actual_device_name, actual_device_name)
 
     def _update_model_display(self):
-        """Update the model display label."""
+        """Update the model display button text and menu."""
         provider, model = self._get_current_model()
-        # Get human-readable display name from config
-        display_name = get_model_display_name(model, provider)
+        preset = self.config.active_model_preset
+
+        # Build display text
+        if preset == "favorite_1" and self.config.favorite_1_name:
+            preset_name = self.config.favorite_1_name
+        elif preset == "favorite_2" and self.config.favorite_2_name:
+            preset_name = self.config.favorite_2_name
+        else:
+            # Default - just show model name
+            preset_name = get_model_display_name(model, provider)
+
         # Truncate if too long
-        if len(display_name) > 30:
-            display_name = display_name[:27] + "..."
-        self.model_label.setText(display_name)
-        self.model_label.setToolTip(f"Provider: {provider}\nModel: {model}\nChange in Settings → Model")
+        if len(preset_name) > 25:
+            preset_name = preset_name[:22] + "..."
+
+        # Set button text (no indicator - click shows menu)
+        self.model_selector_btn.setText(f"{preset_name}")
+        self.model_selector_btn.setToolTip(
+            f"Preset: {preset.replace('_', ' ').title()}\n"
+            f"Provider: {provider.title()}\n"
+            f"Model: {model}\n"
+            f"Click to change"
+        )
+
+        # Update menu checkmarks
+        self._update_model_preset_menu_checks()
+
+    def _setup_model_preset_menu(self):
+        """Set up the model preset dropdown menu."""
+        self.model_preset_menu = QMenu(self)
+        self.model_preset_actions = {}
+
+        # Action group for mutual exclusion
+        self.model_preset_action_group = QActionGroup(self)
+        self.model_preset_action_group.setExclusive(True)
+
+        # Default action (always present)
+        default_action = QAction("Default", self)
+        default_action.setCheckable(True)
+        default_action.setData("default")
+        default_action.triggered.connect(lambda: self._on_model_preset_changed("default"))
+        self.model_preset_action_group.addAction(default_action)
+        self.model_preset_menu.addAction(default_action)
+        self.model_preset_actions["default"] = default_action
+
+        # Favorite 1 (only if configured)
+        if is_favorite_configured(self.config, 1):
+            self.model_preset_menu.addSeparator()
+            fav1_action = QAction(self.config.favorite_1_name, self)
+            fav1_action.setCheckable(True)
+            fav1_action.setData("favorite_1")
+            fav1_action.triggered.connect(lambda: self._on_model_preset_changed("favorite_1"))
+            self.model_preset_action_group.addAction(fav1_action)
+            self.model_preset_menu.addAction(fav1_action)
+            self.model_preset_actions["favorite_1"] = fav1_action
+
+        # Favorite 2 (only if configured)
+        if is_favorite_configured(self.config, 2):
+            if not is_favorite_configured(self.config, 1):
+                self.model_preset_menu.addSeparator()
+            fav2_action = QAction(self.config.favorite_2_name, self)
+            fav2_action.setCheckable(True)
+            fav2_action.setData("favorite_2")
+            fav2_action.triggered.connect(lambda: self._on_model_preset_changed("favorite_2"))
+            self.model_preset_action_group.addAction(fav2_action)
+            self.model_preset_menu.addAction(fav2_action)
+            self.model_preset_actions["favorite_2"] = fav2_action
+
+        # Settings shortcut
+        self.model_preset_menu.addSeparator()
+        settings_action = QAction("Configure Favorites...", self)
+        settings_action.triggered.connect(self.show_settings)
+        self.model_preset_menu.addAction(settings_action)
+
+        self.model_selector_btn.setMenu(self.model_preset_menu)
+
+        # Set initial check state
+        self._update_model_preset_menu_checks()
+
+    def _update_model_preset_menu_checks(self):
+        """Update the checkmarks in the model preset menu."""
+        current_preset = self.config.active_model_preset
+        for preset_key, action in self.model_preset_actions.items():
+            action.setChecked(preset_key == current_preset)
+
+    def _on_model_preset_changed(self, preset: str):
+        """Handle model preset selection change."""
+        if preset == self.config.active_model_preset:
+            return  # No change
+
+        self.config.active_model_preset = preset
+        save_config(self.config)
+
+        # Update display
+        self._update_model_display()
+
+        # Play TTS announcement if enabled
+        announcer = get_announcer()
+        provider, model = self._get_current_model()
+        model_name = get_model_display_name(model, provider)
+        announcer.announce_model_changed(model_name)
+
+    def _refresh_model_preset_menu(self):
+        """Refresh the model preset menu (e.g., after settings change)."""
+        # Remove old menu
+        if hasattr(self, 'model_preset_menu'):
+            self.model_preset_menu.deleteLater()
+        # Recreate menu
+        self._setup_model_preset_menu()
+        self._update_model_display()
 
     def _play_stats(self):
         """Play usage statistics via TTS."""
@@ -2438,19 +2591,12 @@ class MainWindow(QMainWindow):
             self.status_label.show()
 
     def _get_current_model(self) -> tuple[str, str]:
-        """Get the currently selected provider and model.
+        """Get the currently selected provider and model based on active preset.
 
         Returns:
             Tuple of (provider, model).
         """
-        provider = self.config.selected_provider
-        if provider == "gemini":
-            model = self.config.gemini_model
-        elif provider == "openrouter":
-            model = self.config.openrouter_model
-        else:
-            model = "unknown"
-        return (provider, model)
+        return get_active_provider_and_model(self.config)
 
     def reset_ui(self):
         """Reset UI to initial state.
@@ -2632,6 +2778,10 @@ class MainWindow(QMainWindow):
         if text:
             self._copy_to_clipboard_wayland(text)
 
+            # TTS announcement for manual copy action
+            if self.config.audio_feedback_mode == "tts":
+                get_announcer().announce_copied_to_clipboard()
+
             # Don't play beep here - only play when transcription first arrives
             self.status_label.setText("Copied!")
             self.status_label.setStyleSheet("color: rgba(40, 167, 69, 0.7); font-size: 11px;")
@@ -2658,14 +2808,12 @@ class MainWindow(QMainWindow):
             )
             return
 
-        # Get API key for selected provider
-        provider = self.config.selected_provider
+        # Get provider and model from active preset
+        provider, model = self._get_current_model()
         if provider == "gemini":
             api_key = self.config.gemini_api_key
-            model = self.config.gemini_model
         else:  # openrouter
             api_key = self.config.openrouter_api_key
-            model = self.config.openrouter_model
 
         if not api_key:
             QMessageBox.warning(
@@ -2849,7 +2997,8 @@ class MainWindow(QMainWindow):
         """Sync UI state with current config after settings dialog closes."""
         # Update status bar displays in case they changed
         self._update_mic_display()
-        self._update_model_display()
+        # Refresh model preset menu in case favorites were added/removed/renamed
+        self._refresh_model_preset_menu()
 
     def show_analytics(self):
         """Show analytics dialog."""

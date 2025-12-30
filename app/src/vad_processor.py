@@ -1,30 +1,32 @@
-"""Voice Activity Detection (VAD) for removing silence from audio."""
+"""Voice Activity Detection (VAD) for removing silence from audio.
+
+Uses TEN VAD - a lightweight, high-performance voice activity detector.
+https://github.com/TEN-framework/ten-vad
+"""
 
 import io
-import wave
-import struct
-from pathlib import Path
-from typing import Tuple, Optional, Any
-import urllib.request
+from typing import Tuple, Optional
 
 try:
-    import onnxruntime as ort
-    ONNX_AVAILABLE = True
+    from ten_vad import TenVad
+    TEN_VAD_AVAILABLE = True
 except ImportError:
-    ort = None  # type: ignore
-    ONNX_AVAILABLE = False
+    TenVad = None  # type: ignore
+    TEN_VAD_AVAILABLE = False
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    np = None  # type: ignore
+    NUMPY_AVAILABLE = False
 
 from pydub import AudioSegment
 
 
-# Model storage location
-MODELS_DIR = Path.home() / ".config" / "voice-notepad-v3" / "models"
-SILERO_MODEL_URL = "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx"
-SILERO_MODEL_PATH = MODELS_DIR / "silero_vad.onnx"
-
 # VAD parameters
-SAMPLE_RATE = 16000  # Silero VAD expects 16kHz
-WINDOW_SIZE_SAMPLES = 512  # ~32ms at 16kHz
+SAMPLE_RATE = 16000  # TEN VAD expects 16kHz
+HOP_SIZE = 256  # ~16ms at 16kHz (TEN VAD optimal)
 THRESHOLD = 0.5  # Speech probability threshold
 MIN_SPEECH_DURATION_MS = 250  # Minimum speech segment duration
 MIN_SILENCE_DURATION_MS = 100  # Minimum silence to consider removing
@@ -32,81 +34,30 @@ SPEECH_PAD_MS = 30  # Padding around speech segments
 
 
 class VADProcessor:
-    """Voice Activity Detection processor using Silero VAD."""
+    """Voice Activity Detection processor using TEN VAD."""
 
     def __init__(self):
-        self._session: Optional[Any] = None  # ort.InferenceSession when loaded
-        self._h = None
-        self._c = None
-        self._sr = None
+        self._vad: Optional[TenVad] = None
 
-    def _ensure_model(self) -> bool:
-        """Download the model if not present. Returns True if model is available."""
-        if not ONNX_AVAILABLE:
-            print("VAD: onnxruntime not installed, VAD disabled")
-            return False
+    def _get_vad(self) -> Optional[TenVad]:
+        """Get or create the TEN VAD instance."""
+        if self._vad is not None:
+            return self._vad
 
-        if SILERO_MODEL_PATH.exists():
-            return True
+        if not TEN_VAD_AVAILABLE:
+            print("VAD: ten-vad not installed, VAD disabled")
+            return None
 
-        print("VAD: Downloading Silero VAD model...")
-        try:
-            MODELS_DIR.mkdir(parents=True, exist_ok=True)
-            urllib.request.urlretrieve(SILERO_MODEL_URL, SILERO_MODEL_PATH)
-            print("VAD: Model downloaded successfully")
-            return True
-        except Exception as e:
-            print(f"VAD: Failed to download model: {e}")
-            return False
-
-    def _get_session(self) -> Optional[Any]:
-        """Get or create the ONNX inference session."""
-        if self._session is not None:
-            return self._session
-
-        if not self._ensure_model():
+        if not NUMPY_AVAILABLE:
+            print("VAD: numpy not installed, VAD disabled")
             return None
 
         try:
-            self._session = ort.InferenceSession(
-                str(SILERO_MODEL_PATH),
-                providers=['CPUExecutionProvider']
-            )
-            return self._session
+            self._vad = TenVad(hop_size=HOP_SIZE, threshold=THRESHOLD)
+            return self._vad
         except Exception as e:
-            print(f"VAD: Failed to load model: {e}")
+            print(f"VAD: Failed to initialize TEN VAD: {e}")
             return None
-
-    def _reset_states(self):
-        """Reset the LSTM states for a new audio stream."""
-        import numpy as np
-        self._h = np.zeros((2, 1, 64), dtype=np.float32)
-        self._c = np.zeros((2, 1, 64), dtype=np.float32)
-        self._sr = np.array([SAMPLE_RATE], dtype=np.int64)
-
-    def _predict(self, audio_chunk: 'np.ndarray') -> float:
-        """Run VAD prediction on a single audio chunk."""
-        import numpy as np
-
-        session = self._get_session()
-        if session is None:
-            return 1.0  # Assume speech if VAD unavailable
-
-        # Prepare input
-        audio_chunk = audio_chunk.astype(np.float32)
-        if audio_chunk.ndim == 1:
-            audio_chunk = audio_chunk[np.newaxis, :]
-
-        # Run inference
-        ort_inputs = {
-            'input': audio_chunk,
-            'sr': self._sr,
-            'h': self._h,
-            'c': self._c,
-        }
-
-        out, self._h, self._c = session.run(None, ort_inputs)
-        return float(out[0][0])
 
     def get_speech_timestamps(self, audio_data: bytes) -> list[dict]:
         """
@@ -118,10 +69,8 @@ class VADProcessor:
         Returns:
             List of dicts with 'start' and 'end' keys (in samples)
         """
-        import numpy as np
-
-        session = self._get_session()
-        if session is None:
+        vad = self._get_vad()
+        if vad is None:
             return []
 
         # Load and prepare audio
@@ -133,21 +82,17 @@ class VADProcessor:
         if audio.frame_rate != SAMPLE_RATE:
             audio = audio.set_frame_rate(SAMPLE_RATE)
 
-        # Convert to numpy array
-        samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
-        samples = samples / 32768.0  # Normalize to [-1, 1]
-
-        # Reset LSTM states
-        self._reset_states()
+        # Convert to numpy array (int16 for TEN VAD)
+        samples = np.array(audio.get_array_of_samples(), dtype=np.int16)
 
         # Process audio in chunks
         speech_probs = []
-        for i in range(0, len(samples), WINDOW_SIZE_SAMPLES):
-            chunk = samples[i:i + WINDOW_SIZE_SAMPLES]
-            if len(chunk) < WINDOW_SIZE_SAMPLES:
+        for i in range(0, len(samples), HOP_SIZE):
+            chunk = samples[i:i + HOP_SIZE]
+            if len(chunk) < HOP_SIZE:
                 # Pad last chunk
-                chunk = np.pad(chunk, (0, WINDOW_SIZE_SAMPLES - len(chunk)))
-            prob = self._predict(chunk)
+                chunk = np.pad(chunk, (0, HOP_SIZE - len(chunk)))
+            prob, flag = vad.process(chunk)
             speech_probs.append(prob)
 
         # Convert probabilities to speech segments
@@ -159,7 +104,7 @@ class VADProcessor:
         speech_pad_samples = int(SPEECH_PAD_MS * SAMPLE_RATE / 1000)
 
         for i, prob in enumerate(speech_probs):
-            sample_pos = i * WINDOW_SIZE_SAMPLES
+            sample_pos = i * HOP_SIZE
 
             if prob >= THRESHOLD and not triggered:
                 triggered = True
@@ -168,7 +113,7 @@ class VADProcessor:
             elif prob < THRESHOLD and triggered:
                 # Check if silence is long enough
                 # Look ahead to see if speech resumes quickly
-                look_ahead = speech_probs[i:i + (min_silence_samples // WINDOW_SIZE_SAMPLES) + 1]
+                look_ahead = speech_probs[i:i + (min_silence_samples // HOP_SIZE) + 1]
                 if all(p < THRESHOLD for p in look_ahead) or i >= len(speech_probs) - 1:
                     triggered = False
                     current_speech['end'] = min(len(samples), sample_pos + speech_pad_samples)
@@ -197,8 +142,6 @@ class VADProcessor:
         Returns:
             Tuple of (processed_audio_bytes, original_duration_seconds, processed_duration_seconds)
         """
-        import numpy as np
-
         # Get original duration
         original_audio = AudioSegment.from_wav(io.BytesIO(audio_data))
         original_duration = len(original_audio) / 1000.0
@@ -208,6 +151,7 @@ class VADProcessor:
 
         if not speeches:
             # No speech detected, return original
+            print("VAD: No speech detected, returning original audio")
             return audio_data, original_duration, original_duration
 
         # Prepare audio for extraction
@@ -264,5 +208,5 @@ def remove_silence(audio_data: bytes) -> Tuple[bytes, float, float]:
 
 
 def is_vad_available() -> bool:
-    """Check if VAD is available (onnxruntime installed)."""
-    return ONNX_AVAILABLE
+    """Check if VAD is available (ten-vad installed)."""
+    return TEN_VAD_AVAILABLE and NUMPY_AVAILABLE
