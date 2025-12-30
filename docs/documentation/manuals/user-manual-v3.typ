@@ -793,14 +793,224 @@ Add yourself to input group: `sudo usermod -aG input $USER` then log out/in.
 
 Verify ydotoold is running as your user, not root. Check socket ownership.
 
-= Support
+// Appendix A: Hotkey Setup Guide
+#pagebreak()
 
-Voice Notepad is open source software provided on a *best-effort basis*. No formal support is provided.
+#align(center)[
+  #v(1cm)
+  #text(28pt, weight: "bold", fill: rgb(26, 26, 46))[Appendix A]
+  #v(0.3em)
+  #text(20pt, weight: "bold", fill: theme-blue)[Hotkey Setup Guide]
+  #v(0.5em)
+  #line(length: 40%, stroke: 2pt + theme-blue)
+  #v(1cm)
+]
 
-- *Repository*: #link("https://github.com/danielrosehill/Voice-Notepad")
-- *Documentation*: #link("https://github.com/danielrosehill/Voice-Notepad/tree/main/docs")
+This appendix provides a visual walkthrough for setting up global hotkeys using Input Remapper on Linux.
 
-Bug reports and feature requests can be submitted via GitHub Issues, but responses are not guaranteed.
+== Why Input Remapper?
+
+#link("https://github.com/sezanzeb/input-remapper")[Input Remapper] is an open-source tool for remapping keys and buttons from any input device. It works with USB foot pedals, macro keypads, extra mouse buttons, and any HID device.
+
+== Installation
+
+#grid(
+  columns: (1fr, 1fr, 1fr),
+  gutter: 12pt,
+  [
+    *Ubuntu/Debian*
+    ```bash
+    sudo apt install \
+      input-remapper
+    ```
+  ],
+  [
+    *Fedora*
+    ```bash
+    sudo dnf install \
+      input-remapper
+    ```
+  ],
+  [
+    *Arch*
+    ```bash
+    sudo pacman -S \
+      input-remapper-git
+    ```
+  ],
+)
+
+== Step 1: Select Your Device
+
+Open Input Remapper and select the device you want to remap. This could be a USB foot pedal, macro keypad, or any HID device.
+
+#figure(
+  image("images/input-remapper-devices.png", width: 80%),
+  caption: [Input Remapper device selection],
+)
+
+== Step 2: Select the Specific Interface
+
+Some devices appear multiple times (keyboard interface, mouse interface, etc.). Select the one that matches your input type.
+
+#figure(
+  image("images/input-remapper-select-device.png", width: 80%),
+  caption: [Selecting the HID device interface],
+)
+
+== Step 3: Open the Editor
+
+Switch to the *Editor* tab to create key mappings.
+
+#figure(
+  image("images/input-remapper-editor.png", width: 80%),
+  caption: [Editor tab for creating mappings],
+)
+
+== Step 4: Record the Input
+
+Click *Record* and press the button you want to remap. Input Remapper will capture it.
+
+#figure(
+  image("images/input-remapper-record-input.png", width: 80%),
+  caption: [Recording the input button],
+)
+
+== Step 5: Choose the Output Key
+
+Type the key name in the output field. For Voice Notepad, use `KEY_F15` through `KEY_F20`.
+
+#figure(
+  image("images/input-remapper-select-f15.png", width: 80%),
+  caption: [Selecting KEY_F15 as the output],
+)
+
+== Step 6: Apply and Enable Autoload
+
+1. Click *Apply* to activate the mapping
+2. Enable *Autoload* to persist across reboots
+3. Enable the service: `systemctl --user enable input-remapper`
+
+== Recommended Multi-Button Setup
+
+#table(
+  columns: (auto, auto, 1fr),
+  inset: 10pt,
+  fill: (x, y) => if y == 0 { theme-blue } else if calc.odd(y) { rgb(248, 249, 250) } else { white },
+  table.header(text(fill: white)[*Button*], text(fill: white)[*Maps To*], text(fill: white)[*Function*]),
+  [1], [KEY_F15], [Toggle (start/stop and transcribe)],
+  [2], [KEY_F17], [Transcribe cached audio],
+  [3], [KEY_F18], [Clear recording],
+)
+
+// Appendix B: Bill of Materials
+#pagebreak()
+
+#align(center)[
+  #v(1cm)
+  #text(28pt, weight: "bold", fill: rgb(26, 26, 46))[Appendix B]
+  #v(0.3em)
+  #text(20pt, weight: "bold", fill: theme-blue)[Bill of Materials]
+  #v(0.5em)
+  #line(length: 40%, stroke: 2pt + theme-blue)
+  #v(1cm)
+]
+
+This appendix lists all major components and dependencies integrated into Voice Notepad.
+
+== Core Technologies
+
+#table(
+  columns: (auto, auto, 1fr),
+  inset: 10pt,
+  fill: (x, y) => if y == 0 { theme-blue } else if calc.odd(y) { rgb(248, 249, 250) } else { white },
+  table.header(text(fill: white)[*Component*], text(fill: white)[*License*], text(fill: white)[*Purpose*]),
+  [*PyQt6*], [GPL v3], [Desktop GUI framework with tabbed interface, system tray, and keyboard shortcuts],
+  [*Google Gemini API*], [Proprietary], [Multimodal AI for single-pass audio transcription and cleanup],
+  [*OpenRouter API*], [Proprietary], [Alternative API gateway with per-key cost tracking],
+)
+
+== Audio Processing
+
+#table(
+  columns: (auto, auto, 1fr),
+  inset: 10pt,
+  fill: (x, y) => if y == 0 { pipeline-local } else if calc.odd(y) { rgb(248, 249, 250) } else { white },
+  table.header(text(fill: white)[*Component*], text(fill: white)[*License*], text(fill: white)[*Purpose*]),
+  [*PyAudio*], [MIT], [Audio recording with microphone device selection],
+  [*TEN VAD*], [Apache 2.0], [Voice Activity Detection for silence removal (~306KB native library)],
+  [*pydub*], [MIT], [Audio format conversion and manipulation],
+  [*FFmpeg*], [LGPL/GPL], [Audio compression, format conversion, and resampling],
+)
+
+== Text-to-Speech
+
+#table(
+  columns: (auto, auto, 1fr),
+  inset: 10pt,
+  fill: (x, y) => if y == 0 { rgb(139, 92, 246) } else if calc.odd(y) { rgb(248, 249, 250) } else { white },
+  table.header(text(fill: white)[*Component*], text(fill: white)[*License*], text(fill: white)[*Purpose*]),
+  [*edge-tts*], [GPL v3], [Microsoft Edge TTS for voice announcements],
+  [*en-GB-RyanNeural*], [Microsoft], [British English male voice for audio feedback],
+)
+
+== Data Storage
+
+#table(
+  columns: (auto, auto, 1fr),
+  inset: 10pt,
+  fill: (x, y) => if y == 0 { rgb(59, 130, 246) } else if calc.odd(y) { rgb(248, 249, 250) } else { white },
+  table.header(text(fill: white)[*Component*], text(fill: white)[*License*], text(fill: white)[*Purpose*]),
+  [*Mongita*], [BSD 3-Clause], [MongoDB-compatible pure Python database for transcript storage],
+  [*Opus codec*], [BSD 3-Clause], [Audio archival format (~24kbps for speech)],
+)
+
+== Input Handling
+
+#table(
+  columns: (auto, auto, 1fr),
+  inset: 10pt,
+  fill: (x, y) => if y == 0 { rgb(245, 158, 11) } else if calc.odd(y) { rgb(248, 249, 250) } else { white },
+  table.header(text(fill: white)[*Component*], text(fill: white)[*License*], text(fill: white)[*Purpose*]),
+  [*pynput*], [LGPL v3], [Keyboard input handling (fallback for non-Linux)],
+  [*evdev*], [BSD 3-Clause], [Linux input device access for global hotkeys on Wayland],
+  [*ydotool*], [MIT], [Text injection on Wayland via virtual keyboard],
+)
+
+== Visualization
+
+#table(
+  columns: (auto, auto, 1fr),
+  inset: 10pt,
+  fill: (x, y) => if y == 0 { rgb(16, 185, 129) } else if calc.odd(y) { rgb(248, 249, 250) } else { white },
+  table.header(text(fill: white)[*Component*], text(fill: white)[*License*], text(fill: white)[*Purpose*]),
+  [*pyqtgraph*], [MIT], [Charts and visualizations for analytics tab],
+  [*Markdown*], [BSD 3-Clause], [Markdown rendering in transcript display],
+)
+
+== System Dependencies
+
+These must be installed separately on the host system:
+
+#table(
+  columns: (auto, 1fr),
+  inset: 10pt,
+  fill: (x, y) => if y == 0 { rgb(107, 114, 128) } else if calc.odd(y) { rgb(248, 249, 250) } else { white },
+  table.header(text(fill: white)[*Package*], text(fill: white)[*Purpose*]),
+  [`python3`], [Python 3.10+ runtime],
+  [`ffmpeg`], [Audio format conversion and compression],
+  [`portaudio19-dev`], [PyAudio recording library headers],
+  [`libc++1`], [C++ standard library required by TEN VAD],
+  [`ydotool`], [Text injection daemon (optional, for Wayland)],
+)
+
+== Component Links
+
+- *TEN VAD*: #link("https://github.com/TEN-framework/ten-vad")
+- *Mongita*: #link("https://github.com/scottrogowski/mongita")
+- *edge-tts*: #link("https://github.com/rany2/edge-tts")
+- *Input Remapper*: #link("https://github.com/sezanzeb/input-remapper")
+- *ydotool*: #link("https://github.com/ReimuNotMoe/ydotool")
 
 #v(2cm)
 #align(center)[
@@ -809,7 +1019,7 @@ Bug reports and feature requests can be submitted via GitHub Issues, but respons
   #text(10pt, fill: rgb(102, 102, 102))[
     Voice Notepad User Manual v3 \
     Version 1.9.11 · December 2025 \
-    Created by Daniel Rosehill with Claude (Anthropic) \
+    Daniel Rosehill · #link("https://danielrosehill.com")[danielrosehill.com] \
     MIT License
   ]
 ]
