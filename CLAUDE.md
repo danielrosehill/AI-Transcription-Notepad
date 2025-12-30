@@ -184,26 +184,31 @@ The foundation layer is always applied to every transcription. This is what dist
 - Honor verbal directives like "scratch that", "don't include that", "ignore what I just said"
 - Remove the meta-instructions themselves from the output
 
-**7. Spelling Clarifications**
+**7. Trailing Sentences**
+- Remove incomplete or trailing sentences where the user abandoned a thought mid-sentence
+- Look for sentences that start but trail off without reaching a conclusion or complete thought
+- Only remove clearly incomplete sentences; preserve intentionally brief or stylistically fragmented text
+
+**8. Spelling Clarifications**
 - When user spells out a word ("Zod is spelled Z-O-D"), use correct spelling but omit the instruction
 - Handles infrequently encountered words and technical terms
 
-**8. Grammar & Typos**
+**9. Grammar & Typos**
 - Correct spelling errors, typos, and grammatical mistakes
 - Fix subject-verb agreement, tense consistency, proper word usage
 - Fix homophones (their/there/they're, your/you're)
 - Correct minor speech grammar errors (e.g., "into the option" → "into the options")
 
-**9. Punctuation**
+**10. Punctuation**
 - Add periods, commas, colons, semicolons, question marks, quotation marks
 - Break text into logical paragraphs based on topic shifts
 - Ensure proper capitalization
 
-**10. Format Detection**
+**11. Format Detection**
 - Infer intended format (email, to-do list, meeting notes) and format accordingly
 - Match tone to context: professional for business, informal for casual
 
-**11. Clarity**
+**12. Clarity**
 - Tighten rambling sentences without removing information
 - Clarify confusing phrasing while preserving meaning
 

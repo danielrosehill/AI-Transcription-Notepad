@@ -1,10 +1,13 @@
 """Audio recording functionality using PyAudio."""
 
 import io
+import logging
 import wave
 import threading
 from typing import Optional, Callable
 import pyaudio
+
+logger = logging.getLogger(__name__)
 
 
 class AudioRecorder:
@@ -53,8 +56,8 @@ class AudioRecorder:
                 default_rate = int(info.get("defaultSampleRate", 48000))
                 if self._test_sample_rate(device_index, default_rate):
                     return default_rate
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to get device sample rate: {e}")
 
         # Try common sample rates
         for rate in self.SAMPLE_RATES:

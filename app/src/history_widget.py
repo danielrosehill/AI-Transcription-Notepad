@@ -42,6 +42,23 @@ def format_relative_time(timestamp_str: str) -> str:
         return timestamp_str[:16] if timestamp_str else "Unknown"
 
 
+def format_date_header(record_date: date) -> str:
+    """Format a date for display in a date divider header."""
+    today = date.today()
+    delta = (today - record_date).days
+
+    if delta == 0:
+        return "Today"
+    elif delta == 1:
+        return "Yesterday"
+    else:
+        # Show day name for the current week, full date otherwise
+        if delta < 7:
+            return record_date.strftime("%A")  # e.g., "Monday"
+        else:
+            return record_date.strftime("%A, %B %d, %Y")  # e.g., "Monday, December 28, 2025"
+
+
 def get_preview_text(text: str, max_chars: int = 120) -> str:
     """Get preview text, truncating at max_chars with ellipsis if needed."""
     clean_text = text.replace("\n", " ").strip()
@@ -52,6 +69,40 @@ def get_preview_text(text: str, max_chars: int = 120) -> str:
     # Truncate at word boundary
     truncated = clean_text[:max_chars].rsplit(" ", 1)[0]
     return truncated + "..."
+
+
+class DateDivider(QFrame):
+    """A horizontal divider with a date label for separating days in history."""
+
+    def __init__(self, label_text: str, parent=None):
+        super().__init__(parent)
+        self.setup_ui(label_text)
+
+    def setup_ui(self, label_text: str):
+        self.setFixedHeight(32)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 8, 0, 4)
+        layout.setSpacing(12)
+
+        # Left line
+        left_line = QFrame()
+        left_line.setFrameShape(QFrame.Shape.HLine)
+        left_line.setStyleSheet("background-color: #ccc;")
+        left_line.setFixedHeight(1)
+        layout.addWidget(left_line, 1)
+
+        # Date label
+        label = QLabel(label_text)
+        label.setStyleSheet("color: #666; font-size: 11px; font-weight: bold;")
+        layout.addWidget(label)
+
+        # Right line
+        right_line = QFrame()
+        right_line.setFrameShape(QFrame.Shape.HLine)
+        right_line.setStyleSheet("background-color: #ccc;")
+        right_line.setFixedHeight(1)
+        layout.addWidget(right_line, 1)
 
 
 class TranscriptItem(QFrame):
@@ -208,6 +259,11 @@ class HistoryWidget(QWidget):
         # Pagination controls
         pagination = QHBoxLayout()
 
+        self.start_btn = QPushButton("⏮ Start")
+        self.start_btn.clicked.connect(self._on_start)
+        self.start_btn.setEnabled(False)
+        pagination.addWidget(self.start_btn)
+
         self.prev_btn = QPushButton("← Previous")
         self.prev_btn.clicked.connect(self._on_prev_page)
         self.prev_btn.setEnabled(False)
@@ -252,8 +308,29 @@ class HistoryWidget(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        # Add new items
+        # Add new items with date dividers
+        current_date = None
         for record in records:
+            # Parse the record's date
+            try:
+                record_dt = datetime.fromisoformat(record.timestamp)
+                record_date = record_dt.date()
+            except (ValueError, TypeError):
+                record_date = None
+
+            # Insert date divider when date changes (except for the first item on page 1)
+            if record_date and record_date != current_date:
+                # Only skip "Today" divider on page 1 for the very first items
+                should_show_divider = not (
+                    self.current_offset == 0
+                    and current_date is None
+                    and record_date == date.today()
+                )
+                if should_show_divider:
+                    divider = DateDivider(format_date_header(record_date))
+                    self.list_layout.insertWidget(self.list_layout.count() - 1, divider)
+                current_date = record_date
+
             item = TranscriptItem(record)
             item.copy_clicked.connect(self._on_copy)
             self.list_layout.insertWidget(self.list_layout.count() - 1, item)
@@ -262,6 +339,7 @@ class HistoryWidget(QWidget):
         current_page = (self.current_offset // self.page_size) + 1
         total_pages = max(1, (self.total_count + self.page_size - 1) // self.page_size)
         self.page_label.setText(f"Page {current_page} of {total_pages}")
+        self.start_btn.setEnabled(self.current_offset > 0)
         self.prev_btn.setEnabled(self.current_offset > 0)
         self.next_btn.setEnabled(self.current_offset + self.page_size < self.total_count)
 
@@ -281,6 +359,11 @@ class HistoryWidget(QWidget):
         """Clear search and show all."""
         self.search_input.clear()
         self.current_search = ""
+        self.current_offset = 0
+        self.refresh()
+
+    def _on_start(self):
+        """Go to the first page (newest transcriptions)."""
         self.current_offset = 0
         self.refresh()
 

@@ -622,7 +622,17 @@ FOUNDATION_PROMPT_SECTIONS = {
         ],
     },
 
-    # Section 7: Spelling clarifications
+    # Section 7: Trailing/incomplete sentences
+    "trailing_sentences": {
+        "heading": "Trailing Sentences",
+        "instructions": [
+            "Remove incomplete or trailing sentences where the user clearly abandoned a thought mid-sentence without finishing it.",
+            "Look for sentences that start but trail off without reaching a conclusion, verb, or complete thought—these indicate the user changed their mind or decided not to continue that line of thinking.",
+            "Only remove sentences that are clearly incomplete. If a sentence could be interpreted as intentionally brief or stylistically fragmented, preserve it.",
+        ],
+    },
+
+    # Section 8: Spelling clarifications
     "spelling_clarifications": {
         "heading": "Spelling Clarifications",
         "instructions": [
@@ -631,7 +641,7 @@ FOUNDATION_PROMPT_SECTIONS = {
         ],
     },
 
-    # Section 8: Grammar and typos
+    # Section 9: Grammar and typos
     "grammar_and_typos": {
         "heading": "Grammar & Typos",
         "instructions": [
@@ -642,7 +652,7 @@ FOUNDATION_PROMPT_SECTIONS = {
         ],
     },
 
-    # Section 9: Punctuation and structure
+    # Section 10: Punctuation and structure
     "punctuation": {
         "heading": "Punctuation",
         "instructions": [
@@ -652,7 +662,7 @@ FOUNDATION_PROMPT_SECTIONS = {
         ],
     },
 
-    # Section 10: Format detection
+    # Section 11: Format detection
     "format_detection": {
         "heading": "Format Detection",
         "instructions": [
@@ -661,7 +671,7 @@ FOUNDATION_PROMPT_SECTIONS = {
         ],
     },
 
-    # Section 11: Clarity (optional tightening)
+    # Section 12: Clarity (optional tightening)
     "clarity": {
         "heading": "Clarity",
         "instructions": [
@@ -670,7 +680,7 @@ FOUNDATION_PROMPT_SECTIONS = {
         ],
     },
 
-    # Section 12: Subheadings for structure
+    # Section 13: Subheadings for structure
     "subheadings": {
         "heading": "Subheadings",
         "instructions": [
@@ -679,7 +689,7 @@ FOUNDATION_PROMPT_SECTIONS = {
         ],
     },
 
-    # Section 13: Markdown formatting
+    # Section 14: Markdown formatting
     "markdown_formatting": {
         "heading": "Markdown Formatting",
         "instructions": [

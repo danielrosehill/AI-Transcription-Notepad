@@ -79,11 +79,12 @@ from .about_widget import AboutDialog
 from .audio_feedback import get_feedback
 from .tts_announcer import get_announcer
 from .file_transcription_widget import FileTranscriptionWidget
-from .mic_naming_ai import MicrophoneNamingAI
 from .prompt_library import PromptLibrary, build_prompt_from_config
 from .stack_builder import StackBuilderWidget
 from .prompt_editor_window import PromptEditorWindow
 from .rewrite_dialog import RewriteDialog
+from .ui_utils import get_provider_icon, get_model_icon
+from .clipboard import copy_to_clipboard
 
 
 class HotkeyEdit(QLineEdit):
@@ -259,8 +260,6 @@ class MainWindow(QMainWindow):
 
     # Signal for handling mic errors from background thread
     mic_error = pyqtSignal(str)
-    # Signal for balance updates from background thread
-    balance_updated = pyqtSignal(object)  # OpenRouterCredits or None
 
     def __init__(self):
         super().__init__()
@@ -297,43 +296,10 @@ class MainWindow(QMainWindow):
 
         # Connect mic error signal (for thread-safe error handling)
         self.mic_error.connect(self._handle_mic_error)
-        # Connect balance update signal (for async balance fetch)
-        self.balance_updated.connect(self._on_balance_received)
 
         # Start minimized if configured
         if self.config.start_minimized:
             self.hide()
-
-    def _get_provider_icon(self, provider: str) -> QIcon:
-        """Get the icon for a given provider."""
-        icons_dir = Path(__file__).parent / "icons"
-        icon_map = {
-            "openrouter": "or_icon.png",
-            "gemini": "gemini_icon.png",
-            "google": "gemini_icon.png",
-        }
-        icon_filename = icon_map.get(provider.lower(), "")
-        if icon_filename:
-            icon_path = icons_dir / icon_filename
-            if icon_path.exists():
-                return QIcon(str(icon_path))
-        return QIcon()  # Return empty icon if not found
-
-    def _get_model_icon(self, model_id: str) -> QIcon:
-        """Get the icon for a model based on its originator."""
-        icons_dir = Path(__file__).parent / "icons"
-        model_lower = model_id.lower()
-
-        # All models are now Gemini-based
-        if model_lower.startswith("google/") or model_lower.startswith("gemini"):
-            icon_filename = "gemini_icon.png"
-        else:
-            return QIcon()  # No icon for unknown models
-
-        icon_path = icons_dir / icon_filename
-        if icon_path.exists():
-            return QIcon(str(icon_path))
-        return QIcon()
 
     def _on_recorder_error(self, error_msg: str):
         """Called from recorder thread when an error occurs."""
@@ -625,7 +591,7 @@ class MainWindow(QMainWindow):
         self.stop_btn.clicked.connect(self.handle_stop_button)
         control_bar.addWidget(self.stop_btn)
 
-        self.transcribe_btn = QPushButton("➤")  # Transcribe/send icon
+        self.transcribe_btn = QPushButton("⬆")  # Transcribe/send icon (vertical arrow)
         self.transcribe_btn.setMinimumHeight(36)
         self.transcribe_btn.setMinimumWidth(44)
         self.transcribe_btn.setEnabled(False)
@@ -638,10 +604,10 @@ class MainWindow(QMainWindow):
         self._transcribe_btn_idle_style = """
             QPushButton {
                 background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #34c759, stop:1 #28a745);
-                color: white;
+                    stop:0 #90EE90, stop:1 #7CCD7C);
+                color: #1a5c1a;
                 border: none;
-                border-bottom: 3px solid #1e7b34;
+                border-bottom: 3px solid #5CB85C;
                 border-radius: 6px;
                 font-weight: bold;
                 font-size: 18px;
@@ -649,7 +615,7 @@ class MainWindow(QMainWindow):
             }
             QPushButton:hover {
                 background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #28a745, stop:1 #218838);
+                    stop:0 #7CCD7C, stop:1 #6BBF6B);
             }
             QPushButton:disabled {
                 background-color: #6c757d;
@@ -875,42 +841,10 @@ class MainWindow(QMainWindow):
         presets_section_layout = QVBoxLayout()
         presets_section_layout.setSpacing(8)
 
-        # Prompt library for searching all prompts
+        # Prompt library for custom prompts (used by stack builder)
         self.prompt_library = PromptLibrary(CONFIG_DIR)
 
-        # Search dropdown for all prompts (positioned at top)
-        search_layout = QHBoxLayout()
-        search_layout.setSpacing(8)
-
-        search_label = QLabel("🔍 Search all prompts:")
-        search_label.setStyleSheet("color: #666; font-weight: bold;")
-        search_layout.addWidget(search_label)
-
-        self.prompt_search_combo = QComboBox()
-        self.prompt_search_combo.setEditable(True)
-        self.prompt_search_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self.prompt_search_combo.setMinimumWidth(250)
-        self.prompt_search_combo.setPlaceholderText("Type to search...")
-        self.prompt_search_combo.setToolTip("Search and select from all available prompts")
-
-        # Populate with all prompts from the library
-        self._populate_prompt_search()
-
-        # Set up completer for search
-        completer = QCompleter([self.prompt_search_combo.itemText(i) for i in range(self.prompt_search_combo.count())])
-        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        self.prompt_search_combo.setCompleter(completer)
-
-        # Connect selection changed
-        self.prompt_search_combo.activated.connect(self._on_prompt_search_selected)
-
-        search_layout.addWidget(self.prompt_search_combo)
-        search_layout.addStretch()
-
-        presets_section_layout.addLayout(search_layout)
-
-        # Stack Builder widget (replaces FavoritesBar)
+        # Stack Builder widget with Format, Tone, Style, and Stacks accordions
         self.stack_builder = StackBuilderWidget(self.config, CONFIG_DIR)
         self.stack_builder.prompt_changed.connect(self._on_stack_changed)
         presets_section_layout.addWidget(self.stack_builder)
@@ -1695,13 +1629,7 @@ class MainWindow(QMainWindow):
         """Handle changes to prompts in the prompt library or editor."""
         # Reload the prompt library
         self.prompt_library = PromptLibrary(CONFIG_DIR)
-        # Refresh the search dropdown
-        if hasattr(self, 'prompt_search_combo'):
-            self._populate_prompt_search()
-            # Restore selection if possible
-            if hasattr(self, 'current_prompt_id') and self.current_prompt_id:
-                self._update_prompt_search_selection(self.current_prompt_id)
-        # Refresh the stack builder to show custom prompts
+        # Refresh the stack builder to show updated prompts and stacks
         if hasattr(self, 'stack_builder'):
             self.stack_builder.refresh_custom_prompts()
 
@@ -1712,45 +1640,6 @@ class MainWindow(QMainWindow):
         We just need to save and update any dependent UI elements.
         """
         save_config(self.config)
-        # Update search combo selection if format changed
-        format_preset = self.config.format_preset
-        self._update_prompt_search_selection(format_preset)
-
-    def _populate_prompt_search(self):
-        """Populate the prompt search combo with all available prompts."""
-        self.prompt_search_combo.clear()
-        # Get all prompts from the library
-        all_prompts = self.prompt_library.get_all()
-
-        # Sort prompts alphabetically by name
-        all_prompts = sorted(all_prompts, key=lambda p: p.name.lower())
-
-        # Store mapping of display text to prompt_id
-        self._prompt_search_map = {}
-
-        for prompt in all_prompts:
-            # Format: "Name" for regular prompts, "Name (Stack)" for stacks
-            if prompt.is_element_based():
-                display_text = f"{prompt.name} (Stack)"
-            else:
-                display_text = prompt.name
-            self._prompt_search_map[display_text] = prompt.id
-            self.prompt_search_combo.addItem(display_text, prompt.id)
-
-    def _on_prompt_search_selected(self, index: int):
-        """Handle selection from the prompt search dropdown."""
-        prompt_id = self.prompt_search_combo.itemData(index)
-        if prompt_id:
-            self.current_prompt_id = prompt_id
-            self.config.format_preset = prompt_id
-            save_config(self.config)
-
-    def _update_prompt_search_selection(self, prompt_id: str):
-        """Update the search combo to reflect the current selection."""
-        for i in range(self.prompt_search_combo.count()):
-            if self.prompt_search_combo.itemData(i) == prompt_id:
-                self.prompt_search_combo.setCurrentIndex(i)
-                return
 
     def get_selected_microphone_index(self):
         """Get the index of the configured microphone.
@@ -2072,7 +1961,7 @@ class MainWindow(QMainWindow):
         self.transcribe_btn.setEnabled(True)  # Enable for retry
         self.transcribe_btn.setStyleSheet(self._transcribe_btn_idle_style)
         self.delete_btn.setEnabled(True)  # Enable to discard failed audio
-        self.status_label.setText("Transcription failed — click ➤ to retry")
+        self.status_label.setText("Transcription failed — click ⬆ to retry")
         self.status_label.setStyleSheet("color: rgba(220, 53, 69, 0.9); font-size: 11px;")
         self.status_label.show()
 
@@ -2253,8 +2142,6 @@ class MainWindow(QMainWindow):
             tracker = get_tracker()
             final_cost = tracker.record_usage(provider, model, result.input_tokens, result.output_tokens)
 
-        self._update_cost_display()
-
         # Get inference time from worker
         inference_time_ms = self.worker.inference_time_ms if self.worker else 0
 
@@ -2301,7 +2188,7 @@ class MainWindow(QMainWindow):
         did_inject = False
 
         if output_to_clipboard:
-            self._copy_to_clipboard_wayland(result.text)
+            copy_to_clipboard(result.text)
             did_clipboard = True
 
         injection_failed = False
@@ -2360,7 +2247,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Transcription Failed",
-                f"{error}\n\nYour audio has been preserved. Click the transcribe button (➤) to retry, "
+                f"{error}\n\nYour audio has been preserved. Click the transcribe button (⬆) to retry, "
                 "or delete to discard.",
             )
             self._show_retry_ui()
@@ -2370,14 +2257,6 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Transcription Error", error)
             self.reset_ui()
             self._set_tray_state('idle')
-
-    def _update_cost_display(self):
-        """No-op: Cost display removed from status bar."""
-        pass
-
-    def _on_balance_received(self, credits):
-        """No-op: Cost display removed from status bar."""
-        pass
 
     def _update_mic_display(self):
         """Update the microphone display label."""
@@ -2725,26 +2604,6 @@ class MainWindow(QMainWindow):
         self.append_btn.setEnabled(False)
         self.append_mode = False
 
-    def _copy_to_clipboard_wayland(self, text: str):
-        """Copy text to clipboard using wl-copy (Wayland-native)."""
-        import subprocess
-        try:
-            # Use wl-copy for reliable Wayland clipboard
-            process = subprocess.Popen(
-                ["wl-copy"],
-                stdin=subprocess.PIPE,
-                stderr=subprocess.DEVNULL
-            )
-            process.communicate(input=text.encode("utf-8"))
-        except FileNotFoundError:
-            # Fallback to Qt clipboard if wl-copy not available
-            clipboard = QApplication.clipboard()
-            clipboard.setText(text)
-        except Exception:
-            # Fallback to Qt clipboard on any error
-            clipboard = QApplication.clipboard()
-            clipboard.setText(text)
-
     def _paste_wayland(self):
         """Simulate Ctrl+V paste using python-evdev uinput (Wayland-compatible).
 
@@ -2776,7 +2635,7 @@ class MainWindow(QMainWindow):
         """Copy transcription to clipboard."""
         text = self.text_output.toPlainText()
         if text:
-            self._copy_to_clipboard_wayland(text)
+            copy_to_clipboard(text)
 
             # TTS announcement for manual copy action
             if self.config.audio_feedback_mode == "tts":
@@ -2863,8 +2722,6 @@ class MainWindow(QMainWindow):
         elif result.input_tokens > 0 or result.output_tokens > 0:
             tracker = get_tracker()
             final_cost = tracker.record_usage(provider, model, result.input_tokens, result.output_tokens)
-
-        self._update_cost_display()
 
         # Get inference time from worker
         inference_time_ms = self.rewrite_worker.inference_time_ms if self.rewrite_worker else 0

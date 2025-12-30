@@ -15,6 +15,7 @@ from .config import (
     MODEL_TIERS,
 )
 from .mic_test_widget import MicTestWidget
+from .ui_utils import get_provider_icon, get_model_icon
 from PyQt6.QtCore import QSize
 from PyQt6.QtGui import QIcon
 from pathlib import Path
@@ -769,7 +770,7 @@ class ModelSelectionWidget(QWidget):
             ("OpenRouter", "openrouter"),
         ]
         for display_name, provider_key in providers:
-            icon = self._get_provider_icon(provider_key)
+            icon = get_provider_icon(provider_key)
             self.provider_combo.addItem(icon, display_name)
 
         # Set current provider
@@ -942,8 +943,8 @@ class ModelSelectionWidget(QWidget):
             provider_layout.addWidget(provider_label)
             provider_combo = QComboBox()
             provider_combo.setIconSize(QSize(16, 16))
-            provider_combo.addItem(self._get_provider_icon("google"), "Google Gemini", "gemini")
-            provider_combo.addItem(self._get_provider_icon("openrouter"), "OpenRouter", "openrouter")
+            provider_combo.addItem(get_provider_icon("google"), "Google Gemini", "gemini")
+            provider_combo.addItem(get_provider_icon("openrouter"), "OpenRouter", "openrouter")
             current_provider = getattr(self.config, f"favorite_{fav_num}_provider", "") or "gemini"
             idx = provider_combo.findData(current_provider)
             if idx >= 0:
@@ -981,37 +982,6 @@ class ModelSelectionWidget(QWidget):
         layout.addWidget(favorites_group)
         layout.addStretch()
 
-    def _get_provider_icon(self, provider: str) -> QIcon:
-        """Get the icon for a given provider."""
-        icons_dir = Path(__file__).parent / "icons"
-        icon_map = {
-            "openrouter": "or_icon.png",
-            "gemini": "gemini_icon.png",
-            "google": "gemini_icon.png",
-        }
-        icon_filename = icon_map.get(provider.lower(), "")
-        if icon_filename:
-            icon_path = icons_dir / icon_filename
-            if icon_path.exists():
-                return QIcon(str(icon_path))
-        return QIcon()
-
-    def _get_model_icon(self, model_id: str) -> QIcon:
-        """Get the icon for a model based on its originator."""
-        icons_dir = Path(__file__).parent / "icons"
-        model_lower = model_id.lower()
-
-        # All models are now Gemini-based
-        if model_lower.startswith("google/") or model_lower.startswith("gemini"):
-            icon_filename = "gemini_icon.png"
-        else:
-            return QIcon()
-
-        icon_path = icons_dir / icon_filename
-        if icon_path.exists():
-            return QIcon(str(icon_path))
-        return QIcon()
-
     def _update_model_combo(self):
         """Update the model dropdown based on selected provider."""
         self.model_combo.blockSignals(True)
@@ -1027,7 +997,7 @@ class ModelSelectionWidget(QWidget):
 
         # Add models with model originator icon
         for model_id, display_name in models:
-            model_icon = self._get_model_icon(model_id)
+            model_icon = get_model_icon(model_id)
             self.model_combo.addItem(model_icon, display_name, model_id)
 
         # Select current model
@@ -1154,7 +1124,7 @@ class ModelSelectionWidget(QWidget):
 
         # Add models with icons
         for model_id, display_name in models:
-            model_icon = self._get_model_icon(model_id)
+            model_icon = get_model_icon(model_id)
             model_combo.addItem(model_icon, display_name, model_id)
 
         # Select current model if set

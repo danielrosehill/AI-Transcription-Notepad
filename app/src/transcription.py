@@ -1,11 +1,14 @@
 """Transcription API clients for Gemini (direct) and OpenRouter."""
 
 import base64
+import logging
 import tempfile
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -202,8 +205,8 @@ class OpenRouterClient(TranscriptionClient):
                 gen_usage = api.get_generation_usage(generation_id)
                 if gen_usage:
                     actual_cost = gen_usage.cost
-            except Exception:
-                pass  # Fall back to estimated cost
+            except Exception as e:
+                logger.debug(f"Failed to get cost from OpenRouter: {e}")
 
         return TranscriptionResult(
             text=response.choices[0].message.content,
@@ -255,8 +258,8 @@ class OpenRouterClient(TranscriptionClient):
                 gen_usage = api.get_generation_usage(generation_id)
                 if gen_usage:
                     actual_cost = gen_usage.cost
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to get cost from OpenRouter: {e}")
 
         return TranscriptionResult(
             text=response.choices[0].message.content,

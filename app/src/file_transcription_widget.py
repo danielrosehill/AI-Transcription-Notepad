@@ -30,6 +30,8 @@ from .transcription import get_client, TranscriptionResult
 from .markdown_widget import MarkdownTextWidget
 from .audio_feedback import get_feedback
 from .database_mongo import get_db, AUDIO_ARCHIVE_DIR
+from .ui_utils import get_provider_icon, get_model_icon
+from .clipboard import copy_to_clipboard as clipboard_copy
 
 
 # Supported audio formats (pydub + ffmpeg)
@@ -146,37 +148,6 @@ class FileTranscriptionWidget(QWidget):
         # Enable drag and drop
         self.setAcceptDrops(True)
 
-    def _get_provider_icon(self, provider: str) -> QIcon:
-        """Get the icon for a given provider."""
-        icons_dir = Path(__file__).parent / "icons"
-        icon_map = {
-            "openrouter": "or_icon.png",
-            "gemini": "gemini_icon.png",
-            "google": "gemini_icon.png",
-        }
-        icon_filename = icon_map.get(provider.lower(), "")
-        if icon_filename:
-            icon_path = icons_dir / icon_filename
-            if icon_path.exists():
-                return QIcon(str(icon_path))
-        return QIcon()  # Return empty icon if not found
-
-    def _get_model_icon(self, model_id: str) -> QIcon:
-        """Get the icon for a model based on its originator."""
-        icons_dir = Path(__file__).parent / "icons"
-        model_lower = model_id.lower()
-
-        # All models are now Gemini-based
-        if model_lower.startswith("google/") or model_lower.startswith("gemini"):
-            icon_filename = "gemini_icon.png"
-        else:
-            return QIcon()  # No icon for unknown models
-
-        icon_path = icons_dir / icon_filename
-        if icon_path.exists():
-            return QIcon(str(icon_path))
-        return QIcon()
-
     def setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -204,7 +175,7 @@ class FileTranscriptionWidget(QWidget):
             ("OpenRouter", "openrouter"),
         ]
         for display_name, provider_key in providers:
-            icon = self._get_provider_icon(provider_key)
+            icon = get_provider_icon(provider_key)
             self.provider_combo.addItem(icon, display_name)
         # Default to Google Gemini
         self.provider_combo.setCurrentText("Google Gemini (Recommended)")
@@ -390,7 +361,7 @@ class FileTranscriptionWidget(QWidget):
 
         # Add models with model originator icon
         for model_id, display_name in models:
-            model_icon = self._get_model_icon(model_id)
+            model_icon = get_model_icon(model_id)
             self.model_combo.addItem(model_icon, display_name, model_id)
 
         self.model_combo.blockSignals(False)
@@ -640,26 +611,9 @@ class FileTranscriptionWidget(QWidget):
         if not text:
             return
 
-        # Use wl-copy for Wayland
-        import subprocess
-        try:
-            process = subprocess.Popen(
-                ["wl-copy"],
-                stdin=subprocess.PIPE,
-                stderr=subprocess.DEVNULL
-            )
-            process.communicate(input=text.encode("utf-8"))
-            self.status_label.setText("Copied!")
-            self.status_label.setStyleSheet("color: #28a745;")
-        except FileNotFoundError:
-            # Fallback to Qt clipboard
-            clipboard = QApplication.clipboard()
-            clipboard.setText(text)
-            self.status_label.setText("Copied!")
-            self.status_label.setStyleSheet("color: #28a745;")
-        except Exception:
-            clipboard = QApplication.clipboard()
-            clipboard.setText(text)
+        clipboard_copy(text)
+        self.status_label.setText("Copied!")
+        self.status_label.setStyleSheet("color: #28a745;")
 
         # Auto-paste if enabled (inject text at cursor using ydotool)
         if self.config and self.config.auto_paste:
