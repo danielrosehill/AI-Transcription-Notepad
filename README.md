@@ -23,6 +23,18 @@ Most voice-to-text apps use a two-step process: first transcribe with ASR, then 
 
 This matters because the AI "hears" your tone, pauses, and emphasis rather than just processing raw text. Verbal editing works naturally: say "scratch that" or "new paragraph" and the model understands. You also get faster turnaround and lower cost with one API call instead of two.
 
+## Technology Stack
+
+| Component | Technology |
+|-----------|------------|
+| Transcription | Google Gemini (direct) or OpenRouter |
+| Voice Activity Detection | [TEN VAD](https://github.com/TEN-framework/ten-vad) |
+| Text-to-Speech | [Microsoft Edge TTS](https://github.com/rany2/edge-tts) |
+| Database | [Mongita](https://github.com/scottrogowski/mongita) (MongoDB-compatible) |
+| UI Framework | PyQt6 |
+
+See [Technology Stack](docs/documentation/stack.md) for full details.
+
 ## Supported Providers
 
 **Google Gemini** (recommended) offers direct access to Gemini models including the dynamic `gemini-flash-latest` endpoint. This endpoint always points to Google's latest Flash model, eliminating the need for manual updates when new versions are released. Available models: Gemini Flash Latest, Gemini 2.5 Flash, Gemini 2.5 Flash Lite, and Gemini 2.5 Pro.
