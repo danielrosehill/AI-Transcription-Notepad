@@ -17,7 +17,7 @@ from pathlib import Path
 import re
 
 # Fallback version (updated by release.sh)
-_FALLBACK_VERSION = "1.9.16"
+_FALLBACK_VERSION = "1.9.19"
 
 
 def get_version() -> str:
