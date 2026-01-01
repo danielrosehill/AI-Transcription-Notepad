@@ -36,7 +36,6 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QSpinBox,
     QCheckBox,
-    QTabWidget,
     QMessageBox,
     QFrame,
     QFileDialog,
@@ -91,13 +90,13 @@ from .hotkeys import (
     HOTKEY_MODE_DESCRIPTIONS,
 )
 from .cost_tracker import get_tracker
-from .history_widget import HistoryWidget
+from .history_window import HistoryWindow
+from .file_transcription_window import FileTranscriptionWindow
 from .analytics_widget import AnalyticsDialog
 from .settings_widget import SettingsDialog
 from .about_widget import AboutDialog
 from .audio_feedback import get_feedback
 from .tts_announcer import get_announcer
-from .file_transcription_widget import FileTranscriptionWidget
 from .prompt_library import PromptLibrary, build_prompt_from_config
 from .stack_builder import StackBuilderWidget
 from .prompt_editor_window import PromptEditorWindow
@@ -440,9 +439,20 @@ class MainWindow(QMainWindow):
 
         # View menu
         view_menu = menubar.addMenu("View")
+        history_action = QAction("Transcription History", self)
+        history_action.setShortcut("Ctrl+Shift+H")
+        history_action.triggered.connect(self.show_history_window)
+        view_menu.addAction(history_action)
+        view_menu.addSeparator()
         analytics_action = QAction("Analytics...", self)
         analytics_action.triggered.connect(self.show_analytics)
         view_menu.addAction(analytics_action)
+
+        # Beta menu (experimental features)
+        beta_menu = menubar.addMenu("Beta")
+        file_transcription_action = QAction("File Transcription...", self)
+        file_transcription_action.triggered.connect(self.show_file_transcription_window)
+        beta_menu.addAction(file_transcription_action)
 
         # Settings menu
         settings_menu = menubar.addMenu("Settings")
@@ -497,7 +507,7 @@ class MainWindow(QMainWindow):
                 border-bottom: 3px solid #a71d2a;
                 border-radius: 6px;
                 font-weight: bold;
-                font-size: 24px;
+                font-size: 20px;
                 padding: 0 8px;
             }
             QPushButton:hover {
@@ -514,7 +524,7 @@ class MainWindow(QMainWindow):
                 border-bottom: 4px solid #cc0000;
                 border-radius: 6px;
                 font-weight: bold;
-                font-size: 24px;
+                font-size: 20px;
                 padding: 0 8px;
             }
             QPushButton:hover {
@@ -570,7 +580,7 @@ class MainWindow(QMainWindow):
                 border: none;
                 border-radius: 6px;
                 font-weight: bold;
-                font-size: 20px;
+                font-size: 16px;
                 padding: 0 8px;
             }
             QPushButton:hover {
@@ -633,7 +643,7 @@ class MainWindow(QMainWindow):
                 border-bottom: 3px solid #5CB85C;
                 border-radius: 6px;
                 font-weight: bold;
-                font-size: 18px;
+                font-size: 16px;
                 padding: 0 8px;
             }
             QPushButton:hover {
@@ -655,7 +665,7 @@ class MainWindow(QMainWindow):
                 border-bottom: 3px solid #c59600;
                 border-radius: 6px;
                 font-weight: bold;
-                font-size: 18px;
+                font-size: 16px;
                 padding: 0 8px;
             }
             QPushButton:hover {
@@ -688,7 +698,7 @@ class MainWindow(QMainWindow):
                 border: none;
                 border-radius: 6px;
                 font-weight: bold;
-                font-size: 18px;
+                font-size: 16px;
                 padding: 0 8px;
             }
             QPushButton:hover {
@@ -704,15 +714,13 @@ class MainWindow(QMainWindow):
 
         control_bar.addStretch()  # Balance the stretch to center controls
 
-        # Duration display in its own box (to the right of controls)
+        # Duration display (to the right of controls)
         self.duration_container = QFrame()
         self.duration_container.setObjectName("durationContainer")
         self.duration_container.setStyleSheet("""
             QFrame#durationContainer {
-                background-color: #e9ecef;
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                padding: 2px 8px;
+                background-color: transparent;
+                border: none;
             }
         """)
         self.duration_container.setFixedWidth(50)
@@ -738,17 +746,10 @@ class MainWindow(QMainWindow):
 
         # Segment indicator (for append mode)
         self.segment_label = QLabel("")
-        self.segment_label.setStyleSheet("color: #17a2b8; font-weight: bold; font-size: 11px;")
+        self.segment_label.setStyleSheet("color: #6c757d; font-weight: bold; font-size: 11px;")
         self.segment_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.segment_label.hide()
         recording_layout.addWidget(self.segment_label)
-
-        # Thin separator between controls and output mode
-        mode_separator = QFrame()
-        mode_separator.setFrameShape(QFrame.Shape.HLine)
-        mode_separator.setFrameShadow(QFrame.Shadow.Plain)
-        mode_separator.setStyleSheet("background-color: #dee2e6; max-height: 1px; margin: 4px 0;")
-        recording_layout.addWidget(mode_separator)
 
         # Output mode buttons (where text goes after transcription)
         mode_layout = QHBoxLayout()
@@ -761,31 +762,32 @@ class MainWindow(QMainWindow):
         # Common style for mode buttons
         self._mode_btn_inactive_style = """
             QPushButton {
-                background-color: #e9ecef;
-                color: #495057;
-                border: 1px solid #ced4da;
+                background-color: #f8f9fa;
+                color: #6c757d;
+                border: 1px solid #dee2e6;
                 border-radius: 4px;
                 padding: 4px 12px;
                 font-size: 11px;
-                font-weight: bold;
+                font-weight: 500;
             }
             QPushButton:hover {
-                background-color: #dee2e6;
-                border-color: #adb5bd;
+                background-color: #e9ecef;
+                color: #495057;
             }
         """
         self._mode_btn_active_style = """
             QPushButton {
-                background-color: #d4edda;
-                color: #155724;
-                border: 2px solid #28a745;
+                background-color: #28a745;
+                color: white;
+                border: 1px solid #28a745;
                 border-radius: 4px;
                 padding: 4px 12px;
                 font-size: 11px;
-                font-weight: bold;
+                font-weight: 500;
             }
             QPushButton:hover {
-                background-color: #c3e6cb;
+                background-color: #218838;
+                border-color: #218838;
             }
         """
 
@@ -810,13 +812,8 @@ class MainWindow(QMainWindow):
         self._mode_buttons["inject"] = self.mode_inject_btn
         mode_layout.addWidget(self.mode_inject_btn)
 
-        # Separator before VAD checkbox
-        mode_separator_vad = QFrame()
-        mode_separator_vad.setFrameShape(QFrame.Shape.VLine)
-        mode_separator_vad.setStyleSheet(
-            "background-color: #ced4da; max-width: 1px; margin: 0 8px;"
-        )
-        mode_layout.addWidget(mode_separator_vad)
+        # Add spacing before VAD checkbox
+        mode_layout.addSpacing(12)
 
         # VAD checkbox (silence removal)
         self.vad_checkbox = QCheckBox("VAD")
@@ -836,14 +833,6 @@ class MainWindow(QMainWindow):
             }
         """)
         mode_layout.addWidget(self.vad_checkbox)
-
-        # Separator before status label
-        mode_separator_status = QFrame()
-        mode_separator_status.setFrameShape(QFrame.Shape.VLine)
-        mode_separator_status.setStyleSheet(
-            "background-color: #ced4da; max-width: 1px; margin: 0 8px;"
-        )
-        mode_layout.addWidget(mode_separator_status)
 
         # Status label (right side) - shows recording/transcribing state
         self.status_label = QLabel("")
@@ -867,19 +856,9 @@ class MainWindow(QMainWindow):
         # Add the recording container to main layout
         main_layout.addWidget(recording_container)
 
-        # Horizontal separator below recording controls
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Plain)
-        separator.setStyleSheet("background-color: #dee2e6; max-height: 1px;")
-        main_layout.addWidget(separator)
-
-        # Main tabs
-        self.tabs = QTabWidget()
-
-        # Record tab
-        record_tab = QWidget()
-        layout = QVBoxLayout(record_tab)
+        # Main content area (formerly the Record tab)
+        content_widget = QWidget()
+        layout = QVBoxLayout(content_widget)
         layout.setSpacing(12)
         layout.setContentsMargins(8, 12, 8, 8)
 
@@ -1012,52 +991,20 @@ class MainWindow(QMainWindow):
         self._update_mic_display()
         self._update_model_display()
 
-        # Add tabs with theme icons instead of emojis
-        record_icon = QIcon.fromTheme(
-            "audio-input-microphone",
-            QIcon.fromTheme(
-                "microphone", self.style().standardIcon(self.style().StandardPixmap.SP_MediaVolume)
-            ),
-        )
-        self.tabs.addTab(record_tab, record_icon, "Record")
-
-        # History tab (second tab for quick access)
-        self.history_widget = HistoryWidget(config=self.config)
-        self.history_widget.transcription_selected.connect(self.on_history_transcription_selected)
-        history_icon = QIcon.fromTheme(
-            "document-open-recent",
-            QIcon.fromTheme(
-                "edit-undo-history",
-                self.style().standardIcon(self.style().StandardPixmap.SP_FileDialogContentsView),
-            ),
-        )
-        self.tabs.addTab(self.history_widget, history_icon, "History")
-
-        # File Transcription tab
-        self.file_transcription_widget = FileTranscriptionWidget(config=self.config)
-        file_icon = QIcon.fromTheme(
-            "folder-open",
-            QIcon.fromTheme(
-                "document-open",
-                self.style().standardIcon(self.style().StandardPixmap.SP_DirOpenIcon),
-            ),
-        )
-        self.tabs.addTab(self.file_transcription_widget, file_icon, "File")
+        # Add content widget to main layout
+        main_layout.addWidget(content_widget, 1)
 
         # Prompt Editor window (opened via button, not a tab)
         self.prompt_editor_window = None
 
-        # Dialogs (opened via menu, not tabs)
+        # Dialogs and windows (opened via menu)
         self.settings_dialog = None
         self.analytics_dialog = None
         self.about_dialog = None
+        self.history_window = None
+        self.file_transcription_window = None
 
-        # Refresh data when switching tabs
-        self.tabs.currentChanged.connect(self.on_tab_changed)
-
-        main_layout.addWidget(self.tabs, 1)
-
-        # Persistent audio feedback footer (visible across all tabs)
+        # Persistent audio feedback footer
         feedback_footer = QHBoxLayout()
         feedback_footer.setSpacing(8)
         feedback_footer.setContentsMargins(0, 8, 0, 0)
@@ -1107,6 +1054,26 @@ class MainWindow(QMainWindow):
         feedback_footer.addWidget(beeps_btn)
 
         feedback_footer.addStretch()
+
+        # Open History link button
+        history_link = QPushButton("Open History")
+        history_link.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                color: #007bff;
+                font-size: 11px;
+                text-decoration: underline;
+                padding: 4px 8px;
+            }
+            QPushButton:hover {
+                color: #0056b3;
+            }
+        """)
+        history_link.setCursor(Qt.CursorShape.PointingHandCursor)
+        history_link.setToolTip("Open transcription history in a separate window (Ctrl+Shift+H)")
+        history_link.clicked.connect(self.show_history_window)
+        feedback_footer.addWidget(history_link)
 
         main_layout.addLayout(feedback_footer)
 
@@ -1281,7 +1248,7 @@ class MainWindow(QMainWindow):
                 border-bottom: 4px solid #{max(r - 60, 0):02x}0000;
                 border-radius: 6px;
                 font-weight: bold;
-                font-size: 24px;
+                font-size: 20px;
                 padding: 0 8px;
             }}
         """
@@ -1324,9 +1291,9 @@ class MainWindow(QMainWindow):
         clear_shortcut = QShortcut(QKeySequence("Ctrl+N"), self)
         clear_shortcut.activated.connect(self.clear_transcription)
 
-        # Ctrl+H to jump to History tab
+        # Ctrl+H to open History window
         history_shortcut = QShortcut(QKeySequence("Ctrl+H"), self)
-        history_shortcut.activated.connect(self.jump_to_history_tab)
+        history_shortcut.activated.connect(self.show_history_window)
 
         # Set up configurable in-focus hotkeys (F15, F16, etc.)
         self._setup_configurable_shortcuts()
@@ -1568,25 +1535,6 @@ class MainWindow(QMainWindow):
             self.word_count_label.setText(f"{words} words, {chars} characters")
         else:
             self.word_count_label.setText("")
-
-    def on_tab_changed(self, index: int):
-        """Handle tab change - refresh data in the selected tab."""
-        # Tabs: 0=Record, 1=History, 2=File
-        if index == 1:  # History tab
-            self.history_widget.refresh()
-        # Record (0), File (2) don't need refresh
-
-    def jump_to_history_tab(self):
-        """Jump to the History tab (Ctrl+H shortcut)."""
-        self.tabs.setCurrentIndex(1)  # History is at index 1
-
-    def on_history_transcription_selected(self, text: str):
-        """Handle transcription selected from history - put in editor."""
-        self.text_output.setMarkdown(text)
-        self.tabs.setCurrentIndex(0)  # Switch to Record tab
-        self.update_word_count()
-        # Enable append button since we have text
-        self.append_btn.setEnabled(True)
 
     def save_to_file(self):
         """Save transcription to a file."""
@@ -2299,8 +2247,18 @@ class MainWindow(QMainWindow):
                 # Reset append mode
                 self.append_mode = False
             else:
-                # Replace text (normal mode)
-                self.text_output.setMarkdown(result.text)
+                # Normal mode - append to existing text if present
+                existing_text = self.text_output.toPlainText()
+                if existing_text.strip():
+                    # Append new transcription to existing text
+                    combined_text = existing_text + "\n\n" + result.text
+                    self.text_output.setMarkdown(combined_text)
+                    # Move cursor to end
+                    cursor = self.text_output.source_view.textCursor()
+                    cursor.movePosition(cursor.MoveOperation.End)
+                    self.text_output.source_view.setTextCursor(cursor)
+                else:
+                    self.text_output.setMarkdown(result.text)
         else:
             # App output disabled - clear the text area
             self.text_output.setMarkdown("")
@@ -3236,6 +3194,28 @@ class MainWindow(QMainWindow):
         self._update_mic_display()
         # Refresh model preset menu in case favorites were added/removed/renamed
         self._refresh_model_preset_menu()
+
+    def show_history_window(self):
+        """Show the standalone history window."""
+        # Create window if it doesn't exist
+        if self.history_window is None:
+            self.history_window = HistoryWindow(config=self.config)
+
+        # Show (refreshes automatically via showEvent)
+        self.history_window.show()
+        self.history_window.raise_()
+        self.history_window.activateWindow()
+
+    def show_file_transcription_window(self):
+        """Show the file transcription window (Beta feature)."""
+        # Create window if it doesn't exist
+        if self.file_transcription_window is None:
+            self.file_transcription_window = FileTranscriptionWindow(config=self.config)
+
+        # Show
+        self.file_transcription_window.show()
+        self.file_transcription_window.raise_()
+        self.file_transcription_window.activateWindow()
 
     def show_analytics(self):
         """Show analytics dialog."""

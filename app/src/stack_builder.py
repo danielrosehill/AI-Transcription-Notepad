@@ -59,12 +59,12 @@ class CollapsibleSection(QWidget):
         self.header.setCursor(Qt.CursorShape.PointingHandCursor)
         self.header.setStyleSheet("""
             QFrame {
-                background-color: #e9ecef;
-                border: 1px solid #dee2e6;
+                background-color: #f8f9fa;
+                border: none;
                 border-radius: 4px;
             }
             QFrame:hover {
-                background-color: #dee2e6;
+                background-color: #e9ecef;
             }
         """)
 
@@ -97,8 +97,7 @@ class CollapsibleSection(QWidget):
         self.content.setStyleSheet("""
             QWidget {
                 background-color: #ffffff;
-                border: 1px solid #dee2e6;
-                border-top: none;
+                border: none;
                 border-radius: 0 0 4px 4px;
             }
         """)
@@ -119,23 +118,23 @@ class CollapsibleSection(QWidget):
         if expanded:
             self.header.setStyleSheet("""
                 QFrame {
-                    background-color: #dee2e6;
-                    border: 1px solid #dee2e6;
+                    background-color: #e9ecef;
+                    border: none;
                     border-radius: 4px 4px 0 0;
                 }
                 QFrame:hover {
-                    background-color: #ced4da;
+                    background-color: #dee2e6;
                 }
             """)
         else:
             self.header.setStyleSheet("""
                 QFrame {
-                    background-color: #e9ecef;
-                    border: 1px solid #dee2e6;
+                    background-color: #f8f9fa;
+                    border: none;
                     border-radius: 4px;
                 }
                 QFrame:hover {
-                    background-color: #dee2e6;
+                    background-color: #e9ecef;
                 }
             """)
         self.toggled.emit(expanded)
@@ -223,13 +222,12 @@ class StackBuilderWidget(QWidget):
         container = QFrame()
         container.setStyleSheet("""
             QFrame {
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 6px;
+                background-color: transparent;
+                border: none;
             }
         """)
         container_layout = QVBoxLayout(container)
-        container_layout.setContentsMargins(12, 12, 12, 12)
+        container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(8)
 
         # Top row: Infer Format + Base options + Reset
