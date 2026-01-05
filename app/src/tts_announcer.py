@@ -10,6 +10,9 @@ Supports multiple voice packs:
   - wizard: Mystical elderly wizard (Fish Audio)
 
 Also supports dynamic TTS generation for stats readout.
+
+Note: Recording start uses a quick beep instead of voice announcement
+to avoid delay before microphone activation.
 """
 
 import asyncio
@@ -20,6 +23,9 @@ import time
 from collections import deque
 from pathlib import Path
 from typing import Optional, Tuple
+
+# Import beep generation for recording start indicator
+from .audio_feedback import generate_beep
 
 # Edge TTS for dynamic speech generation
 try:
@@ -118,6 +124,11 @@ class TTSAnnouncer:
         self._last_played_time = 0.0
         self._min_pause_ms = 300  # Minimum pause between announcements (300ms)
         self._is_playing = False
+
+        # Quick beep for recording start (faster than TTS announcement)
+        # Shorter and snappier than normal beep mode: 60ms, higher volume
+        self._recording_beep = generate_beep(frequency=880, duration_ms=60, volume=0.18)
+        self._beep_sample_rate = 44100  # Beeps are generated at 44.1kHz
 
         # Pre-load all audio files
         self._preload_audio()
@@ -306,6 +317,39 @@ class TTSAnnouncer:
 
         # If no audio backend available, silently fail
 
+    def _play_recording_beep(self) -> None:
+        """Play the quick recording beep (blocking).
+
+        Used instead of TTS voice for recording start to minimize delay.
+        """
+        if HAS_SIMPLEAUDIO:
+            try:
+                wave_obj = sa.WaveObject(self._recording_beep, 1, 2, self._beep_sample_rate)
+                play_obj = wave_obj.play()
+                play_obj.wait_done()
+                return
+            except Exception:
+                pass
+
+        if HAS_PYAUDIO:
+            try:
+                p = pyaudio.PyAudio()
+                stream = p.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=self._beep_sample_rate,
+                    output=True
+                )
+                stream.write(self._recording_beep)
+                stream.stop_stream()
+                stream.close()
+                p.terminate()
+                return
+            except Exception:
+                pass
+
+        # If no audio backend available, silently fail
+
     # -------------------------------------------------------------------------
     # Recording state announcements
     # -------------------------------------------------------------------------
@@ -313,10 +357,14 @@ class TTSAnnouncer:
     def announce_recording(self) -> None:
         """Announce: Recording started (blocking).
 
-        This method blocks until the announcement finishes to prevent
-        the TTS audio from being captured by the microphone.
+        Uses a quick beep instead of TTS voice announcement for speed.
+        The beep is much faster (~60ms) than the voice (~800ms), reducing
+        delay before microphone activation.
+
+        This method blocks until the beep finishes to prevent
+        the audio from being captured by the microphone.
         """
-        self._play_sync("recording")
+        self._play_recording_beep()
 
     def announce_stopped(self) -> None:
         """Announce: Recording stopped."""

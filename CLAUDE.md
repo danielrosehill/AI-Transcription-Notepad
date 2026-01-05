@@ -258,6 +258,7 @@ The app uses the **system default microphone** configured at the OS level (via P
 - The app will automatically use the new default
 
 **In the app UI:**
+- A "Model/Microphone" pill label appears above the bottom status bar for visual organization
 - The microphone button displays the current system default (read-only)
 - Click the button for a menu with "Refresh" and "Open System Sound Settings..."
 - Settings → Mic tab shows the active device and provides a mic test
@@ -538,7 +539,7 @@ Prompt Stacks allow you to layer multiple AI instructions for complex transcript
 
 ## Audio Feedback
 
-The app provides audio notifications for recording events. Configure via **Settings → Behavior → Audio feedback**.
+The app provides audio notifications for recording events. Configure via **Settings → Behavior → Audio feedback**. A "Notification Mode" pill label appears in the main interface footer for easy mode identification.
 
 **Modes:**
 | Mode | Description |

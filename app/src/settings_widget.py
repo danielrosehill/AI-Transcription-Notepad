@@ -345,6 +345,23 @@ class BehaviorWidget(QWidget):
         append_pos_layout.addWidget(append_pos_help)
         form.addRow("Append position:", append_pos_layout)
 
+        # Duration display mode
+        duration_display_layout = QVBoxLayout()
+        self.duration_display_mode = QComboBox()
+        self.duration_display_mode.addItem("None", "none")
+        self.duration_display_mode.addItem("Minutes/Seconds", "mm_ss")
+        self.duration_display_mode.addItem("Minutes Only", "minutes_only")
+        # Set current value
+        idx = self.duration_display_mode.findData(self.config.duration_display_mode)
+        if idx >= 0:
+            self.duration_display_mode.setCurrentIndex(idx)
+        self.duration_display_mode.currentIndexChanged.connect(self._on_duration_display_mode_changed)
+        duration_display_layout.addWidget(self.duration_display_mode)
+        duration_help = QLabel("MM:SS shows from 0:00, Minutes Only shows from 1m with fade transitions")
+        duration_help.setStyleSheet("color: #666; font-size: 10px;")
+        duration_display_layout.addWidget(duration_help)
+        form.addRow("Duration display:", duration_display_layout)
+
         layout.addLayout(form)
         layout.addStretch()
 
@@ -393,6 +410,11 @@ class BehaviorWidget(QWidget):
         if self.config.audio_feedback_mode == "tts":
             from .tts_announcer import get_announcer
             get_announcer().announce_complete()  # Play "Complete" as a sample
+
+    def _on_duration_display_mode_changed(self, index: int):
+        """Save duration display mode setting."""
+        self.config.duration_display_mode = self.duration_display_mode.itemData(index)
+        save_config(self.config)
 
 
 class PersonalizationWidget(QWidget):
@@ -1314,6 +1336,92 @@ class ModelSelectionWidget(QWidget):
                 self._update_preset_model_combo(preset_key)
 
 
+class MiscWidget(QWidget):
+    """Miscellaneous settings section."""
+
+    def __init__(self, config: Config, parent=None):
+        super().__init__(parent)
+        self.config = config
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(16)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        # Title
+        title = QLabel("Miscellaneous Settings")
+        title.setFont(QFont("Sans", 14, QFont.Weight.Bold))
+        layout.addWidget(title)
+
+        desc = QLabel("Additional options and optimizations.")
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color: #666; margin-bottom: 12px;")
+        layout.addWidget(desc)
+
+        # Prompt Optimization group
+        optimization_group = QGroupBox("Prompt Optimization")
+        optimization_layout = QVBoxLayout(optimization_group)
+        optimization_layout.setSpacing(12)
+
+        # Short audio prompt setting
+        self.short_audio_prompt_enabled = QCheckBox("Short Audio Prompt Shortening")
+        self.short_audio_prompt_enabled.setChecked(self.config.short_audio_prompt_enabled)
+        self.short_audio_prompt_enabled.toggled.connect(
+            lambda v: self._save_bool("short_audio_prompt_enabled", v)
+        )
+
+        short_audio_layout = QVBoxLayout()
+        short_audio_layout.addWidget(self.short_audio_prompt_enabled)
+
+        # Detailed help text
+        help_text = QLabel(
+            "When enabled, recordings under 30 seconds use a minimal cleanup prompt "
+            "instead of the full prompt. This reduces API overhead by ~93% "
+            "(~300 chars vs ~4,300 chars) for quick notes."
+        )
+        help_text.setWordWrap(True)
+        help_text.setStyleSheet("color: #666; font-size: 11px; margin-left: 20px;")
+        short_audio_layout.addWidget(help_text)
+
+        # Warning/note about trade-off
+        note_frame = QFrame()
+        note_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        note_frame.setStyleSheet("""
+            QFrame {
+                background-color: #fff3cd;
+                border: 1px solid #ffc107;
+                border-radius: 4px;
+                margin-top: 8px;
+                margin-left: 20px;
+            }
+        """)
+        note_layout = QHBoxLayout(note_frame)
+        note_layout.setContentsMargins(10, 8, 10, 8)
+        note_icon = QLabel("💡")
+        note_icon.setStyleSheet("background: transparent; border: none; font-size: 14px;")
+        note_layout.addWidget(note_icon)
+        note_text = QLabel(
+            "<b>Trade-off:</b> The minimal prompt applies only essential cleanup "
+            "(punctuation, filler removal, grammar). Format presets, advanced options, "
+            "and custom instructions are not applied to short recordings."
+        )
+        note_text.setWordWrap(True)
+        note_text.setStyleSheet("background: transparent; border: none; color: #856404; font-size: 11px;")
+        note_layout.addWidget(note_text, 1)
+        short_audio_layout.addWidget(note_frame)
+
+        optimization_layout.addLayout(short_audio_layout)
+        layout.addWidget(optimization_group)
+
+        layout.addStretch()
+
+    def _save_bool(self, key: str, value: bool):
+        """Save boolean config value."""
+        setattr(self.config, key, value)
+        save_config(self.config)
+
+
 class SettingsWidget(QWidget):
     """Unified settings widget with tabbed sections."""
 
@@ -1347,6 +1455,7 @@ class SettingsWidget(QWidget):
         self.hotkeys_widget.hotkeys_changed.connect(self.hotkeys_changed.emit)
         self.tabs.addTab(self.hotkeys_widget, "Hotkeys")
 
+        self.tabs.addTab(MiscWidget(self.config), "Misc")
         self.tabs.addTab(DatabaseWidget(self.config), "Database")
 
         layout.addWidget(self.tabs)

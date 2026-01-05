@@ -212,6 +212,11 @@ class Config:
     store_audio: bool = False  # Archive audio recordings
     vad_enabled: bool = True   # Enable Voice Activity Detection (silence removal)
 
+    # Prompt optimization settings
+    # Short audio prompt: Use a minimal prompt for brief recordings (< 30s) to reduce API overhead
+    # When enabled, recordings under 30 seconds use a compact prompt (~300 chars vs ~4300 chars)
+    short_audio_prompt_enabled: bool = False  # Disabled by default - user must opt in
+
     # Semantic search / embeddings settings
     # Embeddings enable semantic search in transcription history
     # Uses Gemini gemini-embedding-001 (free, 1500 RPM)
@@ -222,6 +227,10 @@ class Config:
 
     # Audio feedback mode: "beeps" (default), "tts" (voice announcements), "silent" (no audio)
     audio_feedback_mode: str = "beeps"
+
+    # Duration display mode during recording
+    # Options: "none" (hidden), "mm_ss" (minutes:seconds from 0:00), "minutes_only" (1M, 2M from 1 min)
+    duration_display_mode: str = "mm_ss"  # Default to full MM:SS display
 
     # TTS voice pack: which voice to use for TTS announcements
     # Options: "ryan" (default Edge TTS), "herman", "corn", "venti", "napoleon", "wizard"
@@ -1261,6 +1270,13 @@ STYLE_DISPLAY_NAMES = {
     "shakespearean": "Shakespearean",
 }
 
+# Display names for duration display modes (for UI)
+DURATION_DISPLAY_NAMES = {
+    "none": "None",
+    "mm_ss": "Minutes/Seconds",
+    "minutes_only": "Minutes Only",
+}
+
 # Word limit templates for up/down direction
 WORD_LIMIT_TEMPLATES = {
     "up": "Expand the content to approximately {target} words. Add relevant detail, examples, and elaboration to reach the target length while maintaining quality.",
@@ -1297,7 +1313,10 @@ def build_cleanup_prompt(config: Config, use_prompt_library: bool = False, audio
     Layer 3 (Format + Style): Format-specific instructions, formality, verbosity, writing sample
     """
     # Short audio optimization: use minimal prompt for brief recordings
-    if audio_duration_seconds is not None and audio_duration_seconds < SHORT_AUDIO_THRESHOLD_SECONDS:
+    # Only applies if the user has enabled this feature in Settings → Misc
+    if (config.short_audio_prompt_enabled and
+            audio_duration_seconds is not None and
+            audio_duration_seconds < SHORT_AUDIO_THRESHOLD_SECONDS):
         return SHORT_AUDIO_PROMPT
 
     # NEW: Use prompt library if enabled

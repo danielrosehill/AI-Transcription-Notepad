@@ -728,8 +728,8 @@ class MainWindow(QMainWindow):
                 border: none;
             }
         """)
-        self.duration_container.setFixedWidth(50)
-        self.duration_container.hide()  # Hidden until 1 minute
+        self.duration_container.setFixedWidth(70)  # Wide enough for HH:MM:SS
+        self.duration_container.hide()  # Visibility controlled by update_duration()
         duration_box_layout = QHBoxLayout(self.duration_container)
         duration_box_layout.setContentsMargins(8, 4, 8, 4)
         duration_box_layout.setSpacing(0)
@@ -966,6 +966,20 @@ class MainWindow(QMainWindow):
         # Bottom status bar: microphone selector (left), model selector (right)
         status_bar = QHBoxLayout()
 
+        # Model/Microphone label
+        model_mic_label = QLabel("Model/Microphone")
+        model_mic_label.setStyleSheet("""
+            QLabel {
+                color: #888;
+                font-size: 10px;
+                background-color: #f0f0f0;
+                border-radius: 8px;
+                padding: 2px 8px;
+            }
+        """)
+        status_bar.addWidget(model_mic_label)
+        status_bar.addSpacing(8)
+
         # Microphone selector (left) - dropdown button
         self.mic_selector_btn = QToolButton()
         self.mic_selector_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -1039,6 +1053,20 @@ class MainWindow(QMainWindow):
         feedback_footer.setContentsMargins(0, 8, 0, 0)
 
         feedback_footer.addStretch()
+
+        # Notification Mode label
+        notification_mode_label = QLabel("Notification Mode")
+        notification_mode_label.setStyleSheet("""
+            QLabel {
+                color: #888;
+                font-size: 10px;
+                background-color: #f0f0f0;
+                border-radius: 8px;
+                padding: 2px 8px;
+            }
+        """)
+        feedback_footer.addWidget(notification_mode_label)
+        feedback_footer.addSpacing(8)
 
         # Create button group for mutual exclusion
         self._feedback_buttons = {}
@@ -2882,23 +2910,48 @@ class MainWindow(QMainWindow):
         self._set_tray_state("idle")
 
     def update_duration(self):
-        """Update the duration display - shows only minutes, fades on change."""
-        duration = self.recorder.get_duration()
-        mins = int(duration // 60)
+        """Update the duration display based on configured mode."""
+        mode = self.config.duration_display_mode
 
-        # Only show duration once we hit 1 minute
-        if mins < 1:
+        # None mode - always hidden
+        if mode == "none":
             self.duration_container.hide()
             return
 
-        # Show container if hidden
-        if not self.duration_container.isVisible():
-            self.duration_container.show()
+        duration = self.recorder.get_duration()
 
-        # Update display only when minute changes
-        if mins != self._last_shown_minute:
-            self._last_shown_minute = mins
-            self._animate_duration_change(f"{mins}m")
+        if mode == "mm_ss":
+            # Minutes/Seconds mode - show immediately from 0:00
+            if not self.duration_container.isVisible():
+                self.duration_container.show()
+
+            hours = int(duration // 3600)
+            mins = int((duration % 3600) // 60)
+            secs = int(duration % 60)
+
+            if hours > 0:
+                new_text = f"{hours}:{mins:02d}:{secs:02d}"
+            else:
+                new_text = f"{mins}:{secs:02d}"
+
+            # Direct update (no fade for MM:SS mode - updates every tick)
+            self.duration_label.setText(new_text)
+
+        elif mode == "minutes_only":
+            # Minutes Only mode - show from 1 minute with fade transitions
+            mins = int(duration // 60)
+
+            if mins < 1:
+                self.duration_container.hide()
+                return
+
+            if not self.duration_container.isVisible():
+                self.duration_container.show()
+
+            # Fade animation on minute change
+            if mins != self._last_shown_minute:
+                self._last_shown_minute = mins
+                self._animate_duration_change(f"{mins}M")
 
     def _animate_duration_change(self, new_text: str):
         """Animate duration label with fade out/in effect."""

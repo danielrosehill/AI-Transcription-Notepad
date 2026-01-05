@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.2] - 2026-01-05
+
+### Added
+- **UI Label Improvements**: Added descriptive pill labels for better UI clarity
+  - "Model/Microphone" label above the microphone and model selector buttons
+  - "Notification Mode" label above the audio feedback mode buttons (Quiet/TTS/Beeps)
+  - Labels use subtle gray styling with rounded pill backgrounds for visual organization
+
 ## [1.9.5] - 2024-12-25
 
 ### Added
