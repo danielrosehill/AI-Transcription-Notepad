@@ -94,7 +94,7 @@ class EmbeddingStore:
         transcript_id: str,
         embedding: List[float],
         text_hash: str,
-        model: str = "text-embedding-004",
+        model: str = "gemini-embedding-001",
     ) -> str:
         """Save an embedding for a transcript.
 
@@ -121,7 +121,7 @@ class EmbeddingStore:
     def save_embeddings_batch(
         self,
         records: List[Tuple[str, List[float], str]],
-        model: str = "text-embedding-004",
+        model: str = "gemini-embedding-001",
     ) -> int:
         """Save multiple embeddings at once.
 

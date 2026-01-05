@@ -283,6 +283,11 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.config = load_env_keys(load_config())
+
+        # Initialize TTS announcer with configured voice pack
+        from .tts_announcer import get_announcer
+        get_announcer(self.config.tts_voice_pack)
+
         self.recorder = AudioRecorder(self.config.sample_rate)
         self.recorder.on_error = self._on_recorder_error
         self.worker: TranscriptionWorker | None = None
@@ -1790,40 +1795,30 @@ class MainWindow(QMainWindow):
         save_config(self.config)
 
     def get_selected_microphone_index(self):
-        """Get the index of the configured microphone.
+        """Get the index of the system default microphone.
+
+        The app always uses the OS-level default microphone, routed through
+        PipeWire/PulseAudio. To change the microphone, update your system
+        audio settings (System Settings → Sound).
 
         Priority order:
-        1. Preferred microphone (if configured and available)
-        2. Fallback microphone (if configured and available)
-        3. "pulse" (routes through PipeWire/PulseAudio)
-        4. "default"
-        5. First available device
+        1. "pulse" (routes through PipeWire/PulseAudio - uses system default)
+        2. "default"
+        3. First available device
         """
         devices = self.recorder.get_input_devices()
 
-        # 1. Try preferred microphone first
-        if self.config.preferred_mic_name:
-            for idx, name in devices:
-                if name == self.config.preferred_mic_name:
-                    return idx
-
-        # 2. Try fallback microphone
-        if self.config.fallback_mic_name:
-            for idx, name in devices:
-                if name == self.config.fallback_mic_name:
-                    return idx
-
-        # 3. Default to "pulse" which routes through PipeWire/PulseAudio
+        # 1. Default to "pulse" which routes through PipeWire/PulseAudio
         for idx, name in devices:
             if name == "pulse":
                 return idx
 
-        # 4. Fallback to "default" if pulse not available
+        # 2. Fallback to "default" if pulse not available
         for idx, name in devices:
             if name == "default":
                 return idx
 
-        # 5. Fall back to first device
+        # 3. Fall back to first device
         if devices:
             return devices[0][0]
         return None
@@ -2573,171 +2568,114 @@ class MainWindow(QMainWindow):
             self._set_tray_state("idle")
 
     def _update_mic_display(self):
-        """Update the microphone selector button text and menu."""
+        """Update the microphone display button text.
+
+        The app uses the system default microphone. This display is read-only
+        and shows the current OS-level default audio input device.
+        """
         display_name, full_name = self._get_active_microphone_name()
-        # Limit to 3 words
+        # Limit to 3 words for compact display
         words = display_name.split()
         if len(words) > 3:
             display_name = " ".join(words[:3])
         self.mic_selector_btn.setText(display_name)
-        self.mic_selector_btn.setToolTip(f"Microphone: {full_name}\nClick to change")
-        # Update menu checkmarks
-        self._update_microphone_menu_checks()
+        self.mic_selector_btn.setToolTip(
+            f"Microphone: {full_name}\n"
+            "Using system default. Change in System Settings → Sound."
+        )
 
     def _setup_microphone_menu(self):
-        """Set up the microphone dropdown menu."""
+        """Set up the microphone info menu.
+
+        The app always uses the system default microphone. This menu provides
+        information and a shortcut to system audio settings.
+        """
         self.microphone_menu = QMenu(self)
-        self.microphone_actions = {}
 
-        # Action group for mutual exclusion
-        self.microphone_action_group = QActionGroup(self)
-        self.microphone_action_group.setExclusive(True)
+        # Info header (disabled, just for display)
+        info_action = QAction("Using System Default Microphone", self)
+        info_action.setEnabled(False)
+        self.microphone_menu.addAction(info_action)
 
-        # Get available microphones
-        devices = self.recorder.get_input_devices()
-        device_names = [name for idx, name in devices]
-
-        # Add available microphones
-        for idx, name in devices:
-            # Limit display name
-            display_name = name
-            words = name.split()
-            if len(words) > 3:
-                display_name = " ".join(words[:3])
-
-            action = QAction(display_name, self)
-            action.setCheckable(True)
-            action.setData((idx, name))
-            action.triggered.connect(
-                lambda checked, data=(idx, name): self._on_microphone_changed(data)
-            )
-            self.microphone_action_group.addAction(action)
-            self.microphone_menu.addAction(action)
-            self.microphone_actions[name] = action
-
-        # Settings shortcut
         self.microphone_menu.addSeparator()
-        settings_action = QAction("Configure Microphones...", self)
-        settings_action.triggered.connect(self.show_settings)
+
+        # Refresh action
+        refresh_action = QAction("Refresh", self)
+        refresh_action.triggered.connect(self._update_mic_display)
+        self.microphone_menu.addAction(refresh_action)
+
+        # Open system sound settings
+        settings_action = QAction("Open System Sound Settings...", self)
+        settings_action.triggered.connect(self._open_system_sound_settings)
         self.microphone_menu.addAction(settings_action)
 
         self.mic_selector_btn.setMenu(self.microphone_menu)
 
-        # Set initial check state
-        self._update_microphone_menu_checks()
-
-    def _update_microphone_menu_checks(self):
-        """Update to checkmarks in the microphone menu."""
-        devices = self.recorder.get_input_devices()
-        device_names = [name for idx, name in devices]
-
-        # Determine which device is currently active
-        active_name = None
-        if self.config.preferred_mic_name and self.config.preferred_mic_name in device_names:
-            active_name = self.config.preferred_mic_name
-        elif self.config.fallback_mic_name and self.config.fallback_mic_name in device_names:
-            active_name = self.config.fallback_mic_name
-        elif "pulse" in device_names:
-            active_name = "pulse"
-        elif "default" in device_names:
-            active_name = "default"
-        elif devices:
-            active_name = devices[0][1]
-
-        # Update check marks
-        for name, action in self.microphone_actions.items():
-            action.setChecked(name == active_name)
-
-    def _on_microphone_changed(self, data: tuple[int, str]):
-        """Handle microphone selection change."""
-        idx, name = data
-        # Set as preferred microphone
-        self.config.preferred_mic_name = name
-        self.config.preferred_mic_nickname = None
-        save_config(self.config)
-
-        # Update display
-        self._update_mic_display()
-
-        # Audio feedback for microphone change
-        if self.config.audio_feedback_mode == "beeps":
-            get_feedback().play_toggle_on_beep()
-        elif self.config.audio_feedback_mode == "tts":
-            # Get short display name for announcement
-            display_name = name
-            words = display_name.split()
-            if len(words) > 3:
-                display_name = " ".join(words[:3])
-            get_announcer().announce_microphone_changed(display_name)
+    def _open_system_sound_settings(self):
+        """Open the system sound settings (KDE Plasma)."""
+        import subprocess
+        try:
+            # Try KDE systemsettings first
+            subprocess.Popen(["systemsettings", "kcm_pulseaudio"])
+        except FileNotFoundError:
+            try:
+                # Fallback to pavucontrol
+                subprocess.Popen(["pavucontrol"])
+            except FileNotFoundError:
+                # Last resort: generic settings
+                subprocess.Popen(["xdg-open", "settings://sound"])
 
     def _get_active_microphone_name(self) -> tuple[str, str]:
-        """Get the name of the currently active microphone.
+        """Get the name of the system default microphone.
+
+        Queries PipeWire/PulseAudio to get the actual default audio input device.
 
         Returns:
-            Tuple of (display_name, full_name) where display_name may be a
-            nickname and full_name is always the device's actual name.
+            Tuple of (display_name, full_name).
         """
         import subprocess
 
-        # Get the actual device name that will be/is being used
         actual_device_name = None
 
-        # Check which device is actually selected based on config
-        devices = self.recorder.get_input_devices()
-        device_names = [name for _, name in devices]
+        # Query PipeWire/PulseAudio for the actual default source
+        try:
+            result = subprocess.run(
+                ["pactl", "get-default-source"], capture_output=True, text=True, timeout=2
+            )
+            if result.returncode == 0:
+                source_name = result.stdout.strip()
+                if source_name:
+                    # Get the description for this source
+                    desc_result = subprocess.run(
+                        ["pactl", "list", "sources"], capture_output=True, text=True, timeout=2
+                    )
+                    if desc_result.returncode == 0:
+                        lines = desc_result.stdout.split("\n")
+                        found_source = False
+                        for line in lines:
+                            if f"Name: {source_name}" in line:
+                                found_source = True
+                            elif found_source and "Description:" in line:
+                                actual_device_name = line.split("Description:", 1)[1].strip()
+                                break
+                    if not actual_device_name:
+                        # Fallback: clean up the source name
+                        if "usb-" in source_name:
+                            parts = source_name.split("usb-")[1].split("-00")[0]
+                            actual_device_name = parts.replace("_", " ")
+                        else:
+                            actual_device_name = source_name
+        except Exception:
+            pass
 
-        # Priority: preferred > fallback > pulse > default > first
-        if self.config.preferred_mic_name and self.config.preferred_mic_name in device_names:
-            actual_device_name = self.config.preferred_mic_name
-        elif self.config.fallback_mic_name and self.config.fallback_mic_name in device_names:
-            actual_device_name = self.config.fallback_mic_name
-        elif "pulse" in device_names or "default" in device_names:
-            # Query PipeWire/PulseAudio for the actual default source
-            try:
-                result = subprocess.run(
-                    ["pactl", "get-default-source"], capture_output=True, text=True, timeout=2
-                )
-                if result.returncode == 0:
-                    source_name = result.stdout.strip()
-                    if source_name:
-                        # Get the description for this source
-                        desc_result = subprocess.run(
-                            ["pactl", "list", "sources"], capture_output=True, text=True, timeout=2
-                        )
-                        if desc_result.returncode == 0:
-                            lines = desc_result.stdout.split("\n")
-                            found_source = False
-                            for line in lines:
-                                if f"Name: {source_name}" in line:
-                                    found_source = True
-                                elif found_source and "Description:" in line:
-                                    actual_device_name = line.split("Description:", 1)[1].strip()
-                                    break
-                        if not actual_device_name:
-                            # Fallback: clean up the source name
-                            if "usb-" in source_name:
-                                parts = source_name.split("usb-")[1].split("-00")[0]
-                                actual_device_name = parts.replace("_", " ")
-                            else:
-                                actual_device_name = source_name
-            except Exception:
-                pass
-
-        # Fallback to first device
-        if not actual_device_name and devices:
-            actual_device_name = devices[0][1]
+        # Fallback to PyAudio device list
+        if not actual_device_name:
+            devices = self.recorder.get_input_devices()
+            if devices:
+                actual_device_name = devices[0][1]
 
         if not actual_device_name:
             return ("No microphone found", "No microphone found")
-
-        # Check if the actual device matches preferred or fallback mic
-        # If so, return the nickname (if set) as display name
-        if actual_device_name == self.config.preferred_mic_name:
-            if self.config.preferred_mic_nickname:
-                return (self.config.preferred_mic_nickname, actual_device_name)
-        elif actual_device_name == self.config.fallback_mic_name:
-            if self.config.fallback_mic_nickname:
-                return (self.config.fallback_mic_nickname, actual_device_name)
 
         return (actual_device_name, actual_device_name)
 

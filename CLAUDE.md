@@ -248,12 +248,31 @@ When generating content with the "Email" format preset, the app automatically in
 
 This feature eliminates the need to manually add signatures to dictated emails, and ensures consistent professional formatting across all email transcriptions.
 
+### Microphone Selection
+
+The app uses the **system default microphone** configured at the OS level (via PipeWire/PulseAudio). There is no in-app microphone selection—this simplifies the app and ensures robust, consistent behavior.
+
+**To change the microphone:**
+- Open System Settings → Sound → Input Devices
+- Select your preferred microphone as the default
+- The app will automatically use the new default
+
+**In the app UI:**
+- The microphone button displays the current system default (read-only)
+- Click the button for a menu with "Refresh" and "Open System Sound Settings..."
+- Settings → Mic tab shows the active device and provides a mic test
+
+This design was chosen because:
+1. System-level configuration is more reliable than app-specific device selection
+2. Changes apply immediately without app restart
+3. Avoids issues with device indices changing between sessions
+
 ### Audio Processing Pipeline
 
 Audio goes through a multi-stage pipeline before transcription:
 
 1. **Recording** (`audio_recorder.py`)
-   - Captures at device's native sample rate (typically 48kHz)
+   - Captures from system default microphone (via "pulse" device)
    - Automatic sample rate negotiation with device
    - Error handling for microphone disconnection during recording
 
@@ -302,7 +321,7 @@ AGC_MAX_GAIN_DB = 20.0        # Maximum boost to apply
 - [x] **Dev mode indicator**: Development version shows "(DEV)" in window title for visual distinction
 - [x] **Short audio optimization**: Minimal prompt for recordings < 30s (reduces API overhead by ~93%)
 - [x] **Audio feedback modes**: Beeps, Voice (TTS), or Silent mode for recording/transcription events
-- [x] **Semantic search**: Find similar transcriptions using AI embeddings (Gemini text-embedding-004, free)
+- [x] **Semantic search**: Find similar transcriptions using AI embeddings (Gemini gemini-embedding-001, free)
 - [x] **History window tabs**: Separate View History and Semantic Search tabs with date filtering
 
 ### Planned
@@ -629,7 +648,7 @@ Example exports are available in [data/](data/).
 The History Window includes a **Semantic Search** tab that uses AI embeddings to find similar transcriptions. This is more powerful than text search—it understands meaning, not just keywords.
 
 **How it works:**
-1. Transcriptions are embedded in batches of 100 using Gemini's `text-embedding-004` model
+1. Transcriptions are embedded in batches of 100 using Gemini's `gemini-embedding-001` model
 2. Embeddings are 768-dimensional vectors stored locally in MongoDB
 3. Search queries are also embedded, then compared using cosine similarity
 4. Results are ranked by similarity score (0-100%)
@@ -638,12 +657,12 @@ The History Window includes a **Semantic Search** tab that uses AI embeddings to
 - **Semantic matching**: Find transcriptions by meaning, not just exact words
 - **Date filtering**: Optionally restrict search to a date range
 - **Similarity scores**: Each result shows how closely it matches your query
-- **Zero cost**: `text-embedding-004` is free (1500 requests/minute)
+- **Zero cost**: `gemini-embedding-001` is free (1500 requests/minute)
 
 **Configuration (in Settings):**
 ```python
 embedding_enabled: bool = True        # Enable/disable semantic search
-embedding_model: str = "text-embedding-004"
+embedding_model: str = "gemini-embedding-001"
 embedding_dimensions: int = 768       # Vector size
 embedding_batch_size: int = 100       # Transcripts per batch
 ```

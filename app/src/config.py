@@ -11,6 +11,43 @@ from typing import Optional
 # New system uses three independent booleans: output_to_app, output_to_clipboard, output_to_inject
 
 
+# TTS Voice Packs for audio feedback announcements
+# Each voice pack has pre-generated WAV files in app/assets/tts/<pack_name>/
+# "ryan" is the default (Edge TTS British male) stored directly in app/assets/tts/
+TTS_VOICE_PACKS = {
+    "ryan": {
+        "name": "Ryan",
+        "description": "Professional British male (Edge TTS)",
+        "directory": "",  # Root tts directory (no subdirectory)
+    },
+    "herman": {
+        "name": "Herman Poppleberry",
+        "description": "Talking donkey - expressive, friendly",
+        "directory": "herman",
+    },
+    "corn": {
+        "name": "Cornelius Badonde",
+        "description": "Elderly sloth - calm, quirky",
+        "directory": "corn",
+    },
+    "venti": {
+        "name": "Venti",
+        "description": "Expressive natural voice",
+        "directory": "venti",
+    },
+    "napoleon": {
+        "name": "Napoleon Hill",
+        "description": "Motivational speaker - authoritative",
+        "directory": "napoleon",
+    },
+    "wizard": {
+        "name": "Old Wizard",
+        "description": "Mystical elderly wizard",
+        "directory": "wizard",
+    },
+}
+
+
 CONFIG_DIR = Path.home() / ".config" / "voice-notepad-v3"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
@@ -177,14 +214,18 @@ class Config:
 
     # Semantic search / embeddings settings
     # Embeddings enable semantic search in transcription history
-    # Uses Gemini text-embedding-004 (free, 1500 RPM)
+    # Uses Gemini gemini-embedding-001 (free, 1500 RPM)
     embedding_enabled: bool = True  # Enable semantic search embeddings
-    embedding_model: str = "text-embedding-004"  # Gemini embedding model
+    embedding_model: str = "gemini-embedding-001"  # Gemini embedding model
     embedding_dimensions: int = 768  # Embedding vector dimensions (768 = good balance)
     embedding_batch_size: int = 100  # Process embeddings in batches of N transcripts
 
     # Audio feedback mode: "beeps" (default), "tts" (voice announcements), "silent" (no audio)
     audio_feedback_mode: str = "beeps"
+
+    # TTS voice pack: which voice to use for TTS announcements
+    # Options: "ryan" (default Edge TTS), "herman", "corn", "venti", "napoleon", "wizard"
+    tts_voice_pack: str = "ryan"
 
     # Legacy audio settings - kept for migration
     beep_on_record: bool = True

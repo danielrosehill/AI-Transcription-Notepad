@@ -1,7 +1,13 @@
 """TTS accessibility announcements for Voice Notepad V3.
 
 Plays pre-generated voice announcements for status changes.
-Uses British English male voice (en-GB-RyanNeural) via Edge TTS.
+Supports multiple voice packs:
+  - ryan: Professional British male (Edge TTS) - default
+  - herman: Talking donkey (Fish Audio)
+  - corn: Elderly sloth (Fish Audio)
+  - venti: Expressive natural voice (Fish Audio)
+  - napoleon: Motivational speaker (Fish Audio)
+  - wizard: Mystical elderly wizard (Fish Audio)
 
 Also supports dynamic TTS generation for stats readout.
 """
@@ -38,10 +44,11 @@ except ImportError:
     HAS_PYAUDIO = False
 
 
-def _get_assets_dir() -> Path:
-    """Get the path to TTS assets directory.
+def _get_assets_base_dir() -> Path:
+    """Get the base path to TTS assets directory.
 
     Handles both development (running from source) and installed scenarios.
+    Returns the base tts directory (voice packs are subdirectories).
     """
     # First, check relative to this source file (development)
     src_dir = Path(__file__).parent
@@ -63,16 +70,43 @@ def _get_assets_dir() -> Path:
     return dev_assets
 
 
+def _get_assets_dir(voice_pack: str = "ryan") -> Path:
+    """Get the path to TTS assets directory for a specific voice pack.
+
+    Args:
+        voice_pack: Voice pack identifier (ryan, herman, corn, venti, napoleon, wizard)
+
+    Returns:
+        Path to the voice pack's asset directory
+    """
+    base_dir = _get_assets_base_dir()
+
+    # ryan is the default, stored in root tts directory
+    if voice_pack == "ryan" or not voice_pack:
+        return base_dir
+
+    # Other voice packs are in subdirectories
+    pack_dir = base_dir / voice_pack
+    if pack_dir.exists():
+        return pack_dir
+
+    # Fallback to ryan if voice pack not found
+    return base_dir
+
+
 class TTSAnnouncer:
     """Manages TTS accessibility announcements.
 
     Note: The announcer always plays when methods are called. The calling code
     (main.py) is responsible for checking config.audio_feedback_mode == "tts"
     before calling announce_* methods.
+
+    Supports multiple voice packs via set_voice_pack().
     """
 
-    def __init__(self):
-        self._assets_dir = _get_assets_dir()
+    def __init__(self, voice_pack: str = "ryan"):
+        self._voice_pack = voice_pack
+        self._assets_dir = _get_assets_dir(voice_pack)
         self._audio_cache: dict[str, Optional[bytes]] = {}
         self._sample_rate = 16000  # WAV files are 16kHz
 
@@ -90,6 +124,24 @@ class TTSAnnouncer:
 
         # Start the queue worker thread
         self._start_worker()
+
+    def set_voice_pack(self, voice_pack: str) -> None:
+        """Change the active voice pack.
+
+        Args:
+            voice_pack: Voice pack identifier (ryan, herman, corn, venti, napoleon, wizard)
+        """
+        if voice_pack == self._voice_pack:
+            return  # No change needed
+
+        self._voice_pack = voice_pack
+        self._assets_dir = _get_assets_dir(voice_pack)
+        self._audio_cache.clear()
+        self._preload_audio()
+
+    def get_voice_pack(self) -> str:
+        """Get the current voice pack identifier."""
+        return self._voice_pack
 
     def _preload_audio(self) -> None:
         """Pre-load all TTS audio files into memory."""
@@ -590,12 +642,27 @@ _announcer: Optional[TTSAnnouncer] = None
 _announcer_lock = threading.Lock()
 
 
-def get_announcer() -> TTSAnnouncer:
-    """Get the global TTSAnnouncer instance (thread-safe)."""
+def get_announcer(voice_pack: str = "ryan") -> TTSAnnouncer:
+    """Get the global TTSAnnouncer instance (thread-safe).
+
+    Args:
+        voice_pack: Voice pack to use. Only used on first initialization.
+                   Use set_voice_pack() to change later.
+    """
     global _announcer
     if _announcer is None:
         with _announcer_lock:
             # Double-check pattern for thread safety
             if _announcer is None:
-                _announcer = TTSAnnouncer()
+                _announcer = TTSAnnouncer(voice_pack)
     return _announcer
+
+
+def set_announcer_voice_pack(voice_pack: str) -> None:
+    """Set the voice pack for the global announcer.
+
+    Args:
+        voice_pack: Voice pack identifier (ryan, herman, corn, venti, napoleon, wizard)
+    """
+    announcer = get_announcer()
+    announcer.set_voice_pack(voice_pack)

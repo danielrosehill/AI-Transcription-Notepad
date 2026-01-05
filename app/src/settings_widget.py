@@ -120,7 +120,12 @@ class APIKeysWidget(QWidget):
 
 
 class AudioMicWidget(QWidget):
-    """Audio device and microphone testing section."""
+    """Audio device display and microphone testing section.
+
+    The app always uses the system default microphone (via PipeWire/PulseAudio).
+    To change the microphone, update your OS audio settings.
+    This widget displays the active microphone and provides a test feature.
+    """
 
     def __init__(self, config: Config, recorder, parent=None):
         super().__init__(parent)
@@ -134,28 +139,48 @@ class AudioMicWidget(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
 
         # Title
-        title = QLabel("Mic")
+        title = QLabel("Microphone")
         title.setFont(QFont("Sans", 14, QFont.Weight.Bold))
         layout.addWidget(title)
 
-        # Audio device selection
-        device_group = QGroupBox("Input Device")
-        device_layout = QFormLayout(device_group)
-        device_layout.setSpacing(12)
+        # Active microphone display (read-only)
+        device_group = QGroupBox("Active Input Device")
+        device_layout = QVBoxLayout(device_group)
+        device_layout.setSpacing(8)
 
-        self.device_combo = QComboBox()
-        self.device_combo.currentIndexChanged.connect(self._on_device_changed)
-        self._populate_devices()
+        # Current device label
+        self.device_label = QLabel()
+        self.device_label.setStyleSheet("""
+            QLabel {
+                padding: 8px 12px;
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                font-family: monospace;
+            }
+        """)
+        self.device_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        device_layout.addWidget(self.device_label)
 
-        device_row = QHBoxLayout()
-        device_row.addWidget(self.device_combo, 1)
-
+        # Refresh button and help text
+        button_row = QHBoxLayout()
         refresh_btn = QPushButton("Refresh")
         refresh_btn.setFixedWidth(80)
-        refresh_btn.clicked.connect(self._populate_devices)
-        device_row.addWidget(refresh_btn)
+        refresh_btn.setToolTip("Refresh to see the current system default microphone")
+        refresh_btn.clicked.connect(self._update_device_display)
+        button_row.addWidget(refresh_btn)
+        button_row.addStretch()
+        device_layout.addLayout(button_row)
 
-        device_layout.addRow("Microphone:", device_row)
+        # Help text
+        help_label = QLabel(
+            "The app uses your system default microphone. "
+            "To change it, update your audio settings in System Settings → Sound."
+        )
+        help_label.setWordWrap(True)
+        help_label.setStyleSheet("color: #666; font-size: 11px; margin-top: 4px;")
+        device_layout.addWidget(help_label)
+
         layout.addWidget(device_group)
 
         # Integrated Mic Test
@@ -169,23 +194,51 @@ class AudioMicWidget(QWidget):
 
         layout.addStretch()
 
-    def _populate_devices(self):
-        """Populate device dropdown."""
-        self.device_combo.clear()
-        self.device_combo.addItem("Default", None)
+        # Initial display update
+        self._update_device_display()
 
-        devices = self.recorder.get_input_devices()
-        for idx, name in devices:
-            self.device_combo.addItem(name, idx)
-            if idx == self.config.audio_device_index:
-                self.device_combo.setCurrentIndex(self.device_combo.count() - 1)
+    def _update_device_display(self):
+        """Update the display to show the current system default microphone."""
+        import subprocess
 
-    def _on_device_changed(self):
-        """Handle device selection change."""
-        self.config.audio_device_index = self.device_combo.currentData()
-        save_config(self.config)
-        if self.config.audio_device_index is not None:
-            self.recorder.set_device(self.config.audio_device_index)
+        device_name = "Unknown"
+
+        try:
+            # Query PipeWire/PulseAudio for the actual default source
+            result = subprocess.run(
+                ["pactl", "get-default-source"], capture_output=True, text=True, timeout=2
+            )
+            if result.returncode == 0:
+                source_name = result.stdout.strip()
+                if source_name:
+                    # Get the description for this source
+                    desc_result = subprocess.run(
+                        ["pactl", "list", "sources"], capture_output=True, text=True, timeout=2
+                    )
+                    if desc_result.returncode == 0:
+                        lines = desc_result.stdout.split("\n")
+                        found_source = False
+                        for line in lines:
+                            if f"Name: {source_name}" in line:
+                                found_source = True
+                            elif found_source and "Description:" in line:
+                                device_name = line.split("Description:", 1)[1].strip()
+                                break
+                    if device_name == "Unknown":
+                        # Fallback: clean up the source name
+                        device_name = source_name
+        except Exception:
+            # If pactl fails, try to get from PyAudio
+            devices = self.recorder.get_input_devices()
+            for idx, name in devices:
+                if name in ("pulse", "default"):
+                    device_name = "System Default (pulse)"
+                    break
+            else:
+                if devices:
+                    device_name = devices[0][1]
+
+        self.device_label.setText(device_name)
 
 
 class BehaviorWidget(QWidget):
@@ -256,6 +309,24 @@ class BehaviorWidget(QWidget):
         audio_feedback_layout.addWidget(audio_feedback_help)
         form.addRow("Audio feedback:", audio_feedback_layout)
 
+        # TTS Voice pack selector (only visible when TTS mode is selected)
+        voice_pack_layout = QVBoxLayout()
+        self.voice_pack = QComboBox()
+        # Import voice packs from config
+        from .config import TTS_VOICE_PACKS
+        for pack_id, pack_info in TTS_VOICE_PACKS.items():
+            self.voice_pack.addItem(f"{pack_info['name']} - {pack_info['description']}", pack_id)
+        # Set current value
+        idx = self.voice_pack.findData(self.config.tts_voice_pack)
+        if idx >= 0:
+            self.voice_pack.setCurrentIndex(idx)
+        self.voice_pack.currentIndexChanged.connect(self._on_voice_pack_changed)
+        voice_pack_layout.addWidget(self.voice_pack)
+        voice_pack_help = QLabel("Character voice for TTS announcements (requires Voice mode)")
+        voice_pack_help.setStyleSheet("color: #666; font-size: 10px;")
+        voice_pack_layout.addWidget(voice_pack_help)
+        form.addRow("Voice pack:", voice_pack_layout)
+
         # Note: Output mode (App Only / Clipboard / Inject) is now on the main recording page
 
         # Append position (where to insert text in append mode)
@@ -307,6 +378,21 @@ class BehaviorWidget(QWidget):
             # TTS is being activated - announce after changing
             from .tts_announcer import get_announcer
             get_announcer().announce_tts_activated()
+
+    def _on_voice_pack_changed(self, index: int):
+        """Save voice pack setting and update the announcer."""
+        new_value = self.voice_pack.itemData(index)
+        self.config.tts_voice_pack = new_value
+        save_config(self.config)
+
+        # Update the announcer's voice pack
+        from .tts_announcer import set_announcer_voice_pack
+        set_announcer_voice_pack(new_value)
+
+        # Play a sample announcement with the new voice (if TTS is active)
+        if self.config.audio_feedback_mode == "tts":
+            from .tts_announcer import get_announcer
+            get_announcer().announce_complete()  # Play "Complete" as a sample
 
 
 class PersonalizationWidget(QWidget):

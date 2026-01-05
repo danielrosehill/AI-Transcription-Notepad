@@ -1,6 +1,6 @@
-"""Embedding client for semantic search using Gemini text-embedding-004.
+"""Embedding client for semantic search using Gemini gemini-embedding-001.
 
-Gemini text-embedding-004 is free (1500 RPM, no cost per token).
+Gemini gemini-embedding-001 is free (1500 RPM, no cost per token).
 """
 
 import hashlib
@@ -23,7 +23,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Constants
-EMBEDDING_MODEL = "text-embedding-004"
+EMBEDDING_MODEL = "gemini-embedding-001"  # Successor to text-embedding-004 (deprecated Nov 2025)
 EMBEDDING_DIMENSIONS = 768  # Good balance of quality and storage (~3KB per transcript)
 EMBEDDING_BATCH_SIZE = 100  # Process embeddings in batches of 100
 
@@ -37,7 +37,7 @@ class EmbeddingResult:
 
 
 class GeminiEmbeddingClient:
-    """Google Gemini embedding client using text-embedding-004.
+    """Google Gemini embedding client using gemini-embedding-001.
 
     This model is completely free with 1500 requests per minute.
     """
@@ -102,7 +102,7 @@ class GeminiEmbeddingClient:
             for emb in response.embeddings:
                 embeddings.append(list(emb.values))
 
-            # Note: text-embedding-004 is free, no token tracking needed
+            # Note: gemini-embedding-001 is free, no token tracking needed
             return EmbeddingResult(
                 embeddings=embeddings,
                 input_tokens=0,  # Free model, no cost tracking
