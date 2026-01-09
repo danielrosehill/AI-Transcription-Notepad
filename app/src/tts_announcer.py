@@ -164,7 +164,7 @@ class TTSAnnouncer:
             # Output modes
             "text_in_app", "text_on_clipboard", "clipboard", "text_injected", "injection_failed",
             # Prompt stack changes
-            "format_updated", "format_inference", "tone_updated", "style_updated", "verbatim_mode", "general_mode",
+            "format_updated", "format_inference", "tone_updated", "style_updated", "verbatim_mode", "general_mode", "translation_mode",
             # Audio feedback mode changes
             "tts_activated", "tts_deactivated",
             # Output mode toggles
@@ -456,6 +456,10 @@ class TTSAnnouncer:
     def announce_general_mode(self) -> None:
         """Announce: General mode selected (returning from verbatim)."""
         self._play_async("general_mode")
+
+    def announce_translation_mode(self) -> None:
+        """Announce: Translation mode selected."""
+        self._play_async("translation_mode")
 
     # -------------------------------------------------------------------------
     # Audio feedback mode announcements

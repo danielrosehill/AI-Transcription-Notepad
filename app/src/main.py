@@ -69,6 +69,8 @@ from .config import (
     get_active_provider_and_model,
     get_fallback_provider_and_model,
     is_preset_configured,
+    get_language_display_name,
+    get_language_flag,
 )
 from .audio_recorder import AudioRecorder
 from .transcription import get_client, TranscriptionResult
@@ -966,9 +968,8 @@ class MainWindow(QMainWindow):
         # Bottom status bar: microphone selector (left), model selector (right)
         status_bar = QHBoxLayout()
 
-        # Model/Microphone label
-        model_mic_label = QLabel("Model/Microphone")
-        model_mic_label.setStyleSheet("""
+        # Pill label style (shared by both labels)
+        pill_label_style = """
             QLabel {
                 color: #888;
                 font-size: 10px;
@@ -976,9 +977,13 @@ class MainWindow(QMainWindow):
                 border-radius: 8px;
                 padding: 2px 8px;
             }
-        """)
-        status_bar.addWidget(model_mic_label)
-        status_bar.addSpacing(8)
+        """
+
+        # Microphone label (left)
+        mic_label = QLabel("Microphone")
+        mic_label.setStyleSheet(pill_label_style)
+        status_bar.addWidget(mic_label)
+        status_bar.addSpacing(4)
 
         # Microphone selector (left) - dropdown button
         self.mic_selector_btn = QToolButton()
@@ -1003,7 +1008,30 @@ class MainWindow(QMainWindow):
         self._setup_microphone_menu()
         status_bar.addWidget(self.mic_selector_btn)
 
+        # Translation indicator (shown only when translation mode is active)
+        self.translation_indicator = QLabel()
+        self.translation_indicator.setStyleSheet("""
+            QLabel {
+                color: #0d6efd;
+                font-size: 11px;
+                background-color: #e7f3ff;
+                border: 1px solid #b6d4fe;
+                border-radius: 10px;
+                padding: 2px 10px;
+                font-weight: bold;
+            }
+        """)
+        self.translation_indicator.setToolTip("Translation mode is active - transcriptions will be translated")
+        self.translation_indicator.hide()  # Hidden by default
+        status_bar.addWidget(self.translation_indicator)
+
         status_bar.addStretch()
+
+        # Model label (right)
+        model_label = QLabel("Model")
+        model_label.setStyleSheet(pill_label_style)
+        status_bar.addWidget(model_label)
+        status_bar.addSpacing(4)
 
         # Model selector (right) - dropdown button
         self.model_selector_btn = QToolButton()
@@ -1030,9 +1058,10 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(status_bar)
 
-        # Initialize mic and model displays
+        # Initialize mic, model, and translation displays
         self._update_mic_display()
         self._update_model_display()
+        self._update_translation_indicator()
 
         # Add content widget to main layout
         main_layout.addWidget(content_widget, 1)
@@ -1821,6 +1850,7 @@ class MainWindow(QMainWindow):
         We just need to save and update any dependent UI elements.
         """
         save_config(self.config)
+        self._update_translation_indicator()
 
     def get_selected_microphone_index(self):
         """Get the index of the system default microphone.
@@ -2712,23 +2742,21 @@ class MainWindow(QMainWindow):
         provider, model = self._get_current_model()
         preset = self.config.active_model_preset
 
-        # Build display text
-        if preset == "primary" and self.config.primary_name:
-            preset_name = self.config.primary_name
-        elif preset == "fallback" and self.config.fallback_name:
-            preset_name = self.config.fallback_name
-        else:
-            # Fallback - just show model name
-            preset_name = get_model_display_name(model, provider)
+        # Button shows just "Primary" or "Fallback"
+        display_text = preset.title()
 
-        # Truncate if too long
-        if len(preset_name) > 25:
-            preset_name = preset_name[:22] + "..."
+        # Get custom name for tooltip (if configured)
+        if preset == "primary" and self.config.primary_name:
+            custom_name = self.config.primary_name
+        elif preset == "fallback" and self.config.fallback_name:
+            custom_name = self.config.fallback_name
+        else:
+            custom_name = get_model_display_name(model, provider)
 
         # Set button text (no indicator - click shows menu)
-        self.model_selector_btn.setText(f"{preset_name}")
+        self.model_selector_btn.setText(display_text)
         self.model_selector_btn.setToolTip(
-            f"Preset: {preset.title()}\n"
+            f"{custom_name}\n"
             f"Provider: {provider.title()}\n"
             f"Model: {model}\n"
             f"Failover: {'Enabled' if self.config.failover_enabled else 'Disabled'}\n"
@@ -2737,6 +2765,21 @@ class MainWindow(QMainWindow):
 
         # Update menu checkmarks
         self._update_model_preset_menu_checks()
+
+    def _update_translation_indicator(self):
+        """Update the translation indicator visibility and text."""
+        if self.config.translation_mode_enabled:
+            target_lang = get_language_display_name(self.config.translation_target_language)
+            target_flag = get_language_flag(self.config.translation_target_language)
+            self.translation_indicator.setText(f"{target_flag} → {target_lang}")
+            self.translation_indicator.setToolTip(
+                f"Translation mode is active\n"
+                f"Output will be translated to {target_lang}\n"
+                f"Click the Translation radio button to disable"
+            )
+            self.translation_indicator.show()
+        else:
+            self.translation_indicator.hide()
 
     def _setup_model_preset_menu(self):
         """Set up the model preset dropdown menu."""
@@ -2747,9 +2790,8 @@ class MainWindow(QMainWindow):
         self.model_preset_action_group = QActionGroup(self)
         self.model_preset_action_group.setExclusive(True)
 
-        # Primary action (always present - uses primary_name for display)
-        primary_display = self.config.primary_name or "Primary"
-        primary_action = QAction(f"● {primary_display}", self)
+        # Primary action (simple label, tooltip shows model details)
+        primary_action = QAction("● Primary", self)
         primary_action.setCheckable(True)
         primary_action.setData("primary")
         primary_action.triggered.connect(lambda: self._on_model_preset_changed("primary"))
@@ -2757,9 +2799,8 @@ class MainWindow(QMainWindow):
         self.model_preset_menu.addAction(primary_action)
         self.model_preset_actions["primary"] = primary_action
 
-        # Fallback action (always present - uses fallback_name for display)
-        fallback_display = self.config.fallback_name or "Fallback"
-        fallback_action = QAction(f"○ {fallback_display}", self)
+        # Fallback action (simple label, tooltip shows model details)
+        fallback_action = QAction("○ Fallback", self)
         fallback_action.setCheckable(True)
         fallback_action.setData("fallback")
         fallback_action.triggered.connect(lambda: self._on_model_preset_changed("fallback"))

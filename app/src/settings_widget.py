@@ -5,14 +5,16 @@ from PyQt6.QtWidgets import (
     QLineEdit, QCheckBox, QComboBox, QGroupBox, QFormLayout,
     QPushButton, QSpinBox, QFrame, QMessageBox, QFileDialog,
     QTextEdit, QScrollArea, QDialog, QDialogButtonBox,
+    QGraphicsOpacityEffect,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont
 
 from .config import (
     Config, save_config, load_env_keys,
     GEMINI_MODELS, OPENROUTER_MODELS,
     MODEL_TIERS,
+    TRANSLATION_LANGUAGES, get_language_display_name, get_language_flag,
 )
 from .mic_test_widget import MicTestWidget
 from .ui_utils import get_provider_icon, get_model_icon
@@ -21,12 +23,63 @@ from PyQt6.QtGui import QIcon
 from pathlib import Path
 
 
+class SettingsToast(QLabel):
+    """A toast notification that fades out after displaying a message."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet("""
+            QLabel {
+                background-color: #28a745;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+        """)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hide()
+
+        # Opacity effect for fade animation
+        self._opacity_effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self._opacity_effect)
+        self._opacity_effect.setOpacity(1.0)
+
+        # Fade out animation
+        self._fade_animation = QPropertyAnimation(self._opacity_effect, b"opacity")
+        self._fade_animation.setDuration(500)
+        self._fade_animation.setStartValue(1.0)
+        self._fade_animation.setEndValue(0.0)
+        self._fade_animation.setEasingCurve(QEasingCurve.Type.OutQuad)
+        self._fade_animation.finished.connect(self.hide)
+
+        # Timer to start fade after delay
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.timeout.connect(self._start_fade)
+
+    def show_message(self, message: str = "Settings saved", duration_ms: int = 1500):
+        """Show a toast message that fades out after duration."""
+        self.setText(message)
+        self._opacity_effect.setOpacity(1.0)
+        self._fade_animation.stop()
+        self._hide_timer.stop()
+        self.show()
+        self._hide_timer.start(duration_ms)
+
+    def _start_fade(self):
+        """Start the fade out animation."""
+        self._fade_animation.start()
+
+
 class APIKeysWidget(QWidget):
     """API Keys configuration section."""
 
-    def __init__(self, config: Config, parent=None):
+    def __init__(self, config: Config, settings_parent=None, parent=None):
         super().__init__(parent)
         self.config = config
+        self.settings_parent = settings_parent
         self._init_ui()
 
     def _init_ui(self):
@@ -117,6 +170,8 @@ class APIKeysWidget(QWidget):
         """Save API key to config."""
         setattr(self.config, key_name, value)
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
 
 
 class AudioMicWidget(QWidget):
@@ -127,10 +182,11 @@ class AudioMicWidget(QWidget):
     This widget displays the active microphone and provides a test feature.
     """
 
-    def __init__(self, config: Config, recorder, parent=None):
+    def __init__(self, config: Config, recorder, settings_parent=None, parent=None):
         super().__init__(parent)
         self.config = config
         self.recorder = recorder
+        self.settings_parent = settings_parent
         self._init_ui()
 
     def _init_ui(self):
@@ -244,9 +300,10 @@ class AudioMicWidget(QWidget):
 class BehaviorWidget(QWidget):
     """Behavior settings section."""
 
-    def __init__(self, config: Config, parent=None):
+    def __init__(self, config: Config, settings_parent=None, parent=None):
         super().__init__(parent)
         self.config = config
+        self.settings_parent = settings_parent
         self._init_ui()
 
     def _init_ui(self):
@@ -369,12 +426,16 @@ class BehaviorWidget(QWidget):
         """Save boolean config value."""
         setattr(self.config, key, value)
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
 
     def _on_append_position_changed(self, index: int):
         """Save append position setting."""
         value = self.append_position.itemData(index)
         self.config.append_position = value
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
 
     def _on_audio_feedback_mode_changed(self, index: int):
         """Save audio feedback mode setting."""
@@ -389,6 +450,8 @@ class BehaviorWidget(QWidget):
 
         self.config.audio_feedback_mode = new_value
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
 
         # Play TTS announcement for mode change (after saving, when TTS is now active)
         if old_value != "tts" and new_value == "tts":
@@ -401,6 +464,8 @@ class BehaviorWidget(QWidget):
         new_value = self.voice_pack.itemData(index)
         self.config.tts_voice_pack = new_value
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
 
         # Update the announcer's voice pack
         from .tts_announcer import set_announcer_voice_pack
@@ -415,13 +480,16 @@ class BehaviorWidget(QWidget):
         """Save duration display mode setting."""
         self.config.duration_display_mode = self.duration_display_mode.itemData(index)
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
 
 
 class PersonalizationWidget(QWidget):
     """Personalization settings section."""
 
-    def __init__(self, config: Config, parent=None):
+    def __init__(self, config: Config, settings_parent=None, parent=None):
         super().__init__(parent)
+        self.settings_parent = settings_parent
         self.config = config
         self._init_ui()
 
@@ -516,6 +584,8 @@ class PersonalizationWidget(QWidget):
         """Save string config value."""
         setattr(self.config, key, value)
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
 
 
 class HotkeysWidget(QWidget):
@@ -551,9 +621,10 @@ class HotkeysWidget(QWidget):
         ("hotkey_pause", "Pause", "Pause / Resume current recording"),
     ]
 
-    def __init__(self, config: Config, parent=None):
+    def __init__(self, config: Config, settings_parent=None, parent=None):
         super().__init__(parent)
         self.config = config
+        self.settings_parent = settings_parent
         self._combos = {}  # Store combo references for updates
         self._init_ui()
 
@@ -673,6 +744,8 @@ class HotkeysWidget(QWidget):
         # Save the new value
         setattr(self.config, field_name, new_value)
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
 
         # Emit signal so main window can re-register hotkeys
         self.hotkeys_changed.emit()
@@ -699,15 +772,18 @@ class HotkeysWidget(QWidget):
                 combo.blockSignals(False)
 
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
         self.hotkeys_changed.emit()
 
 
 class DatabaseWidget(QWidget):
     """Database management section."""
 
-    def __init__(self, config: Config, parent=None):
+    def __init__(self, config: Config, settings_parent=None, parent=None):
         super().__init__(parent)
         self.config = config
+        self.settings_parent = settings_parent
         self._init_ui()
 
     def _init_ui(self):
@@ -837,9 +913,10 @@ class DatabaseWidget(QWidget):
 class ModelSelectionWidget(QWidget):
     """Model and provider selection section."""
 
-    def __init__(self, config: Config, parent=None):
+    def __init__(self, config: Config, settings_parent=None, parent=None):
         super().__init__(parent)
         self.config = config
+        self.settings_parent = settings_parent
         self._init_ui()
 
     def _init_ui(self):
@@ -1041,50 +1118,43 @@ class ModelSelectionWidget(QWidget):
         # Store references for preset UI elements
         self._preset_widgets = {}
 
-        # Style for labels inside presets (explicit font size to avoid scaling issues)
-        preset_label_style = "font-size: 13px; background: transparent; border: none;"
+        # Style for preset frames
+        preset_frame_style = """
+            QFrame {
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+            }
+        """
 
-        # Create Primary and Fallback sections
+        # Horizontal container for Primary and Fallback side by side
+        presets_row = QHBoxLayout()
+        presets_row.setSpacing(12)
+
+        # Create Primary and Fallback sections side by side
         for preset_key in ["primary", "fallback"]:
             preset_frame = QFrame()
             preset_frame.setFrameShape(QFrame.Shape.StyledPanel)
-            preset_frame.setStyleSheet("""
-                QFrame {
-                    background-color: #f8f9fa;
-                    border: 1px solid #dee2e6;
-                    border-radius: 4px;
-                }
-            """)
+            preset_frame.setStyleSheet(preset_frame_style)
             preset_inner_layout = QVBoxLayout(preset_frame)
-            preset_inner_layout.setSpacing(10)
-            preset_inner_layout.setContentsMargins(12, 10, 12, 10)
+            preset_inner_layout.setSpacing(8)
+            preset_inner_layout.setContentsMargins(10, 8, 10, 8)
 
             # Preset header
-            header_text = "Primary Model" if preset_key == "primary" else "Fallback Model"
+            header_text = "Primary" if preset_key == "primary" else "Fallback"
             preset_header = QLabel(header_text)
-            preset_header.setStyleSheet("font-size: 14px; font-weight: bold; background: transparent; border: none;")
+            preset_header.setStyleSheet("font-size: 13px; font-weight: bold; background: transparent; border: none;")
             preset_inner_layout.addWidget(preset_header)
 
             # Name field
-            name_layout = QHBoxLayout()
-            name_label = QLabel("Name:")
-            name_label.setStyleSheet(preset_label_style)
-            name_layout.addWidget(name_label)
             name_edit = QLineEdit()
-            name_edit.setPlaceholderText(f"e.g., Flash Latest, Budget, Pro...")
-            name_edit.setMaximumWidth(200)
+            name_edit.setPlaceholderText("Display name...")
             current_name = getattr(self.config, f"{preset_key}_name", "")
             name_edit.setText(current_name)
             name_edit.textChanged.connect(lambda text, k=preset_key: self._on_preset_name_changed(k, text))
-            name_layout.addWidget(name_edit)
-            name_layout.addStretch()
-            preset_inner_layout.addLayout(name_layout)
+            preset_inner_layout.addWidget(name_edit)
 
             # Provider dropdown
-            provider_layout = QHBoxLayout()
-            provider_label = QLabel("Provider:")
-            provider_label.setStyleSheet(preset_label_style)
-            provider_layout.addWidget(provider_label)
             provider_combo = QComboBox()
             provider_combo.setIconSize(QSize(16, 16))
             provider_combo.addItem(get_provider_icon("google"), "Google Gemini", "gemini")
@@ -1094,22 +1164,13 @@ class ModelSelectionWidget(QWidget):
             if idx >= 0:
                 provider_combo.setCurrentIndex(idx)
             provider_combo.currentIndexChanged.connect(lambda idx, k=preset_key: self._on_preset_provider_changed(k))
-            provider_layout.addWidget(provider_combo)
-            provider_layout.addStretch()
-            preset_inner_layout.addLayout(provider_layout)
+            preset_inner_layout.addWidget(provider_combo)
 
             # Model dropdown
-            model_layout = QHBoxLayout()
-            model_label = QLabel("Model:")
-            model_label.setStyleSheet(preset_label_style)
-            model_layout.addWidget(model_label)
             model_combo = QComboBox()
             model_combo.setIconSize(QSize(16, 16))
-            model_combo.setMinimumWidth(200)
             model_combo.currentIndexChanged.connect(lambda idx, k=preset_key: self._on_preset_model_changed(k))
-            model_layout.addWidget(model_combo)
-            model_layout.addStretch()
-            preset_inner_layout.addLayout(model_layout)
+            preset_inner_layout.addWidget(model_combo)
 
             # Store widget references
             self._preset_widgets[preset_key] = {
@@ -1118,10 +1179,13 @@ class ModelSelectionWidget(QWidget):
                 "model": model_combo,
             }
 
-            presets_layout.addWidget(preset_frame)
+            # Add to horizontal row (both get equal space)
+            presets_row.addWidget(preset_frame, 1)
 
             # Populate model dropdown based on current provider
             self._update_preset_model_combo(preset_key)
+
+        presets_layout.addLayout(presets_row)
 
         # Swap button
         swap_layout = QHBoxLayout()
@@ -1171,6 +1235,8 @@ class ModelSelectionWidget(QWidget):
         self._update_model_combo()
         self._update_tier_buttons()
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
 
     def _on_model_changed(self, index: int):
         """Handle model selection change."""
@@ -1185,6 +1251,8 @@ class ModelSelectionWidget(QWidget):
             self.config.openrouter_model = model_id
 
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
         self._update_tier_buttons()
 
     def _set_model_tier(self, tier: str):
@@ -1227,6 +1295,8 @@ class ModelSelectionWidget(QWidget):
         self.config.gemini_model = "gemini-flash-latest"
 
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
         self._update_tier_buttons()
 
     # ==========================================================================
@@ -1237,11 +1307,15 @@ class ModelSelectionWidget(QWidget):
         """Handle failover checkbox change."""
         self.config.failover_enabled = state == 2  # Qt.CheckState.Checked = 2
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
 
     def _on_preset_name_changed(self, preset_key: str, text: str):
         """Handle preset name change."""
         setattr(self.config, f"{preset_key}_name", text)
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
 
     def _on_preset_provider_changed(self, preset_key: str):
         """Handle preset provider change."""
@@ -1252,6 +1326,8 @@ class ModelSelectionWidget(QWidget):
         setattr(self.config, f"{preset_key}_provider", provider)
         self._update_preset_model_combo(preset_key)
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
 
     def _on_preset_model_changed(self, preset_key: str):
         """Handle preset model change."""
@@ -1262,6 +1338,8 @@ class ModelSelectionWidget(QWidget):
         if model:  # Only save if valid model selected
             setattr(self.config, f"{preset_key}_model", model)
             save_config(self.config)
+            if self.settings_parent:
+                self.settings_parent.notify_saved()
 
     def _update_preset_model_combo(self, preset_key: str):
         """Update the model dropdown for a preset based on its provider."""
@@ -1314,6 +1392,8 @@ class ModelSelectionWidget(QWidget):
 
         # Save config
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
 
         # Update UI widgets
         for preset_key in ["primary", "fallback"]:
@@ -1336,12 +1416,224 @@ class ModelSelectionWidget(QWidget):
                 self._update_preset_model_combo(preset_key)
 
 
+class TranslationWidget(QWidget):
+    """Translation mode configuration section."""
+
+    # Signal emitted when translation settings change
+    translation_changed = pyqtSignal()
+
+    def __init__(self, config: Config, settings_parent=None, parent=None):
+        super().__init__(parent)
+        self.config = config
+        self.settings_parent = settings_parent
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(16)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        # Title
+        title = QLabel("Translation Mode")
+        title.setFont(QFont("Sans", 14, QFont.Weight.Bold))
+        layout.addWidget(title)
+
+        desc = QLabel(
+            "When Translation Mode is enabled, transcriptions are automatically "
+            "translated to your target language after cleanup."
+        )
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color: #666; margin-bottom: 12px;")
+        layout.addWidget(desc)
+
+        # Enable translation mode checkbox
+        self.translation_enabled = QCheckBox("Enable Translation Mode")
+        self.translation_enabled.setChecked(self.config.translation_mode_enabled)
+        self.translation_enabled.setStyleSheet("font-weight: bold; font-size: 13px;")
+        self.translation_enabled.toggled.connect(self._on_enabled_changed)
+        layout.addWidget(self.translation_enabled)
+
+        # Language settings group
+        lang_group = QGroupBox("Language Settings")
+        lang_layout = QFormLayout(lang_group)
+        lang_layout.setSpacing(12)
+        lang_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+        # Source language dropdown (for future use, currently just shows auto-detect)
+        source_layout = QVBoxLayout()
+        self.source_language = QComboBox()
+        self.source_language.setMinimumWidth(250)
+        self.source_language.setIconSize(QSize(20, 20))
+
+        # Add languages with flags
+        for code, name, flag in TRANSLATION_LANGUAGES:
+            self.source_language.addItem(f"{flag}  {name}", code)
+
+        # Set current value
+        idx = self.source_language.findData(self.config.translation_source_language)
+        if idx >= 0:
+            self.source_language.setCurrentIndex(idx)
+        self.source_language.currentIndexChanged.connect(self._on_source_changed)
+
+        source_layout.addWidget(self.source_language)
+        source_help = QLabel("The language of your speech (Auto-detect recommended)")
+        source_help.setStyleSheet("color: #666; font-size: 10px;")
+        source_layout.addWidget(source_help)
+        lang_layout.addRow("Source Language:", source_layout)
+
+        # Target language dropdown
+        target_layout = QVBoxLayout()
+        self.target_language = QComboBox()
+        self.target_language.setMinimumWidth(250)
+        self.target_language.setIconSize(QSize(20, 20))
+
+        # Add languages with flags (skip auto-detect for target)
+        for code, name, flag in TRANSLATION_LANGUAGES:
+            if code != "auto":  # Don't include auto-detect as target
+                self.target_language.addItem(f"{flag}  {name}", code)
+
+        # Set current value
+        idx = self.target_language.findData(self.config.translation_target_language)
+        if idx >= 0:
+            self.target_language.setCurrentIndex(idx)
+        self.target_language.currentIndexChanged.connect(self._on_target_changed)
+
+        target_layout.addWidget(self.target_language)
+        target_help = QLabel("The language your transcription will be translated into")
+        target_help.setStyleSheet("color: #666; font-size: 10px;")
+        target_layout.addWidget(target_help)
+        lang_layout.addRow("Target Language:", target_layout)
+
+        layout.addWidget(lang_group)
+
+        # Info frame
+        info_frame = QFrame()
+        info_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        info_frame.setStyleSheet("""
+            QFrame {
+                background-color: #e7f3ff;
+                border: 1px solid #b6d4fe;
+                border-radius: 6px;
+            }
+        """)
+        info_layout = QHBoxLayout(info_frame)
+        info_layout.setContentsMargins(12, 10, 12, 10)
+        info_icon = QLabel("💡")
+        info_icon.setStyleSheet("background: transparent; border: none; font-size: 16px;")
+        info_layout.addWidget(info_icon)
+        info_text = QLabel(
+            "<b>How it works:</b> When Translation Mode is enabled, the transcription "
+            "will be cleaned up as usual, then the entire output will be translated "
+            "to your target language. The translation happens in a single API call."
+        )
+        info_text.setWordWrap(True)
+        info_text.setStyleSheet("background: transparent; border: none; color: #084298; font-size: 11px;")
+        info_layout.addWidget(info_text, 1)
+        layout.addWidget(info_frame)
+
+        # Current status indicator
+        self.status_frame = QFrame()
+        self.status_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        self._update_status_frame()
+        layout.addWidget(self.status_frame)
+
+        layout.addStretch()
+
+    def _update_status_frame(self):
+        """Update the status indicator frame."""
+        if self.config.translation_mode_enabled:
+            target_name = get_language_display_name(self.config.translation_target_language)
+            target_flag = get_language_flag(self.config.translation_target_language)
+            self.status_frame.setStyleSheet("""
+                QFrame {
+                    background-color: #d1e7dd;
+                    border: 1px solid #badbcc;
+                    border-radius: 6px;
+                }
+            """)
+
+            # Clear and rebuild layout
+            layout = self.status_frame.layout()
+            if layout is None:
+                layout = QHBoxLayout(self.status_frame)
+                layout.setContentsMargins(12, 10, 12, 10)
+            else:
+                # Clear existing widgets
+                while layout.count():
+                    child = layout.takeAt(0)
+                    if child.widget():
+                        child.widget().deleteLater()
+
+            status_icon = QLabel(target_flag)
+            status_icon.setStyleSheet("background: transparent; border: none; font-size: 24px;")
+            layout.addWidget(status_icon)
+
+            status_text = QLabel(f"<b>Translation Active:</b> Translating to {target_name}")
+            status_text.setStyleSheet("background: transparent; border: none; color: #0f5132; font-size: 12px;")
+            layout.addWidget(status_text, 1)
+        else:
+            self.status_frame.setStyleSheet("""
+                QFrame {
+                    background-color: #f8f9fa;
+                    border: 1px solid #dee2e6;
+                    border-radius: 6px;
+                }
+            """)
+
+            # Clear and rebuild layout
+            layout = self.status_frame.layout()
+            if layout is None:
+                layout = QHBoxLayout(self.status_frame)
+                layout.setContentsMargins(12, 10, 12, 10)
+            else:
+                # Clear existing widgets
+                while layout.count():
+                    child = layout.takeAt(0)
+                    if child.widget():
+                        child.widget().deleteLater()
+
+            status_icon = QLabel("🌐")
+            status_icon.setStyleSheet("background: transparent; border: none; font-size: 24px;")
+            layout.addWidget(status_icon)
+
+            status_text = QLabel("<b>Translation Disabled:</b> Transcriptions will not be translated")
+            status_text.setStyleSheet("background: transparent; border: none; color: #495057; font-size: 12px;")
+            layout.addWidget(status_text, 1)
+
+    def _on_enabled_changed(self, checked: bool):
+        """Handle translation mode toggle."""
+        self.config.translation_mode_enabled = checked
+        save_config(self.config)
+        self._update_status_frame()
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
+        self.translation_changed.emit()
+
+    def _on_source_changed(self, index: int):
+        """Handle source language change."""
+        self.config.translation_source_language = self.source_language.currentData()
+        save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
+        self.translation_changed.emit()
+
+    def _on_target_changed(self, index: int):
+        """Handle target language change."""
+        self.config.translation_target_language = self.target_language.currentData()
+        save_config(self.config)
+        self._update_status_frame()
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
+        self.translation_changed.emit()
+
+
 class MiscWidget(QWidget):
     """Miscellaneous settings section."""
 
-    def __init__(self, config: Config, parent=None):
+    def __init__(self, config: Config, settings_parent=None, parent=None):
         super().__init__(parent)
         self.config = config
+        self.settings_parent = settings_parent
         self._init_ui()
 
     def _init_ui(self):
@@ -1420,6 +1712,8 @@ class MiscWidget(QWidget):
         """Save boolean config value."""
         setattr(self.config, key, value)
         save_config(self.config)
+        if self.settings_parent:
+            self.settings_parent.notify_saved()
 
 
 class SettingsWidget(QWidget):
@@ -1427,6 +1721,9 @@ class SettingsWidget(QWidget):
 
     # Signal emitted when hotkeys are changed
     hotkeys_changed = pyqtSignal()
+
+    # Signal emitted when any setting is saved
+    settings_saved = pyqtSignal()
 
     def __init__(self, config: Config, recorder, parent=None):
         super().__init__(parent)
@@ -1443,22 +1740,30 @@ class SettingsWidget(QWidget):
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
 
-        # Add sections as tabs
-        self.tabs.addTab(ModelSelectionWidget(self.config), "Model")
-        self.tabs.addTab(APIKeysWidget(self.config), "API Keys")
-        self.tabs.addTab(AudioMicWidget(self.config, self.recorder), "Mic")
-        self.tabs.addTab(BehaviorWidget(self.config), "Behavior")
-        self.tabs.addTab(PersonalizationWidget(self.config), "Personalization")
+        # Add sections as tabs - pass self as settings_parent for toast notifications
+        self.tabs.addTab(ModelSelectionWidget(self.config, settings_parent=self), "Model")
+        self.tabs.addTab(APIKeysWidget(self.config, settings_parent=self), "API Keys")
+        self.tabs.addTab(AudioMicWidget(self.config, self.recorder, settings_parent=self), "Mic")
+        self.tabs.addTab(BehaviorWidget(self.config, settings_parent=self), "Behavior")
+        self.tabs.addTab(PersonalizationWidget(self.config, settings_parent=self), "Personalization")
+
+        # Translation tab
+        self.translation_widget = TranslationWidget(self.config, settings_parent=self)
+        self.tabs.addTab(self.translation_widget, "Translation")
 
         # Hotkeys tab - connect signal to propagate changes
-        self.hotkeys_widget = HotkeysWidget(self.config)
+        self.hotkeys_widget = HotkeysWidget(self.config, settings_parent=self)
         self.hotkeys_widget.hotkeys_changed.connect(self.hotkeys_changed.emit)
         self.tabs.addTab(self.hotkeys_widget, "Hotkeys")
 
-        self.tabs.addTab(MiscWidget(self.config), "Misc")
-        self.tabs.addTab(DatabaseWidget(self.config), "Database")
+        self.tabs.addTab(MiscWidget(self.config, settings_parent=self), "Misc")
+        self.tabs.addTab(DatabaseWidget(self.config, settings_parent=self), "Database")
 
         layout.addWidget(self.tabs)
+
+    def notify_saved(self):
+        """Notify that settings were saved (called by child widgets)."""
+        self.settings_saved.emit()
 
     def refresh(self):
         """Refresh all sub-widgets."""
@@ -1492,16 +1797,16 @@ class SettingsDialog(QDialog):
         # Embed the settings widget
         self.settings_widget = SettingsWidget(self.config, self.recorder, self)
         self.settings_widget.hotkeys_changed.connect(self.hotkeys_changed.emit)
+        self.settings_widget.settings_saved.connect(self._show_saved_toast)
         layout.addWidget(self.settings_widget)
 
-        # Bottom bar with auto-save note and close button
+        # Bottom bar with toast area and close button
         bottom_bar = QHBoxLayout()
         bottom_bar.setContentsMargins(16, 8, 16, 12)
 
-        # Auto-save indicator
-        auto_save_note = QLabel("Changes are saved automatically")
-        auto_save_note.setStyleSheet("color: #666; font-size: 11px; font-style: italic;")
-        bottom_bar.addWidget(auto_save_note)
+        # Toast notification (hidden by default)
+        self.toast = SettingsToast(self)
+        bottom_bar.addWidget(self.toast)
 
         bottom_bar.addStretch()
 
@@ -1512,6 +1817,10 @@ class SettingsDialog(QDialog):
         bottom_bar.addWidget(close_btn)
 
         layout.addLayout(bottom_bar)
+
+    def _show_saved_toast(self):
+        """Show the 'Settings saved' toast notification."""
+        self.toast.show_message("Settings saved")
 
     def refresh(self):
         """Refresh the settings widget."""

@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "mcp__personal__cloud-asr_gemini_transcribe",
-      "mcp__personal__cloud-asr_gemini_transcribe_raw"
+      "mcp__personal__cloud-asr_gemini_transcribe_raw",
+      "WebFetch(domain:docs.fish.audio)"
     ]
   }
 }

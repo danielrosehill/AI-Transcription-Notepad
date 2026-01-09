@@ -89,6 +89,61 @@ MODEL_TIERS = {
 # This reduces API overhead for quick notes (< 30 seconds)
 SHORT_AUDIO_THRESHOLD_SECONDS = 30.0
 
+# =============================================================================
+# TRANSLATION MODE
+# =============================================================================
+# Languages available for translation mode
+# Format: (language_code, display_name, flag_emoji)
+TRANSLATION_LANGUAGES = [
+    ("auto", "Auto-detect", "🌐"),
+    ("en", "English", "🇬🇧"),
+    ("es", "Spanish", "🇪🇸"),
+    ("fr", "French", "🇫🇷"),
+    ("de", "German", "🇩🇪"),
+    ("it", "Italian", "🇮🇹"),
+    ("pt", "Portuguese", "🇵🇹"),
+    ("nl", "Dutch", "🇳🇱"),
+    ("ru", "Russian", "🇷🇺"),
+    ("zh", "Chinese (Simplified)", "🇨🇳"),
+    ("zh-TW", "Chinese (Traditional)", "🇹🇼"),
+    ("ja", "Japanese", "🇯🇵"),
+    ("ko", "Korean", "🇰🇷"),
+    ("ar", "Arabic", "🇸🇦"),
+    ("he", "Hebrew", "🇮🇱"),
+    ("hi", "Hindi", "🇮🇳"),
+    ("th", "Thai", "🇹🇭"),
+    ("vi", "Vietnamese", "🇻🇳"),
+    ("tr", "Turkish", "🇹🇷"),
+    ("pl", "Polish", "🇵🇱"),
+    ("uk", "Ukrainian", "🇺🇦"),
+    ("cs", "Czech", "🇨🇿"),
+    ("sv", "Swedish", "🇸🇪"),
+    ("da", "Danish", "🇩🇰"),
+    ("no", "Norwegian", "🇳🇴"),
+    ("fi", "Finnish", "🇫🇮"),
+    ("el", "Greek", "🇬🇷"),
+    ("ro", "Romanian", "🇷🇴"),
+    ("hu", "Hungarian", "🇭🇺"),
+    ("id", "Indonesian", "🇮🇩"),
+    ("ms", "Malay", "🇲🇾"),
+]
+
+# Helper function to get language display name from code
+def get_language_display_name(language_code: str) -> str:
+    """Get the display name for a language code."""
+    for code, name, _ in TRANSLATION_LANGUAGES:
+        if code == language_code:
+            return name
+    return language_code
+
+# Helper function to get language flag from code
+def get_language_flag(language_code: str) -> str:
+    """Get the flag emoji for a language code."""
+    for code, _, flag in TRANSLATION_LANGUAGES:
+        if code == language_code:
+            return flag
+    return "🌐"
+
 SHORT_AUDIO_PROMPT = """Transcribe the audio. Apply only essential cleanup:
 - Add punctuation (periods, commas, question marks)
 - Capitalize sentences properly
@@ -347,6 +402,14 @@ class Config:
 
     # UI state
     prompt_stack_collapsed: bool = True  # Whether the prompt stack is collapsed (default: collapsed)
+
+    # ==========================================================================
+    # TRANSLATION MODE
+    # ==========================================================================
+    # When enabled, transcriptions are translated to the target language
+    translation_mode_enabled: bool = False
+    translation_source_language: str = "auto"  # "auto" for auto-detect, or language code
+    translation_target_language: str = "en"    # Target language code (default: English)
 
 
 def _apply_migrations(config: Config) -> Config:
@@ -1446,6 +1509,14 @@ def build_cleanup_prompt(config: Config, use_prompt_library: bool = False, audio
             sign_off = config.email_signature or "Best regards"
             lines.append(f"- End the email with the sign-off: \"{sign_off},\" followed by the sender's name: \"{config.user_name}\"")
 
+    # ===== TRANSLATION MODE =====
+    if config.translation_mode_enabled:
+        target_lang = get_language_display_name(config.translation_target_language)
+        lines.append("\n## Translation")
+        lines.append(f"- After cleaning up the transcription, translate the entire output into {target_lang}.")
+        lines.append(f"- The final output must be entirely in {target_lang}.")
+        lines.append("- Preserve the formatting, structure, and meaning of the original while producing natural-sounding text in the target language.")
+
     # Final instruction
     lines.append("\n## Output")
     lines.append("- Output ONLY the cleaned transcription in markdown format, no commentary or preamble")
@@ -1575,6 +1646,14 @@ def _build_prompt_from_library(config: Config) -> str:
             # Fallback to simple sign-off if no signature configured
             sign_off = config.email_signature or "Best regards"
             lines.append(f"- End the email with the sign-off: \"{sign_off},\" followed by the sender's name: \"{config.user_name}\"")
+
+    # ===== TRANSLATION MODE =====
+    if config.translation_mode_enabled:
+        target_lang = get_language_display_name(config.translation_target_language)
+        lines.append("\n## Translation")
+        lines.append(f"- After cleaning up the transcription, translate the entire output into {target_lang}.")
+        lines.append(f"- The final output must be entirely in {target_lang}.")
+        lines.append("- Preserve the formatting, structure, and meaning of the original while producing natural-sounding text in the target language.")
 
     # Final instruction
     lines.append("\n## Output")

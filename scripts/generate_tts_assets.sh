@@ -69,6 +69,7 @@ declare -A ANNOUNCEMENTS=(
     ["style_updated"]="Style updated"
     ["verbatim_mode"]="Verbatim mode selected"
     ["general_mode"]="General mode selected"
+    ["translation_mode"]="Translation mode selected"
 
     # Audio feedback mode changes
     ["tts_activated"]="TTS mode activated"

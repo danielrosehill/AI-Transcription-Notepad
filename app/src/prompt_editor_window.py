@@ -3,9 +3,9 @@ Unified Prompt Editor Window
 
 A single window for all prompt configuration using a tabbed interface:
 1. Prompts - browse and edit all prompts (builtin + custom)
-2. Foundation - view base system prompt
-3. Stacks - create element-based stacks
-4. Style - formality, verbosity, optional checkboxes
+2. View Foundation - view the base system prompt (read-only)
+3. Extras - formality, verbosity, optional enhancements
+4. Stacks - create element-based stacks
 """
 
 from PyQt6.QtWidgets import (
@@ -331,36 +331,36 @@ class PromptEditorWindow(QMainWindow):
         # Tabbed interface
         self.tabs = QTabWidget()
 
-        # Tab 1: Prompts List
+        # Tab 1: Prompts List (core editor)
         prompts_tab = QWidget()
         prompts_layout = QVBoxLayout(prompts_tab)
         prompts_layout.setContentsMargins(12, 12, 12, 12)
         self._create_prompts_content(prompts_layout)
         self.tabs.addTab(prompts_tab, "Prompts")
 
-        # Tab 2: Foundation Prompt
+        # Tab 2: Foundation Prompt (read-only view)
         foundation_tab = QWidget()
         foundation_layout = QVBoxLayout(foundation_tab)
         foundation_layout.setContentsMargins(12, 12, 12, 12)
         self._create_foundation_content(foundation_layout)
         foundation_layout.addStretch()
-        self.tabs.addTab(foundation_tab, "Foundation")
+        self.tabs.addTab(foundation_tab, "View Foundation")
 
-        # Tab 3: Stack Builder
+        # Tab 3: Extras (formality, verbosity, optional enhancements)
+        extras_tab = QWidget()
+        extras_layout = QVBoxLayout(extras_tab)
+        extras_layout.setContentsMargins(12, 12, 12, 12)
+        self._create_extras_content(extras_layout)
+        extras_layout.addStretch()
+        self.tabs.addTab(extras_tab, "Extras")
+
+        # Tab 4: Stack Builder
         stacks_tab = QWidget()
         stacks_layout = QVBoxLayout(stacks_tab)
         stacks_layout.setContentsMargins(12, 12, 12, 12)
         self._create_stack_content(stacks_layout)
         stacks_layout.addStretch()
         self.tabs.addTab(stacks_tab, "Stacks")
-
-        # Tab 4: Tone & Style
-        style_tab = QWidget()
-        style_layout = QVBoxLayout(style_tab)
-        style_layout.setContentsMargins(12, 12, 12, 12)
-        self._create_tone_content(style_layout)
-        style_layout.addStretch()
-        self.tabs.addTab(style_tab, "Style")
 
         main_layout.addWidget(self.tabs, stretch=1)
 
@@ -384,75 +384,53 @@ class PromptEditorWindow(QMainWindow):
         main_layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
 
     def _create_prompts_content(self, parent_layout):
-        """Create the Prompts content with three sections: Format, Tone, Style."""
+        """Create the Prompts content with sub-tabs: Format, Tone, Style."""
         desc = QLabel(
-            "Manage prompts organized by type. Format prompts define output structure, "
-            "Tone prompts set formality, and Style prompts are combinable writing modifiers."
+            "Manage prompts organized by type. Select a tab to view and edit prompts of that type."
         )
         desc.setWordWrap(True)
         desc.setStyleSheet("color: #6c757d; font-size: 11px; margin-bottom: 8px;")
         parent_layout.addWidget(desc)
 
-        # Create scroll area for sections
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-
-        scroll_content = QWidget()
-        scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(0, 0, 0, 0)
-        scroll_layout.setSpacing(12)
-
         # Track section widgets
         self.section_lists = {}  # prompt_type -> QListWidget
         self.section_buttons = {}  # prompt_type -> dict of buttons
 
-        # Create three sections
-        for prompt_type, section_title, section_desc in [
-            ("format", "Format Prompts", "Define output structure (email, todo list, meeting notes, etc.)"),
-            ("tone", "Tone Prompts", "Set formality and emotional register (casual, professional, friendly, etc.)"),
-            ("style", "Style Prompts", "Stackable writing modifiers (concise, persuasive, analytical, etc.)"),
-        ]:
-            section = self._create_prompt_section(prompt_type, section_title, section_desc)
-            scroll_layout.addWidget(section)
+        # Create sub-tabs for each prompt type
+        self.prompt_subtabs = QTabWidget()
+        self.prompt_subtabs.setDocumentMode(True)
 
-        scroll_layout.addStretch()
-        scroll.setWidget(scroll_content)
-        parent_layout.addWidget(scroll, stretch=1)
+        for prompt_type, tab_title, tab_desc in [
+            ("format", "Format", "Define output structure (email, todo list, meeting notes, etc.)"),
+            ("tone", "Tone", "Set formality and emotional register (casual, professional, friendly, etc.)"),
+            ("style", "Style", "Stackable writing modifiers (concise, persuasive, analytical, etc.)"),
+        ]:
+            tab_widget = self._create_prompt_tab(prompt_type, tab_title, tab_desc)
+            self.prompt_subtabs.addTab(tab_widget, tab_title)
+
+        parent_layout.addWidget(self.prompt_subtabs, stretch=1)
 
         # Populate all sections
         self._populate_all_sections()
 
-    def _create_prompt_section(self, prompt_type: str, title: str, description: str) -> QFrame:
-        """Create a collapsible section for a prompt type."""
-        section = QFrame()
-        section.setStyleSheet("""
-            QFrame {
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 6px;
-            }
-        """)
-
-        layout = QVBoxLayout(section)
+    def _create_prompt_tab(self, prompt_type: str, title: str, description: str) -> QWidget:
+        """Create a tab widget for a prompt type."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
         layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+        layout.setSpacing(12)
 
-        # Header row with title and add button
+        # Header with description and add button
         header = QHBoxLayout()
 
-        title_label = QLabel(f"<b>{title}</b>")
-        title_label.setStyleSheet("font-size: 13px; border: none; background: transparent;")
-        header.addWidget(title_label)
-
-        desc_label = QLabel(f"— {description}")
-        desc_label.setStyleSheet("color: #6c757d; font-size: 11px; border: none; background: transparent;")
+        desc_label = QLabel(description)
+        desc_label.setStyleSheet("color: #6c757d; font-size: 11px;")
         header.addWidget(desc_label)
 
         header.addStretch()
 
         # Add button
-        add_btn = QPushButton(f"+ Add {title.replace(' Prompts', '')}")
+        add_btn = QPushButton(f"+ New {title}")
         add_btn.setStyleSheet("""
             QPushButton {
                 background-color: #28a745;
@@ -460,7 +438,7 @@ class PromptEditorWindow(QMainWindow):
                 border: none;
                 border-radius: 4px;
                 font-weight: bold;
-                padding: 4px 12px;
+                padding: 6px 14px;
                 font-size: 11px;
             }
             QPushButton:hover {
@@ -474,12 +452,10 @@ class PromptEditorWindow(QMainWindow):
 
         # Splitter for list and details
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setStyleSheet("QSplitter { border: none; background: transparent; }")
 
         # Prompt list
         list_widget = QListWidget()
-        list_widget.setMinimumHeight(120)
-        list_widget.setMaximumHeight(180)
+        list_widget.setMinimumWidth(200)
         list_widget.setStyleSheet("""
             QListWidget {
                 background-color: white;
@@ -487,7 +463,7 @@ class PromptEditorWindow(QMainWindow):
                 border-radius: 4px;
             }
             QListWidget::item {
-                padding: 4px 8px;
+                padding: 6px 10px;
             }
             QListWidget::item:selected {
                 background-color: #007bff;
@@ -501,49 +477,54 @@ class PromptEditorWindow(QMainWindow):
         splitter.addWidget(list_widget)
 
         # Details panel
-        details = QWidget()
-        details.setStyleSheet("background: transparent; border: none;")
+        details = QFrame()
+        details.setStyleSheet("""
+            QFrame {
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+            }
+        """)
         details_layout = QVBoxLayout(details)
-        details_layout.setContentsMargins(8, 0, 0, 0)
-        details_layout.setSpacing(4)
+        details_layout.setContentsMargins(12, 12, 12, 12)
+        details_layout.setSpacing(8)
 
-        # Details labels (will be updated on selection)
+        # Details labels
         details_name = QLabel("Select a prompt")
-        details_name.setStyleSheet("font-weight: bold; font-size: 12px; border: none;")
-        details_name.setProperty("detail_type", "name")
+        details_name.setStyleSheet("font-weight: bold; font-size: 13px; border: none; background: transparent;")
         details_layout.addWidget(details_name)
 
         details_desc = QLabel("")
         details_desc.setWordWrap(True)
-        details_desc.setStyleSheet("color: #666; font-size: 11px; border: none;")
-        details_desc.setProperty("detail_type", "desc")
+        details_desc.setStyleSheet("color: #666; font-size: 11px; border: none; background: transparent;")
         details_layout.addWidget(details_desc)
 
         details_instruction = QLabel("")
         details_instruction.setWordWrap(True)
-        details_instruction.setStyleSheet("font-size: 10px; color: #444; font-style: italic; border: none;")
-        details_instruction.setProperty("detail_type", "instruction")
+        details_instruction.setStyleSheet("font-size: 10px; color: #444; font-style: italic; border: none; background: transparent;")
         details_layout.addWidget(details_instruction)
+
+        details_layout.addStretch()
 
         # Action buttons
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(6)
+        btn_row.setSpacing(8)
 
         edit_btn = QPushButton("Edit")
         edit_btn.setEnabled(False)
-        edit_btn.setMaximumWidth(60)
+        edit_btn.setMinimumWidth(70)
         edit_btn.clicked.connect(lambda: self._edit_section_prompt(prompt_type))
         btn_row.addWidget(edit_btn)
 
         dup_btn = QPushButton("Duplicate")
         dup_btn.setEnabled(False)
-        dup_btn.setMaximumWidth(70)
+        dup_btn.setMinimumWidth(80)
         dup_btn.clicked.connect(lambda: self._duplicate_section_prompt(prompt_type))
         btn_row.addWidget(dup_btn)
 
         del_btn = QPushButton("Delete")
         del_btn.setEnabled(False)
-        del_btn.setMaximumWidth(60)
+        del_btn.setMinimumWidth(70)
         del_btn.setStyleSheet("color: #dc3545;")
         del_btn.clicked.connect(lambda: self._delete_section_prompt(prompt_type))
         btn_row.addWidget(del_btn)
@@ -551,13 +532,12 @@ class PromptEditorWindow(QMainWindow):
         btn_row.addStretch()
         details_layout.addLayout(btn_row)
 
-        details_layout.addStretch()
         splitter.addWidget(details)
+        splitter.setSizes([250, 400])
 
-        splitter.setSizes([200, 300])
-        layout.addWidget(splitter)
+        layout.addWidget(splitter, stretch=1)
 
-        # Store button references
+        # Store references
         self.section_buttons[prompt_type] = {
             "edit": edit_btn,
             "duplicate": dup_btn,
@@ -567,7 +547,7 @@ class PromptEditorWindow(QMainWindow):
             "details_instruction": details_instruction,
         }
 
-        return section
+        return tab
 
     def _populate_all_sections(self):
         """Populate all three prompt sections."""
@@ -1152,10 +1132,10 @@ class PromptEditorWindow(QMainWindow):
 
         dialog.exec()
 
-    def _create_tone_content(self, parent_layout):
-        """Create the Tone & Style content for the tab."""
+    def _create_extras_content(self, parent_layout):
+        """Create the Extras content (formality, verbosity, optional enhancements)."""
         desc = QLabel(
-            "Configure writing tone, verbosity, and optional enhancements."
+            "Configure writing tone, verbosity reduction, and optional enhancements."
         )
         desc.setWordWrap(True)
         desc.setStyleSheet("color: #6c757d; font-size: 11px; margin-bottom: 8px;")

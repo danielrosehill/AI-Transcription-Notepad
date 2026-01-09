@@ -20,6 +20,7 @@ try:
         Config, TONE_TEMPLATES, TONE_DISPLAY_NAMES,
         STYLE_TEMPLATES, STYLE_DISPLAY_NAMES,
         FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES,
+        TRANSLATION_LANGUAGES, get_language_display_name, get_language_flag,
     )
     from .tts_announcer import get_announcer
     from .prompt_library import PromptLibrary
@@ -29,6 +30,7 @@ except ImportError:
         Config, TONE_TEMPLATES, TONE_DISPLAY_NAMES,
         STYLE_TEMPLATES, STYLE_DISPLAY_NAMES,
         FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES,
+        TRANSLATION_LANGUAGES, get_language_display_name, get_language_flag,
     )
     from tts_announcer import get_announcer
     from prompt_library import PromptLibrary
@@ -173,6 +175,7 @@ class StackBuilderWidget(QWidget):
     BASE_OPTIONS = [
         ("general", "General", "Standard cleanup and formatting"),
         ("verbatim", "Verbatim", "Minimal transformation, close to original speech"),
+        ("translation", "Translation", "Transcribe and translate to target language"),
     ]
 
     # Format options (5 quick-access options)
@@ -204,6 +207,7 @@ class StackBuilderWidget(QWidget):
         self.config = config
         self.config_dir = config_dir
         self._was_verbatim = config.format_preset == "verbatim"
+        self._was_translation = config.translation_mode_enabled
 
         # Load prompt library for custom prompts
         self.library = PromptLibrary(config_dir) if config_dir else None
@@ -661,6 +665,8 @@ class StackBuilderWidget(QWidget):
             announcer.announce_verbatim_mode()
         elif announcement_type == 'general':
             announcer.announce_general_mode()
+        elif announcement_type == 'translation':
+            announcer.announce_translation_mode()
         elif announcement_type == 'format_inference':
             announcer.announce_format_inference()
         elif announcement_type == 'default_prompt_configured':
@@ -680,13 +686,22 @@ class StackBuilderWidget(QWidget):
 
     def _on_base_changed(self):
         is_now_verbatim = self.base_buttons["verbatim"].isChecked()
+        is_now_translation = self.base_buttons["translation"].isChecked()
 
+        # Handle TTS announcements for mode changes
         if is_now_verbatim and not self._was_verbatim:
             self._announce_tts('verbatim')
+        elif is_now_translation and not self._was_translation:
+            self._announce_tts('translation')
         elif not is_now_verbatim and self._was_verbatim:
-            self._announce_tts('general')
+            if not is_now_translation:
+                self._announce_tts('general')
+        elif not is_now_translation and self._was_translation:
+            if not is_now_verbatim:
+                self._announce_tts('general')
 
         self._was_verbatim = is_now_verbatim
+        self._was_translation = is_now_translation
         self._on_setting_changed()
 
     def _on_format_checkbox_changed(self, key: str, state: int):
@@ -752,9 +767,13 @@ class StackBuilderWidget(QWidget):
             getattr(self.config, 'prompt_infer_format', True)
         )
 
-        # Base preset (General vs Verbatim)
+        # Base preset (General vs Verbatim vs Translation)
         base_preset = self.config.format_preset
-        if base_preset == "verbatim":
+        translation_enabled = getattr(self.config, 'translation_mode_enabled', False)
+
+        if translation_enabled:
+            self.base_buttons["translation"].setChecked(True)
+        elif base_preset == "verbatim":
             self.base_buttons["verbatim"].setChecked(True)
         else:
             self.base_buttons["general"].setChecked(True)
@@ -787,10 +806,15 @@ class StackBuilderWidget(QWidget):
 
     def _save_to_config(self):
         """Save current settings to config."""
-        # Save base preset
-        if self.base_buttons["verbatim"].isChecked():
+        # Save base preset and translation mode
+        if self.base_buttons["translation"].isChecked():
+            self.config.translation_mode_enabled = True
+            self.config.format_preset = "general"  # Use general cleanup when translating
+        elif self.base_buttons["verbatim"].isChecked():
+            self.config.translation_mode_enabled = False
             self.config.format_preset = "verbatim"
         else:
+            self.config.translation_mode_enabled = False
             self.config.format_preset = "general"
 
         # Save formats from checkboxes (multi-select)
@@ -866,6 +890,7 @@ class StackBuilderWidget(QWidget):
         self.config.prompt_infer_format = False
 
         self.base_buttons["general"].setChecked(True)
+        self.config.translation_mode_enabled = False
 
         # Reset formats
         for cb in self.format_checkboxes.values():

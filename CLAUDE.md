@@ -248,6 +248,38 @@ When generating content with the "Email" format preset, the app automatically in
 
 This feature eliminates the need to manually add signatures to dictated emails, and ensures consistent professional formatting across all email transcriptions.
 
+### Translation Mode
+
+Translation Mode allows you to automatically translate transcriptions to a target language in a single API call. Configure via **Settings → Translation**.
+
+**Intended use case:** Users who consistently translate dictations into one target language (e.g., dictating in English but needing output in French). Set your target language once, then toggle translation mode on/off as needed.
+
+**Configuration:**
+- **Enable Translation Mode**: Checkbox to activate/deactivate translation
+- **Source Language**: "Auto-detect" (default) or specify the language you're speaking
+- **Target Language**: The language to translate output into (30+ languages supported)
+
+**Supported languages:**
+English, Spanish, French, German, Italian, Portuguese, Dutch, Russian, Chinese (Simplified/Traditional), Japanese, Korean, Arabic, Hebrew, Hindi, Thai, Vietnamese, Turkish, Polish, Ukrainian, Czech, Swedish, Danish, Norwegian, Finnish, Greek, Romanian, Hungarian, Indonesian, Malay
+
+**How it works:**
+1. Configure your target language in Settings → Translation (persists across sessions)
+2. Enable translation mode when you want translations
+3. Dictate in your source language (typically English)
+4. The AI transcribes, cleans up, AND translates—all in one API call
+5. Output is entirely in the target language
+
+**UI indicators:**
+- Status bar shows translation indicator when active (e.g., "🇫🇷 → French")
+- Tooltip explains the mode is active and how to disable
+- Settings tab shows color-coded status (green=enabled, gray=disabled)
+
+**Notes:**
+- The UI is currently only available in English
+- Translation instruction is appended to the cleanup prompt
+- The AI preserves formatting, structure, and meaning while producing natural-sounding text in the target language
+- Works with all format presets (email, todo, meeting notes, etc.)
+
 ### Microphone Selection
 
 The app uses the **system default microphone** configured at the OS level (via PipeWire/PulseAudio). There is no in-app microphone selection—this simplifies the app and ensures robust, consistent behavior.
@@ -324,6 +356,7 @@ AGC_MAX_GAIN_DB = 20.0        # Maximum boost to apply
 - [x] **Audio feedback modes**: Beeps, Voice (TTS), or Silent mode for recording/transcription events
 - [x] **Semantic search**: Find similar transcriptions using AI embeddings (Gemini gemini-embedding-001, free)
 - [x] **History window tabs**: Separate View History and Semantic Search tabs with date filtering
+- [x] **Translation mode**: Automatic translation of transcriptions to a target language (30+ languages)
 
 ### Planned
 
@@ -565,6 +598,7 @@ The app provides audio notifications for recording events. Configure via **Setti
 | Style changed | "Style updated" |
 | Verbatim mode selected | "Verbatim mode selected" |
 | General mode selected | "General mode selected" |
+| Translation mode selected | "Translation mode" |
 | TTS mode activated | "TTS mode activated" |
 | TTS mode deactivated | "TTS mode deactivated" |
 | Reset button pressed | "Default prompt configured" |
@@ -759,6 +793,16 @@ The three output mode buttons (**App**, **Clipboard**, **Inject**) are independe
 | All three | Text shown in app, copied to clipboard, AND typed at cursor |
 
 **Status messages** only mention "invisible" actions (clipboard/inject). If text is shown in the app, that's visually obvious and doesn't need a status message.
+
+### How does translation mode work?
+
+Translation mode adds a translation instruction to the cleanup prompt. When enabled:
+1. Your target language setting (configured in Settings → Translation) persists between sessions
+2. Toggle translation mode on when you want translated output
+3. The AI handles transcription, cleanup, AND translation in a single API call
+4. Output is entirely in the target language
+
+This is designed for users who consistently translate into one language—set the target once, then toggle the mode as needed. If you need to translate into multiple languages, update the target in settings before translating.
 
 ## Related Resources
 
