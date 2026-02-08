@@ -15,8 +15,7 @@ import time
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
 from .transcription import get_client, TranscriptionResult
-from .audio_processor import compress_audio_for_api
-from .vad_processor import remove_silence, is_vad_available
+from .audio_processor import prepare_audio_for_api
 
 
 class QueueItemState(Enum):
@@ -71,28 +70,22 @@ class QueueWorker(QThread):
     def run(self):
         try:
             item = self.item
-            audio_data = item.audio_data
             settings = item.settings
 
-            # Apply VAD if enabled
-            if settings.vad_enabled and is_vad_available():
-                self.status.emit(item.id, "Removing silence...")
-                try:
-                    audio_data, orig_dur, vad_dur = remove_silence(audio_data)
-                    self.original_duration = orig_dur
-                    self.vad_duration = vad_dur
-                    self.vad_complete.emit(item.id, orig_dur, vad_dur)
-                    if vad_dur < orig_dur:
-                        reduction = (1 - vad_dur / orig_dur) * 100
-                        print(
-                            f"[Queue {item.id[:8]}] VAD: {orig_dur:.1f}s → {vad_dur:.1f}s ({reduction:.0f}% reduction)"
-                        )
-                except Exception as e:
-                    print(f"[Queue {item.id[:8]}] VAD failed, using original: {e}")
+            # Fused pipeline: VAD + AGC + compression in a single pass
+            self.status.emit(item.id, "Processing audio...")
+            compressed_audio, orig_dur, vad_dur = prepare_audio_for_api(
+                item.audio_data,
+                vad_enabled=settings.vad_enabled,
+            )
 
-            # Compress audio
-            self.status.emit(item.id, "Compressing...")
-            compressed_audio = compress_audio_for_api(audio_data)
+            if settings.vad_enabled and vad_dur is not None:
+                self.original_duration = orig_dur
+                self.vad_duration = vad_dur
+                self.vad_complete.emit(item.id, orig_dur, vad_dur)
+                if vad_dur < orig_dur:
+                    reduction = (1 - vad_dur / orig_dur) * 100
+                    print(f"[Queue {item.id[:8]}] VAD: {orig_dur:.1f}s → {vad_dur:.1f}s ({reduction:.0f}% reduction)")
 
             # Transcribe
             self.status.emit(item.id, "Transcribing...")

@@ -24,8 +24,7 @@ from .config import OPENROUTER_MODELS, Config
 
 from pydub import AudioSegment
 
-from .audio_processor import compress_audio_for_api, archive_audio, get_audio_info
-from .vad_processor import remove_silence, is_vad_available
+from .audio_processor import prepare_audio_for_api, archive_audio, get_audio_info
 from .transcription import get_client, TranscriptionResult
 from .markdown_widget import MarkdownTextWidget
 from .audio_feedback import get_feedback
@@ -86,31 +85,27 @@ class FileTranscriptionWorker(QThread):
             audio = AudioSegment.from_file(self.file_path)
             self.original_duration = len(audio) / 1000.0  # ms to seconds
 
-            # Convert to WAV bytes for pipeline
+            # Convert to WAV bytes for fused pipeline
             wav_buffer = io.BytesIO()
             audio.export(wav_buffer, format="wav")
             audio_data = wav_buffer.getvalue()
 
             self.progress.emit(30)
 
-            # Step 2: Apply VAD if enabled
-            if self.vad_enabled and is_vad_available():
-                self.status.emit("Removing silence...")
-                try:
-                    audio_data, orig_dur, vad_dur = remove_silence(audio_data)
-                    self.vad_duration = vad_dur
-                    self.vad_complete.emit(orig_dur, vad_dur)
-                    if vad_dur < orig_dur:
-                        reduction = (1 - vad_dur / orig_dur) * 100
-                        print(f"VAD: Reduced audio from {orig_dur:.1f}s to {vad_dur:.1f}s ({reduction:.0f}% reduction)")
-                except Exception as e:
-                    print(f"VAD failed, using original audio: {e}")
+            # Step 2+3: Fused VAD + AGC + compression in single pass
+            self.status.emit("Processing audio...")
+            compressed_audio, orig_dur, vad_dur = prepare_audio_for_api(
+                audio_data,
+                vad_enabled=self.vad_enabled,
+            )
 
-            self.progress.emit(50)
+            if self.vad_enabled and vad_dur is not None:
+                self.vad_duration = vad_dur
+                self.vad_complete.emit(orig_dur, vad_dur)
+                if vad_dur < orig_dur:
+                    reduction = (1 - vad_dur / orig_dur) * 100
+                    print(f"VAD: {orig_dur:.1f}s → {vad_dur:.1f}s ({reduction:.0f}% reduction)")
 
-            # Step 3: Compress audio
-            self.status.emit("Compressing audio...")
-            compressed_audio = compress_audio_for_api(audio_data)
             self.progress.emit(70)
 
             # Step 4: Transcribe

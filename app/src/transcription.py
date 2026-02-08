@@ -54,20 +54,27 @@ class OpenRouterClient(TranscriptionClient):
 
     OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
+    # Cached HTTP client shared across instances (same API key = same connection pool)
+    _shared_client = None
+    _shared_client_key: str = ""
+
     def __init__(self, api_key: str, model: str = "google/gemini-3-flash-preview"):
         self.api_key = api_key
         self.model = model
-        self._client = None
 
     def _get_client(self):
-        if self._client is None:
-            if not OPENAI_SDK_AVAILABLE:
-                raise ImportError("openai package not installed")
-            self._client = OpenAI(
-                api_key=self.api_key,
-                base_url=self.OPENROUTER_BASE_URL,
-            )
-        return self._client
+        # Reuse shared HTTP client if API key matches (avoids HTTPS handshake per call)
+        if (OpenRouterClient._shared_client is not None
+                and OpenRouterClient._shared_client_key == self.api_key):
+            return OpenRouterClient._shared_client
+        if not OPENAI_SDK_AVAILABLE:
+            raise ImportError("openai package not installed")
+        OpenRouterClient._shared_client = OpenAI(
+            api_key=self.api_key,
+            base_url=self.OPENROUTER_BASE_URL,
+        )
+        OpenRouterClient._shared_client_key = self.api_key
+        return OpenRouterClient._shared_client
 
     def transcribe(self, audio_data: bytes, prompt: str) -> TranscriptionResult:
         """Transcribe audio using OpenRouter's multimodal models."""

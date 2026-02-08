@@ -75,6 +75,7 @@ from .audio_recorder import AudioRecorder
 from .transcription import get_client, TranscriptionResult
 from .audio_processor import (
     compress_audio_for_api,
+    prepare_audio_for_api,
     archive_audio,
     get_audio_info,
     combine_wav_segments,
@@ -188,27 +189,21 @@ class TranscriptionWorker(QThread):
 
     def run(self):
         try:
-            audio_data = self.audio_data
+            # Fused pipeline: VAD + AGC + compression in a single pass
+            # Avoids redundant WAV parse/export cycles (~100-200ms savings)
+            self.status.emit("Processing audio...")
+            compressed_audio, orig_dur, vad_dur = prepare_audio_for_api(
+                self.audio_data,
+                vad_enabled=self.vad_enabled,
+            )
 
-            # Apply VAD if enabled (now in background thread!)
-            if self.vad_enabled and is_vad_available():
-                self.status.emit("Removing silence...")
-                try:
-                    audio_data, orig_dur, vad_dur = remove_silence(audio_data)
-                    self.original_duration = orig_dur
-                    self.vad_duration = vad_dur
-                    self.vad_complete.emit(orig_dur, vad_dur)
-                    if vad_dur < orig_dur:
-                        reduction = (1 - vad_dur / orig_dur) * 100
-                        print(
-                            f"VAD: Reduced audio from {orig_dur:.1f}s to {vad_dur:.1f}s ({reduction:.0f}% reduction)"
-                        )
-                except Exception as e:
-                    print(f"VAD failed, using original audio: {e}")
-
-            # Compress audio to 16kHz mono before sending
-            self.status.emit("Compressing audio...")
-            compressed_audio = compress_audio_for_api(audio_data)
+            if self.vad_enabled and vad_dur is not None:
+                self.original_duration = orig_dur
+                self.vad_duration = vad_dur
+                self.vad_complete.emit(orig_dur, vad_dur)
+                if vad_dur < orig_dur:
+                    reduction = (1 - vad_dur / orig_dur) * 100
+                    print(f"VAD: {orig_dur:.1f}s → {vad_dur:.1f}s ({reduction:.0f}% reduction)")
 
             self.status.emit("Transcribing...")
             start_time = time.time()
@@ -2061,6 +2056,10 @@ class MainWindow(QMainWindow):
             self._start_recording_visual_effects()
             # Update tray to recording state
             self._set_tray_state("recording")
+        else:
+            # Stop recording and cache audio (same as stop button)
+            # This enables the append button so user can add more clips
+            self.handle_stop_button()
 
     def retake_recording(self):
         """Discard current recording and immediately start a fresh one.

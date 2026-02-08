@@ -1585,11 +1585,10 @@ def build_cleanup_prompt(config: Config, use_prompt_library: bool = False, audio
         lines.append(f"\n{config.writing_sample.strip()}\n")
 
     # ===== PERSONALIZATION =====
-    # Add personalization for email format (always) or when explicitly enabled
+    # Add personalization ONLY for email format - signatures should not appear in other formats
     is_email_format = config.format_preset == "email"
-    should_personalize = is_email_format or config.personalization_enabled
 
-    if should_personalize:
+    if is_email_format:
         # Use business email/signature by default, fall back to personal, then legacy fields
         sender_email = config.business_email or config.personal_email or config.user_email
         sender_signature = config.business_signature or config.personal_signature
@@ -1609,23 +1608,15 @@ def build_cleanup_prompt(config: Config, use_prompt_library: bool = False, audio
                 profile_parts.append(f"Phone: {config.user_phone}")
 
             profile_info = ", ".join(profile_parts)
-            if is_email_format:
-                lines.append(f"- Draft the email from the following person: {profile_info}")
-            else:
-                lines.append(f"- The user's profile information: {profile_info}")
-                lines.append("- Use this information where appropriate (e.g., signatures, sign-offs, author attribution).")
+            lines.append(f"- Draft the email from the following person: {profile_info}")
 
-        if is_email_format:
-            # Email-specific signature handling
-            if sender_signature:
-                lines.append(f"- End the email with the following signature:\n\n{sender_signature}")
-            elif display_name:
-                # Fallback to simple sign-off if no signature configured
-                sign_off = config.email_signature or "Best regards"
-                lines.append(f"- End the email with the sign-off: \"{sign_off},\" followed by the sender's name: \"{display_name}\"")
-        elif sender_signature:
-            # For non-email formats, make signature available but don't force it
-            lines.append(f"- If a signature is appropriate for this content type, use:\n\n{sender_signature}")
+        # Email-specific signature handling
+        if sender_signature:
+            lines.append(f"- End the email with the following signature:\n\n{sender_signature}")
+        elif display_name:
+            # Fallback to simple sign-off if no signature configured
+            sign_off = config.email_signature or "Best regards"
+            lines.append(f"- End the email with the sign-off: \"{sign_off},\" followed by the sender's name: \"{display_name}\"")
 
     # ===== DATE INJECTION =====
     if config.add_date_enabled:
@@ -1749,11 +1740,10 @@ def _build_prompt_from_library(config: Config) -> str:
         lines.append(f"\n{config.writing_sample.strip()}\n")
 
     # ===== PERSONALIZATION =====
-    # Add personalization for email format (always) or when explicitly enabled
+    # Add personalization ONLY for email format - signatures should not appear in other formats
     is_email_format = config.format_preset == "email"
-    should_personalize = is_email_format or config.personalization_enabled
 
-    if should_personalize:
+    if is_email_format:
         # Use business email/signature by default, fall back to personal, then legacy fields
         sender_email = config.business_email or config.personal_email or config.user_email
         sender_signature = config.business_signature or config.personal_signature
@@ -1773,23 +1763,15 @@ def _build_prompt_from_library(config: Config) -> str:
                 profile_parts.append(f"Phone: {config.user_phone}")
 
             profile_info = ", ".join(profile_parts)
-            if is_email_format:
-                lines.append(f"- Draft the email from the following person: {profile_info}")
-            else:
-                lines.append(f"- The user's profile information: {profile_info}")
-                lines.append("- Use this information where appropriate (e.g., signatures, sign-offs, author attribution).")
+            lines.append(f"- Draft the email from the following person: {profile_info}")
 
-        if is_email_format:
-            # Email-specific signature handling
-            if sender_signature:
-                lines.append(f"- End the email with the following signature:\n\n{sender_signature}")
-            elif display_name:
-                # Fallback to simple sign-off if no signature configured
-                sign_off = config.email_signature or "Best regards"
-                lines.append(f"- End the email with the sign-off: \"{sign_off},\" followed by the sender's name: \"{display_name}\"")
-        elif sender_signature:
-            # For non-email formats, make signature available but don't force it
-            lines.append(f"- If a signature is appropriate for this content type, use:\n\n{sender_signature}")
+        # Email-specific signature handling
+        if sender_signature:
+            lines.append(f"- End the email with the following signature:\n\n{sender_signature}")
+        elif display_name:
+            # Fallback to simple sign-off if no signature configured
+            sign_off = config.email_signature or "Best regards"
+            lines.append(f"- End the email with the sign-off: \"{sign_off},\" followed by the sender's name: \"{display_name}\"")
 
     # ===== DATE INJECTION =====
     if config.add_date_enabled:
