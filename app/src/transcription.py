@@ -2,6 +2,7 @@
 
 import base64
 import logging
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
@@ -14,6 +15,59 @@ except ImportError:
     OPENAI_SDK_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+# Patterns that match AI preamble lines (case-insensitive).
+# These are checked against the first line of the response only.
+_PREAMBLE_PATTERNS = [
+    re.compile(r"^here(?:'s| is| are)\b", re.IGNORECASE),
+    re.compile(r"^sure[,!.]?\s", re.IGNORECASE),
+    re.compile(r"^certainly[,!.]?\s", re.IGNORECASE),
+    re.compile(r"^of course[,!.]?\s", re.IGNORECASE),
+    re.compile(r"^i'?d be (?:happy|glad|delighted) to\b", re.IGNORECASE),
+    re.compile(r"^below is\b", re.IGNORECASE),
+    re.compile(r"^the (?:transcri(?:bed|ption)|cleaned|polished|edited)\b", re.IGNORECASE),
+    re.compile(r"^i'?ve (?:transcribed|cleaned|polished)\b", re.IGNORECASE),
+    re.compile(r"^(?:okay|ok)[,!.]?\s+here\b", re.IGNORECASE),
+    re.compile(r"^let me\b", re.IGNORECASE),
+    re.compile(r"^absolutely[,!.]?\s", re.IGNORECASE),
+]
+
+
+def strip_ai_preamble(text: str) -> str:
+    """Remove AI preamble/commentary from the start of a response.
+
+    Gemini models sometimes prepend lines like "Here is the transcription:"
+    despite system prompt instructions not to. This strips those lines as
+    a defense-in-depth measure.
+    """
+    if not text:
+        return text
+
+    stripped = text.lstrip()
+    if not stripped:
+        return text
+
+    # Check if the first line matches any preamble pattern
+    first_newline = stripped.find("\n")
+    first_line = stripped[:first_newline] if first_newline != -1 else stripped
+
+    # Don't strip if the entire response IS the first line (very short response)
+    # and doesn't look like a clear preamble ending with colon
+    if first_newline == -1 and not first_line.rstrip().endswith(":"):
+        return text
+
+    for pattern in _PREAMBLE_PATTERNS:
+        if pattern.search(first_line):
+            # Found preamble — remove the first line and any following blank lines
+            remainder = stripped[first_newline + 1:] if first_newline != -1 else ""
+            result = remainder.lstrip("\n")
+            if result:
+                logger.debug("Stripped AI preamble: %r", first_line)
+                return result
+            # If stripping would leave nothing, return original
+            return text
+
+    return text
 
 
 @dataclass
@@ -93,7 +147,7 @@ class OpenRouterClient(TranscriptionClient):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "Transcribe and clean up this audio recording."},
+                        {"type": "text", "text": "[audio]"},
                         {
                             "type": "input_audio",
                             "input_audio": {
@@ -130,7 +184,7 @@ class OpenRouterClient(TranscriptionClient):
         # Actual spend is polled periodically via OpenRouter's /key endpoint.
 
         return TranscriptionResult(
-            text=response.choices[0].message.content,
+            text=strip_ai_preamble(response.choices[0].message.content),
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             actual_cost=actual_cost,
@@ -172,7 +226,7 @@ class OpenRouterClient(TranscriptionClient):
                 actual_cost = getattr(response.usage, 'cost', None)
 
         return TranscriptionResult(
-            text=response.choices[0].message.content,
+            text=strip_ai_preamble(response.choices[0].message.content),
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             actual_cost=actual_cost,
