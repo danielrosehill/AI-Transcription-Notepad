@@ -1,30 +1,30 @@
 <div align="center">
 
-# Voice Notepad
+# AI Transcription Notepad
 
 **Multimodal Cloud Transcription for Desktop**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-brightgreen.svg)](https://github.com/danielrosehill/Voice-Notepad/releases)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-brightgreen.svg)](https://github.com/danielrosehill/AI-Transcription-Notepad/releases)
 [![Python](https://img.shields.io/badge/Python-3.10+-yellow.svg)](https://python.org)
 
 <br/>
 
-[**Download**](https://github.com/danielrosehill/Voice-Notepad/releases) · [**User Manual (PDF)**](docs/documentation/manuals/Voice-Notepad-User-Manual-v3.pdf) · [**Documentation**](docs/)
+[**Download**](https://github.com/danielrosehill/AI-Transcription-Notepad/releases) · [**Documentation**](https://danielrosehill.github.io/AI-Transcription-Notepad/) · [**User Manual (PDF)**](docs/documentation/manuals/Voice-Notepad-User-Manual-v3.pdf)
 
 <br/>
 
-![Voice Notepad Main Interface](screenshots/manual/6.png)
+![AI Transcription Notepad Main Interface](screenshots/manual/6.png)
 
 </div>
 
 ---
 
-## Why Voice Notepad?
+## Why AI Transcription Notepad?
 
-Most transcription apps use a **two-step process**: ASR transcription followed by LLM cleanup. Voice Notepad sends audio directly to **multimodal AI models** that transcribe and format in a single pass.
+Most transcription apps use a **two-step process**: ASR transcription followed by LLM cleanup. AI Transcription Notepad sends audio directly to **multimodal AI models** that transcribe and format in a single pass.
 
-| Traditional Approach | Voice Notepad |
+| Traditional Approach | AI Transcription Notepad |
 |---------------------|---------------|
 | Record → ASR → Raw text → LLM → Formatted output | Record → Multimodal AI → Formatted output |
 | Two API calls, higher latency | **Single API call, faster results** |
@@ -41,6 +41,7 @@ The AI hears tone, pauses, and emphasis. Verbal commands like *"scratch that"* o
 - **Smart cleanup** — Removes filler words, adds punctuation, formats output
 - **Global hotkeys** — Record from anywhere, even when minimized
 - **Flexible output** — App window, clipboard, or inject directly at cursor
+- **Translation** — Translate to 30+ languages in the same API call
 
 ---
 
@@ -49,6 +50,17 @@ The AI hears tone, pauses, and emphasis. Verbal commands like *"scratch that"* o
 <table>
 <tr>
 <td width="80" align="center">
+<a href="https://danielrosehill.github.io/AI-Transcription-Notepad/">
+<img src="https://img.shields.io/badge/Docs-Online-blue?style=for-the-badge&logo=markdown&logoColor=white" alt="Documentation"/>
+</a>
+</td>
+<td>
+<strong><a href="https://danielrosehill.github.io/AI-Transcription-Notepad/">Online Documentation</a></strong><br/>
+Full documentation site with guides, reference, and troubleshooting.
+</td>
+</tr>
+<tr>
+<td align="center">
 <a href="docs/documentation/manuals/Voice-Notepad-User-Manual-v3.pdf">
 <img src="https://img.shields.io/badge/PDF-User%20Manual-red?style=for-the-badge&logo=adobe-acrobat-reader&logoColor=white" alt="User Manual PDF"/>
 </a>
@@ -58,53 +70,42 @@ The AI hears tone, pauses, and emphasis. Verbal commands like *"scratch that"* o
 Complete 27-page guide covering installation, configuration, hotkey setup, and troubleshooting.
 </td>
 </tr>
-<tr>
-<td align="center">
-<a href="docs/">
-<img src="https://img.shields.io/badge/Docs-Online-blue?style=for-the-badge&logo=markdown&logoColor=white" alt="Documentation"/>
-</a>
-</td>
-<td>
-<strong><a href="docs/">Online Documentation</a></strong><br/>
-Markdown docs for installation, audio pipeline, cost tracking, and technical reference.
-</td>
-</tr>
 </table>
 
 ---
 
 ## Quick Start
 
-1. **Download** from [Releases](https://github.com/danielrosehill/Voice-Notepad/releases) (AppImage, .deb, or Windows installer)
-2. **Add your API key** (Google Gemini or OpenRouter)
+1. **Download** from [Releases](https://github.com/danielrosehill/AI-Transcription-Notepad/releases) (AppImage, .deb, or Windows installer)
+2. **Add your OpenRouter API key** ([get one here](https://openrouter.ai/keys))
 3. **Press Record**, speak naturally, **press Transcribe**
 4. Get clean, formatted text
 
 ```bash
 # Or run from source
-git clone https://github.com/danielrosehill/Voice-Notepad.git
-cd Voice-Notepad && ./run.sh
+git clone https://github.com/danielrosehill/AI-Transcription-Notepad.git
+cd AI-Transcription-Notepad && ./run.sh
 ```
 
 ---
 
 ## Dual-Pipeline Architecture
 
-Voice Notepad combines **local preprocessing** with **cloud transcription** for optimal cost and quality.
+AI Transcription Notepad combines **local preprocessing** with **cloud transcription** for optimal cost and quality.
 
 ```mermaid
 flowchart LR
-    subgraph LOCAL["🖥️ Local Preprocessing"]
+    subgraph LOCAL["Local Preprocessing"]
         direction LR
-        A[🎤 Record<br/>48kHz] --> B[📊 AGC<br/>Normalize]
-        B --> C[🔇 VAD<br/>Remove Silence]
-        C --> D[📦 Compress<br/>16kHz mono]
+        A[Record<br/>48kHz] --> B[AGC<br/>Normalize]
+        B --> C[VAD<br/>Remove Silence]
+        C --> D[Compress<br/>16kHz mono]
     end
 
-    subgraph CLOUD["☁️ Cloud Transcription"]
+    subgraph CLOUD["Cloud Transcription"]
         direction LR
-        E[📝 Prompt<br/>Concatenation] --> F[🤖 Gemini API<br/>Audio + Prompt]
-        F --> G[✨ Formatted<br/>Text]
+        E[Prompt<br/>Concatenation] --> F[Gemini API<br/>Audio + Prompt]
+        F --> G[Formatted<br/>Text]
     end
 
     D --> E
@@ -125,11 +126,11 @@ flowchart LR
 
 ## Prompt Concatenation System
 
-Voice Notepad uses a **layered prompt architecture** where instructions are concatenated at transcription time. This allows flexible, modular control over output formatting.
+AI Transcription Notepad uses a **layered prompt architecture** where instructions are concatenated at transcription time. This allows flexible, modular control over output formatting.
 
 ```mermaid
 flowchart TB
-    subgraph FOUNDATION["🏗️ Foundation Layer (Always Applied)"]
+    subgraph FOUNDATION["Foundation Layer (Always Applied)"]
         F1[Remove filler words]
         F2[Add punctuation]
         F3[Fix grammar & spelling]
@@ -137,16 +138,16 @@ flowchart TB
         F5[Handle background audio]
     end
 
-    subgraph FORMAT["📋 Format Layer"]
+    subgraph FORMAT["Format Layer"]
         FMT[Email / Todo / Meeting Notes<br/>Blog / Documentation / AI Prompt]
     end
 
-    subgraph STYLE["🎨 Style Layer"]
+    subgraph STYLE["Style Layer"]
         S1[Formality<br/>Casual → Professional]
         S2[Verbosity<br/>None → Maximum reduction]
     end
 
-    subgraph PERSONAL["👤 Personalization"]
+    subgraph PERSONAL["Personalization"]
         P1[Email signatures]
         P2[User name]
     end
@@ -154,7 +155,7 @@ flowchart TB
     FOUNDATION --> FORMAT
     FORMAT --> STYLE
     STYLE --> PERSONAL
-    PERSONAL --> OUTPUT[📤 Final Prompt]
+    PERSONAL --> OUTPUT[Final Prompt]
 
     style FOUNDATION fill:#fff3e0,stroke:#ff9800,stroke-width:2px
     style FORMAT fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
@@ -176,12 +177,13 @@ Create custom stacks in the **Prompt Stacks** tab, then apply them with a single
 
 ---
 
-## Supported Providers
+## Supported Provider
 
-| Provider | Recommended Model | Notes |
-|----------|-------------------|-------|
-| **Google Gemini** | `gemini-flash-latest` | Direct API, auto-updates to latest Flash model |
-| **OpenRouter** | `google/gemini-2.5-flash` | Per-key cost tracking, OpenAI-compatible API |
+| Provider | Default Model | Notes |
+|----------|---------------|-------|
+| **OpenRouter** | `google/gemini-3-flash-preview` | Gemini 3 Flash (default), Gemini 3 Pro (fallback) |
+
+OpenRouter is the sole provider. It offers per-key cost tracking, low latency, and access to Gemini 3 models via an OpenAI-compatible API.
 
 ---
 
@@ -210,23 +212,22 @@ Create custom stacks in the **Prompt Stacks** tab, then apply them with a single
 
 | Component | Technology |
 |-----------|------------|
-| Transcription | Google Gemini / OpenRouter |
+| Transcription | OpenRouter (Gemini 3 Flash / Pro) |
 | Voice Activity Detection | [TEN VAD](https://github.com/TEN-framework/ten-vad) |
 | Text-to-Speech | [Edge TTS](https://github.com/rany2/edge-tts) |
 | Database | [Mongita](https://github.com/scottrogowski/mongita) |
 | UI Framework | PyQt6 |
 
-See [Technology Stack](docs/documentation/stack.md) for details.
+See [Technology Stack](https://danielrosehill.github.io/AI-Transcription-Notepad/reference/stack) for details.
 
 ---
 
 ## Benchmark Data
 
-Real usage from ~2,000 transcriptions shows OpenRouter's Gemini 2.5 Flash delivers **2x faster inference**:
+Real usage from ~2,000 transcriptions shows excellent performance with OpenRouter's Gemini models:
 
 | Provider | Model | Avg Inference | Chars/sec |
 |----------|-------|---------------|-----------|
-| Gemini Direct | gemini-flash-latest | 5.1s | 90 |
 | OpenRouter | google/gemini-2.5-flash | 2.5s | 204 |
 
 Anonymized usage data available in [data/](data/).

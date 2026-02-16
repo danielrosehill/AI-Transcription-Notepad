@@ -17,14 +17,15 @@ AI Transcription Notepad combines several key technologies to deliver single-pas
 | **Charts** | pyqtgraph | Analytics visualizations |
 | **Global Hotkeys** | pynput + evdev | System-wide keyboard shortcuts |
 
-## Transcription Backends
+## Transcription Backend
 
-The app sends audio directly to multimodal AI models for single-pass transcription and cleanup.
+The app sends audio directly to multimodal AI models via OpenRouter for single-pass transcription and cleanup.
 
 | Provider | SDK | Endpoint | Notes |
 |----------|-----|----------|-------|
-| **Google Gemini** (recommended) | google-genai | generativelanguage.googleapis.com | Supports `gemini-flash-latest` dynamic endpoint |
-| **OpenRouter** | openai (compatible) | openrouter.ai/api/v1 | Accurate per-key cost tracking |
+| **OpenRouter** | openai (compatible) | openrouter.ai/api/v1 | Gemini 3 Flash/Pro, per-key cost tracking |
+
+The fused audio pipeline processes recording, AGC, VAD, and compression in a single optimized pass before API submission.
 
 ## Voice Activity Detection
 
@@ -49,7 +50,6 @@ The app sends audio directly to multimodal AI models for single-pass transcripti
 ```
 PyQt6>=6.6.0          # Desktop GUI framework
 pyaudio>=0.2.14       # Audio recording
-google-genai>=1.0.0   # Gemini API client
 openai>=1.40.0        # OpenRouter API (OpenAI-compatible)
 pydub>=0.25.1         # Audio processing
 ten-vad>=1.0.6        # Voice activity detection

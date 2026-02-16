@@ -7,10 +7,12 @@ AI Transcription Notepad processes audio through several stages before sending i
 ```
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
 │  Recording  │───▶│     AGC     │───▶│     VAD     │───▶│ Compression │───▶│  API Call   │
-│  (PyAudio)  │    │  (Normalize)│    │ (TEN VAD)   │    │  (16kHz)    │    │  (Gemini)   │
+│  (PyAudio)  │    │  (Normalize)│    │ (TEN VAD)   │    │  (16kHz)    │    │ (OpenRouter)│
 └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
      48kHz              ±20dB          Remove silence      Downsample         Transcribe
 ```
+
+The pipeline uses a **fused audio processing** approach that eliminates redundant WAV parse/export cycles between stages, improving throughput.
 
 ## Pipeline Stages
 
@@ -63,7 +65,7 @@ TEN VAD was chosen over alternatives (Silero VAD, WebRTC VAD) for:
 ### 5. API Submission (`transcription.py`)
 
 - Audio is base64-encoded and sent with the cleanup prompt
-- Supports Gemini Direct API and OpenRouter
+- Submitted to OpenRouter's API endpoint
 - Returns transcript, token counts, and cost data
 
 ### 6. Storage (`database_mongo.py`)
@@ -131,6 +133,6 @@ sudo apt install libc++1
 | File | Purpose |
 |------|---------|
 | `audio_recorder.py` | PyAudio recording with device management |
-| `audio_processor.py` | AGC, compression, Opus archival |
+| `audio_processor.py` | AGC, compression, fused pipeline, Opus archival |
 | `vad_processor.py` | TEN VAD integration |
-| `transcription.py` | API clients for Gemini and OpenRouter |
+| `transcription.py` | OpenRouter API client |

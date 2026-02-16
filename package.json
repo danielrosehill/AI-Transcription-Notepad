@@ -1,26 +1,29 @@
 {
   "name": "voice-notepad",
   "version": "1.0.0",
-  "description": "![alt text](screenshots/manual/6.png)",
+  "description": "Desktop app for voice recording with AI-powered transcription and cleanup",
   "main": "index.js",
   "directories": {
     "doc": "docs"
   },
   "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danielrosehill/Voice-Notepad.git"
+    "url": "git+https://github.com/danielrosehill/AI-Transcription-Notepad.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/danielrosehill/Voice-Notepad/issues"
+    "url": "https://github.com/danielrosehill/AI-Transcription-Notepad/issues"
   },
-  "homepage": "https://github.com/danielrosehill/Voice-Notepad#readme",
+  "homepage": "https://github.com/danielrosehill/AI-Transcription-Notepad#readme",
   "devDependencies": {
     "vitepress": "^1.6.4"
   }

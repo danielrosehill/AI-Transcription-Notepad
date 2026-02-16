@@ -4,17 +4,17 @@
 
 **No microphone detected:** Check that your microphone is connected and recognized by running `pactl list sources short`. Ensure PipeWire or PulseAudio is running with `pactl info`. For USB microphones, verify device permissions with `ls -la /dev/snd/`.
 
-**Recording not working:** Verify the correct input device is selected in the dropdown. Test the microphone in another application. Restart PipeWire with `systemctl --user restart pipewire`.
+**Recording not working:** Verify the correct input device is selected as the system default. Test the microphone in another application. Restart PipeWire with `systemctl --user restart pipewire`.
 
 **Poor audio quality:** Position the microphone closer, reduce background noise, and check microphone gain in system settings.
 
 ## API Issues
 
-**API key not working:** Verify the key is correct in Settings. Check that the key has required permissions. For OpenRouter, verify credits are available. Try setting the key via environment variable: `export OPENROUTER_API_KEY=your_key`.
+**API key not working:** Verify the key is correct in Settings → API Keys. Check that the key has required permissions. Verify OpenRouter credits are available. Try setting the key via environment variable: `export OPENROUTER_API_KEY=your_key`.
 
-**Transcription fails:** Check your internet connection, verify the API key is valid and has credits, try a different provider or model, and check terminal output for error details. For large recordings, enable VAD to reduce file size.
+**Transcription fails:** Check your internet connection, verify the API key is valid and has credits, try a different model (Gemini 3 Flash vs Pro), and check terminal output for error details. For large recordings, enable VAD to reduce file size.
 
-**Rate limiting:** Wait a few minutes before trying again, or use a different provider.
+**Rate limiting:** Wait a few minutes before trying again. OpenRouter has generous rate limits for most usage patterns.
 
 ## Installation Issues
 
@@ -26,7 +26,7 @@
 
 ## Global Hotkeys
 
-**Hotkeys not working:** Check configuration in Settings > Hotkeys. On Wayland, ensure XWayland is available. Some keys may be captured by the desktop environment. Try F14-F20 (macro keys) to avoid conflicts.
+**Hotkeys not working:** Check configuration in Settings → Hotkeys. On Wayland, ensure the user is in the `input` group for evdev access. Some keys may be captured by the desktop environment. Use F13-F24 (macro keys) to avoid conflicts.
 
 ## Text Injection (Auto-Paste)
 
@@ -48,10 +48,10 @@ For complete setup instructions, see [Text Injection Setup](text-injection.md).
 
 ## Database Issues
 
-**History not showing:** Check that the database file exists at `~/.config/voice-notepad-v3/transcriptions.db` and verify write permissions on the config directory.
+**History not showing:** Check that the Mongita database directory exists at `~/.config/voice-notepad-v3/mongita/` and verify write permissions on the config directory.
 
-**Cost data missing:** For OpenRouter, verify the API key has access to usage endpoints. Check that files exist in `~/.config/voice-notepad-v3/usage/`.
+**Cost data missing:** Verify the OpenRouter API key has access to usage endpoints. Check that files exist in `~/.config/voice-notepad-v3/usage/`.
 
 ## Getting Help
 
-Check [GitHub Issues](https://github.com/danielrosehill/Voice-Notepad/issues) for similar problems. When opening a new issue, include steps to reproduce, error messages from terminal, system information, and the provider and model being used.
+Check [GitHub Issues](https://github.com/danielrosehill/AI-Transcription-Notepad/issues) for similar problems. When opening a new issue, include steps to reproduce, error messages from terminal, system information, and the model being used.

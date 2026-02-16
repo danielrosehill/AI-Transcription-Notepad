@@ -1,11 +1,13 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
-  title: 'Voice Notepad',
+  title: 'AI Transcription Notepad',
   description: 'Desktop app for voice recording with AI-powered transcription and cleanup',
+  base: '/AI-Transcription-Notepad/',
+  srcExclude: ['documentation/**', 'version-releases/**'],
 
   head: [
-    ['link', { rel: 'icon', type: 'image/png', href: '/icon.png' }]
+    ['link', { rel: 'icon', type: 'image/png', href: '/AI-Transcription-Notepad/icon.png' }]
   ],
 
   themeConfig: {
@@ -17,7 +19,7 @@ export default defineConfig({
       {
         text: 'Download',
         items: [
-          { text: 'GitHub Releases', link: 'https://github.com/danielrosehill/Voice-Notepad/releases' },
+          { text: 'GitHub Releases', link: 'https://github.com/danielrosehill/AI-Transcription-Notepad/releases' },
           { text: 'User Manual (PDF)', link: '/manuals/Voice-Notepad-User-Manual-v3.pdf' }
         ]
       }
@@ -35,9 +37,13 @@ export default defineConfig({
           ]
         },
         {
-          text: 'Using Voice Notepad',
+          text: 'Using the App',
           items: [
             { text: 'Keyboard Shortcuts', link: '/guide/shortcuts' },
+            { text: 'Audio Feedback', link: '/guide/audio-feedback' },
+            { text: 'Translation Mode', link: '/guide/translation' },
+            { text: 'File Transcription', link: '/guide/file-transcription' },
+            { text: 'Semantic Search', link: '/guide/semantic-search' },
             { text: 'Cost Tracking', link: '/guide/cost-tracking' },
             { text: 'Troubleshooting', link: '/guide/troubleshooting' }
           ]
@@ -58,12 +64,12 @@ export default defineConfig({
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/danielrosehill/Voice-Notepad' }
+      { icon: 'github', link: 'https://github.com/danielrosehill/AI-Transcription-Notepad' }
     ],
 
     footer: {
       message: 'Released under the MIT License.',
-      copyright: 'Copyright © 2024-present Daniel Rosehill'
+      copyright: 'Copyright © 2024-2026 Daniel Rosehill'
     },
 
     search: {
@@ -71,7 +77,7 @@ export default defineConfig({
     },
 
     editLink: {
-      pattern: 'https://github.com/danielrosehill/Voice-Notepad/edit/main/docs/:path',
+      pattern: 'https://github.com/danielrosehill/AI-Transcription-Notepad/edit/main/docs/:path',
       text: 'Edit this page on GitHub'
     }
   }

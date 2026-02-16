@@ -1,18 +1,16 @@
 # Cost Tracking
 
-AI Transcription Notepad tracks API usage in the Cost tab. OpenRouter provides the most accurate data because it reports actual key-specific costs from its API.
+AI Transcription Notepad tracks API usage in the Cost tab via OpenRouter's API endpoints.
 
-## OpenRouter
+## OpenRouter Cost Data
 
-With OpenRouter, the app queries three endpoints:
+The app queries three OpenRouter endpoints:
 
 - `/api/v1/key` returns usage for your specific API key (not your entire account), showing today's, this week's, and this month's spend.
 - `/api/v1/credits` returns your account balance, displayed in the status bar and Cost tab.
 - `/api/v1/activity` returns per-model usage for the last 30 days.
 
-## Other Providers
-
-For Gemini, OpenAI, and Mistral direct access, costs are estimated based on token counts and published pricing. These estimates may not reflect actual billing due to pricing tier differences, promotional credits, or rounding.
+Balance data is polled in the background at a configurable interval (default: 30 minutes). Configure the polling interval in Settings → Misc.
 
 ## Status Bar
 
@@ -20,8 +18,8 @@ The status bar shows `Today: $X.XXXX (N) | Bal: $X.XX` where N is the transcript
 
 ## Reducing Costs
 
-Enable Voice Activity Detection to remove silence before upload, which reduces the audio size sent to the API. Use Gemini Flash Lite for the lowest per-transcription cost. Keep recordings focused rather than leaving long pauses.
+Enable Voice Activity Detection to remove silence before upload, which reduces the audio size sent to the API. Gemini 3 Flash is already the most cost-effective option. Keep recordings focused rather than leaving long pauses.
 
 ## Local Storage
 
-Cost data is stored in `~/.config/voice-notepad-v3/usage/` as daily JSON files. The SQLite database also stores per-transcription token counts and costs.
+Cost data is stored in `~/.config/voice-notepad-v3/usage/` as daily JSON files. The Mongita database also stores per-transcription token counts and estimated costs.

@@ -1,45 +1,35 @@
 # Supported Models
 
-AI Transcription Notepad uses Google Gemini models exclusively for audio transcription. These models can be accessed either directly through the Google AI API or via OpenRouter.
+AI Transcription Notepad uses Google Gemini models via **OpenRouter** for audio transcription. OpenRouter provides an OpenAI-compatible API with per-key cost tracking and low latency.
 
-## Google Gemini Models Reference
+## Available Models
 
-The same underlying Gemini models are available through both providers, but with different endpoint names:
+| Model | Tier | Notes |
+|-------|------|-------|
+| `google/gemini-3-flash-preview` | Standard | **Default** — fast and cost-effective |
+| `google/gemini-3-pro-preview` | Premium | Higher quality, used as fallback |
 
-| Google Direct | OpenRouter | Tier | Notes |
-|---------------|------------|------|-------|
-| `gemini-flash-latest` | *(not available)* | Dynamic | Always points to latest Flash - **recommended** |
-| `gemini-2.5-flash` | `google/gemini-2.5-flash` | Standard | Current stable release |
-| `gemini-2.5-flash-lite` | `google/gemini-2.5-flash-lite` | Budget | Fastest and cheapest |
-| `gemini-2.5-pro` | `google/gemini-2.5-pro` | Premium | Pro tier |
-| *(n/a)* | `google/gemini-2.0-flash-001` | Standard | Previous generation |
-
-## Provider Comparison
-
-### Gemini Direct (Recommended)
-
-Direct access to Google's Gemini API offers:
-
-- **Dynamic `gemini-flash-latest` endpoint** - Always points to Google's latest Flash model, eliminating manual updates when new versions release
-- Lower latency (no proxy layer)
-- Simpler billing through Google Cloud
-
-### OpenRouter
-
-OpenRouter proxies requests through an OpenAI-compatible API:
-
-- Unified billing across multiple providers
-- Accurate per-key cost tracking via `/api/v1/key` endpoint
-- No access to the dynamic `gemini-flash-latest` endpoint
-
-**Note:** OpenRouter model names use the `google/` prefix (e.g., `google/gemini-2.5-flash`) while Google Direct uses the model name directly (e.g., `gemini-2.5-flash`).
+Gemini 3 Flash is currently in preview and is the recommended model for most transcription tasks. Gemini 3 Pro serves as the automatic fallback if Flash is unavailable.
 
 ## Choosing a Model
 
-For most users, **Gemini Direct with `gemini-flash-latest`** is recommended. This ensures you always use Google's latest Flash model without manual configuration changes.
+**Gemini 3 Flash** is recommended for most users. It provides an excellent balance of speed, quality, and cost for voice transcription.
 
-If you prefer OpenRouter's unified billing or cost tracking features, use `google/gemini-2.5-flash` as your default.
+Use **Gemini 3 Pro** when you need higher quality output for complex or nuanced transcriptions (e.g., technical documentation, multi-speaker content).
 
-For lowest costs, use Flash Lite variants (`gemini-2.5-flash-lite` or `google/gemini-2.5-flash-lite`).
+Set your default model in Settings → Models, or select per-transcription from the toolbar dropdown.
 
-Set your default model in Settings > Models, or select per-transcription from the toolbar dropdown.
+## Model Tiers
+
+| Tier | Model | Use Case |
+|------|-------|----------|
+| **Standard** | Gemini 3 Flash | Daily transcription, notes, emails |
+| **Premium** | Gemini 3 Pro | Complex content, detailed formatting |
+
+## Failover Behavior
+
+If the primary model fails, the app automatically retries with the fallback model. By default:
+- **Primary**: `google/gemini-3-flash-preview`
+- **Fallback**: `google/gemini-3-pro-preview`
+
+Configure primary and fallback models in Settings → Models.
