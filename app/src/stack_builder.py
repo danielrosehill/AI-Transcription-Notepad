@@ -19,7 +19,7 @@ try:
     from .config import (
         Config, TONE_TEMPLATES, TONE_DISPLAY_NAMES,
         STYLE_TEMPLATES, STYLE_DISPLAY_NAMES,
-        FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES,
+        FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES, FORMAT_ICONS,
         TRANSLATION_LANGUAGES, get_language_display_name, get_language_flag,
     )
     from .tts_announcer import get_announcer
@@ -29,7 +29,7 @@ except ImportError:
     from config import (
         Config, TONE_TEMPLATES, TONE_DISPLAY_NAMES,
         STYLE_TEMPLATES, STYLE_DISPLAY_NAMES,
-        FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES,
+        FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES, FORMAT_ICONS,
         TRANSLATION_LANGUAGES, get_language_display_name, get_language_flag,
     )
     from tts_announcer import get_announcer
@@ -180,11 +180,11 @@ class StackBuilderWidget(QWidget):
 
     # Format options (5 quick-access options)
     FORMAT_QUICK_OPTIONS = [
-        ("email", "Email", "Format as an email with greeting and signature"),
-        ("todo", "To-Do", "Format as a to-do list"),
-        ("ai_prompt", "AI Prompt", "Format as an AI prompt"),
-        ("meeting_minutes", "Minutes", "Format as formal meeting minutes"),
-        ("social_post", "Social Post", "Format for social media/community"),
+        ("email", f"{FORMAT_ICONS.get('email', '')} Email", "Format as an email with greeting and signature"),
+        ("todo", f"{FORMAT_ICONS.get('todo', '')} To-Do", "Format as a to-do list"),
+        ("ai_prompt", f"{FORMAT_ICONS.get('ai_prompt', '')} AI Prompt", "Format as an AI prompt"),
+        ("meeting_minutes", f"{FORMAT_ICONS.get('meeting_minutes', '')} Minutes", "Format as formal meeting minutes"),
+        ("social_post", f"{FORMAT_ICONS.get('social_post', '')} Social Post", "Format for social media/community"),
     ]
 
     # Tone options (5 quick-access, multi-select)
@@ -394,7 +394,9 @@ class StackBuilderWidget(QWidget):
         quick_keys = {opt[0] for opt in self.FORMAT_QUICK_OPTIONS}
         for key, display_name in sorted(FORMAT_DISPLAY_NAMES.items(), key=lambda x: x[1]):
             if key not in quick_keys and key != "general":
-                self.format_combo.addItem(display_name, key)
+                icon = FORMAT_ICONS.get(key, "")
+                label = f"{icon} {display_name}" if icon else display_name
+                self.format_combo.addItem(label, key)
 
         # Add custom format prompts
         custom_formats = self._get_custom_prompts("format")

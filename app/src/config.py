@@ -394,6 +394,7 @@ class Config:
 
     # UI state
     prompt_stack_collapsed: bool = True  # Whether the prompt stack is collapsed (default: collapsed)
+    customize_panel_collapsed: bool = True  # Whether the customize panel is collapsed (default: collapsed)
     recent_panel_collapsed: bool = True   # Whether the recent panel is collapsed (default: collapsed)
     recent_panel_max_items: int = 5       # Number of items to show in recent panel
 
@@ -1312,6 +1313,55 @@ FORMAT_DISPLAY_NAMES = {
     # Creative
     "social_post": "Social Post",
     "story_notes": "Story Notes",
+}
+
+# Icons for format presets (emoji, used in chips and menus)
+FORMAT_ICONS = {
+    # Foundational
+    "general": "✏️",
+    "verbatim": "📝",
+    "brief": "⚡",
+    "quick_note": "📌",
+    "note_to_self": "💭",
+    # Stylistic
+    "email": "✉️",
+    "meeting_notes": "📋",
+    "meeting_agenda": "📅",
+    "meeting_minutes": "⏱️",
+    "bullet_points": "•",
+    "internal_memo": "📄",
+    "press_release": "📰",
+    "newsletter": "📨",
+    "slack_message": "💬",
+    # Prompts
+    "ai_prompt": "🤖",
+    "dev_prompt": "💻",
+    "system_prompt": "⚙️",
+    "image_generation_prompt": "🎨",
+    # To-Do Lists
+    "todo": "✅",
+    "shopping_list": "🛒",
+    "grocery": "🥕",
+    # Blog
+    "blog": "✍️",
+    "blog_outline": "📑",
+    "blog_notes": "📓",
+    # Documentation
+    "documentation": "📖",
+    "tech_docs": "🔧",
+    "readme": "📘",
+    "reference_doc": "📚",
+    "api_doc": "🔌",
+    "sop": "📜",
+    "changelog": "🔄",
+    # Work
+    "bug_report": "🐛",
+    "project_plan": "📊",
+    "software_spec": "📐",
+    "status_update": "📈",
+    # Creative
+    "social_post": "📱",
+    "story_notes": "✨",
 }
 
 # Format categories for organization in Formats tab

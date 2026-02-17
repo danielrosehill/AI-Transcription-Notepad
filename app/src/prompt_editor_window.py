@@ -24,7 +24,7 @@ from typing import List, Set, Optional
 from .config import (
     Config, save_config,
     FOUNDATION_PROMPT_SECTIONS,
-    FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES, FORMAT_CATEGORIES,
+    FORMAT_TEMPLATES, FORMAT_DISPLAY_NAMES, FORMAT_CATEGORIES, FORMAT_ICONS,
     TONE_TEMPLATES, STYLE_TEMPLATES,
     OPTIONAL_PROMPT_COMPONENTS,
     FORMALITY_DISPLAY_NAMES, VERBOSITY_DISPLAY_NAMES,
@@ -614,9 +614,11 @@ class PromptEditorWindow(QMainWindow):
                     instruction = template_data if template_data else ""
                     adherence = ""
 
+                icon = FORMAT_ICONS.get(key, "")
+                icon_name = f"{icon} {display_name}" if icon else display_name
                 prompts.append(PromptConfig(
                     id=f"builtin_format_{key}",
-                    name=display_name,
+                    name=icon_name,
                     category=PromptConfigCategory.CUSTOM.value,
                     description=f"Format as {display_name.lower()}",
                     prompt_type="format",
