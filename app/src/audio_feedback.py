@@ -2,12 +2,16 @@
 
 Generates push-to-talk radio style click-chirps for recording start/stop feedback.
 Uses white noise bursts mixed with tones for percussive, radio-like character.
+Also loads WAV sound effects from assets/sfx/ for PTT send and completion ding.
 """
 
 import math
+import os
 import random
 import struct
 import threading
+import wave
+from pathlib import Path
 from typing import Optional
 
 # Try to use simpleaudio for playback (non-blocking)
@@ -25,6 +29,18 @@ except ImportError:
     HAS_PYAUDIO = False
 
 SAMPLE_RATE = 44100
+
+# Path to bundled sound effects
+_SFX_DIR = Path(__file__).parent.parent / "assets" / "sfx"
+
+
+def _load_wav_pcm(filename: str) -> bytes:
+    """Load a WAV file from assets/sfx/ and return raw PCM bytes (16-bit mono)."""
+    path = _SFX_DIR / filename
+    if not path.exists():
+        return b""
+    with wave.open(str(path), "rb") as wf:
+        return wf.readframes(wf.getnframes())
 
 
 def _white_noise(num_samples: int, volume: float, rng: random.Random) -> list[float]:
@@ -77,6 +93,18 @@ def _to_bytes(samples: list[float], master_volume: float = 1.0) -> bytes:
 def _silence_bytes(duration_ms: float, sample_rate: int = SAMPLE_RATE) -> bytes:
     """Generate silence as bytes."""
     return b'\x00\x00' * int(sample_rate * duration_ms / 1000)
+
+
+def generate_beep(frequency: float = 880, duration_ms: int = 60, volume: float = 0.18) -> bytes:
+    """Load the PTT send sound effect for recording start indicator.
+
+    Uses the bundled ptt-send.wav asset. Falls back to generated PTT chirp
+    if the WAV file is not available. Parameters kept for API compatibility.
+    """
+    data = _load_wav_pcm("ptt-send.wav")
+    if data:
+        return data
+    return generate_ptt_click_chirp(volume=volume)
 
 
 def generate_ptt_click_chirp(volume: float = 0.15) -> bytes:
@@ -235,13 +263,19 @@ class AudioFeedback:
 
     def __init__(self):
         self._enabled = True
-        # Pre-generate all PTT sounds
-        self._start_beep = generate_ptt_click_chirp(volume=0.15)
-        self._stop_beep = generate_ptt_release(volume=0.15)
+        # Load WAV sound effects (with generated fallbacks)
+        self._start_beep = _load_wav_pcm("ptt-send.wav") or generate_ptt_click_chirp(volume=0.15)
+        self._stop_beep = _load_wav_pcm("stop.wav") or generate_ptt_release(volume=0.15)
         self._clipboard_beep = generate_double_click(volume=0.14)
         self._toggle_on_beep = generate_rising_chirp(volume=0.12)
         self._toggle_off_beep = generate_falling_chirp(volume=0.12)
         self._append_beep = generate_rising_double_chirp(volume=0.14)
+        self._complete_beep = _load_wav_pcm("ding-complete.wav") or generate_ptt_release(volume=0.15)
+        self._pause_beep = _load_wav_pcm("pause.wav") or generate_double_click(volume=0.14)
+        self._resume_beep = _load_wav_pcm("resume.wav") or generate_rising_chirp(volume=0.12)
+        self._retake_beep = _load_wav_pcm("retake.wav") or generate_falling_chirp(volume=0.12)
+        self._transcribe_beep = _load_wav_pcm("transcribe.wav") or generate_rising_chirp(volume=0.12)
+        self._clear_beep = _load_wav_pcm("clear.wav") or generate_falling_chirp(volume=0.12)
 
     @property
     def enabled(self) -> bool:
@@ -280,6 +314,36 @@ class AudioFeedback:
         """Play the append mode sound (rising double-chirp)."""
         if self._enabled:
             self._play_async(self._append_beep)
+
+    def play_complete_beep(self):
+        """Play the transcription complete sound (ding)."""
+        if self._enabled:
+            self._play_async(self._complete_beep)
+
+    def play_pause_beep(self):
+        """Play the pause sound (double-tap tone)."""
+        if self._enabled:
+            self._play_async(self._pause_beep)
+
+    def play_resume_beep(self):
+        """Play the resume sound (rising two-note)."""
+        if self._enabled:
+            self._play_async(self._resume_beep)
+
+    def play_retake_beep(self):
+        """Play the retake/restart sound (descending two-note)."""
+        if self._enabled:
+            self._play_async(self._retake_beep)
+
+    def play_transcribe_beep(self):
+        """Play the transcribe/send sound."""
+        if self._enabled:
+            self._play_async(self._transcribe_beep)
+
+    def play_clear_beep(self):
+        """Play the clear/delete sound."""
+        if self._enabled:
+            self._play_async(self._clear_beep)
 
     def _play_async(self, audio_data: bytes):
         """Play audio in a background thread to avoid blocking."""

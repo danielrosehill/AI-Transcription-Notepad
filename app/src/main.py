@@ -492,8 +492,7 @@ class MainWindow(QMainWindow):
 
         # Recording controls - using icons for compact display
         self.record_btn = QPushButton("●")  # Record icon
-        self.record_btn.setMinimumHeight(56)
-        self.record_btn.setMinimumWidth(72)
+        self.record_btn.setFixedSize(56, 56)
         self.record_btn.setToolTip(
             "Record (Ctrl+R)\nStart a new recording.\nClears any cached audio and begins fresh."
         )
@@ -2140,8 +2139,7 @@ class MainWindow(QMainWindow):
 
         # Audio feedback for retake
         if self.config.audio_feedback_mode == "beeps":
-            if self.recorder.is_recording:
-                get_feedback().play_stop_beep()
+            get_feedback().play_retake_beep()
         elif self.config.audio_feedback_mode == "tts":
             get_announcer().announce_discarded()
 
@@ -2243,6 +2241,10 @@ class MainWindow(QMainWindow):
         """Transcribe all accumulated audio segments."""
         if not self.accumulated_segments:
             return  # Nothing to transcribe
+
+        # Audio feedback for transcribe
+        if self.config.audio_feedback_mode == "beeps":
+            get_feedback().play_transcribe_beep()
 
         # Combine all segments
         self.status_label.setText("Combining clips...")
@@ -2439,9 +2441,9 @@ class MainWindow(QMainWindow):
 
         # If currently recording, stop it first
         if self.recorder.is_recording:
-            # Audio feedback for stop (beeps only - TTS "transcribing" comes later)
+            # Audio feedback for transcribe (beeps only - TTS "transcribing" comes later)
             if self.config.audio_feedback_mode == "beeps":
-                get_feedback().play_stop_beep()
+                get_feedback().play_transcribe_beep()
 
             self.timer.stop()
             # Stop visual effects (pulsating, grayscale)
@@ -2620,9 +2622,7 @@ class MainWindow(QMainWindow):
 
         # Audio feedback for completion (beeps or TTS based on mode)
         if self.config.audio_feedback_mode == "beeps":
-            # Beep for invisible actions (clipboard/inject)
-            if did_clipboard or did_inject:
-                get_feedback().play_clipboard_beep()
+            get_feedback().play_complete_beep()
         elif self.config.audio_feedback_mode == "tts":
             # TTS: announce what happened based on output modes
             if injection_failed:
@@ -3155,8 +3155,7 @@ class MainWindow(QMainWindow):
 
         # Audio feedback for discard (beeps or TTS based on mode)
         if self.config.audio_feedback_mode == "beeps":
-            if self.recorder.is_recording or self.recorder.is_paused:
-                get_feedback().play_stop_beep()
+            get_feedback().play_clear_beep()
         elif self.config.audio_feedback_mode == "tts":
             get_announcer().announce_discarded()
 

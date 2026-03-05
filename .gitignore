@@ -39,6 +39,7 @@ testing/
 
 # Exception: TTS assets are committed to the repo
 !app/assets/tts/*.wav
+!app/assets/sfx/*.wav
 
 # Private development files
 private/
