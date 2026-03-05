@@ -307,8 +307,8 @@ class StackBuilderWidget(QWidget):
 
         container_layout.addLayout(top_row)
 
-        # "Prompt Controllers" heading label
-        heading_label = QLabel("Prompt Controllers")
+        # "Customize Output" heading label
+        heading_label = QLabel("Customize Output")
         heading_label.setStyleSheet("""
             QLabel {
                 font-size: 11px;

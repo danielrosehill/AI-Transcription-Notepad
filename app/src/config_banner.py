@@ -128,16 +128,15 @@ class ConfigSummaryBanner(QWidget):
 
         pills_data = []  # (label, style, category, key)
 
-        # Format
+        # Format (always show, even for "general")
         fmt = getattr(config, 'format_preset', 'general')
+        display = FORMAT_DISPLAY_NAMES.get(fmt, fmt)
+        icon = FORMAT_ICONS.get(fmt, "")
+        label = f"{icon} {display}".strip() if icon else display
         if fmt == "verbatim":
-            icon = FORMAT_ICONS.get("verbatim", "")
-            pills_data.append((f"{icon} Verbatim".strip(), _blue_pill(), "base", "verbatim"))
-        elif fmt != "general":
-            display = FORMAT_DISPLAY_NAMES.get(fmt, fmt)
-            icon = FORMAT_ICONS.get(fmt, "")
-            label = f"{icon} {display}".strip() if icon else display
-            pills_data.append((label, _blue_pill(), "format", fmt))
+            pills_data.append((label, _blue_pill(), "base", "verbatim"))
+        else:
+            pills_data.append((label, _blue_pill() if fmt != "general" else _PILL_MUTED, "format", fmt))
 
         # Selected formats (multi-select from stack builder)
         selected_formats = getattr(config, 'selected_formats', [])
@@ -214,5 +213,5 @@ class ConfigSummaryBanner(QWidget):
 
         self._layout.addStretch()
 
-        # Hide entirely if nothing to show
-        self.setVisible(bool(pills_data))
+        # Always visible (at minimum shows the format pill)
+        self.setVisible(True)

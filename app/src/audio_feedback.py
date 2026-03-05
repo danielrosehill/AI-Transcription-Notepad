@@ -1,9 +1,11 @@
-"""Audio feedback (beeps) for Voice Notepad V3.
+"""Audio feedback (PTT walkie-talkie sounds) for Voice Notepad V3.
 
-Generates simple beep tones for recording start/stop feedback.
+Generates push-to-talk radio style click-chirps for recording start/stop feedback.
+Uses white noise bursts mixed with tones for percussive, radio-like character.
 """
 
 import math
+import random
 import struct
 import threading
 from typing import Optional
@@ -22,75 +24,224 @@ try:
 except ImportError:
     HAS_PYAUDIO = False
 
+SAMPLE_RATE = 44100
 
-def generate_beep(frequency: int = 880, duration_ms: int = 100, volume: float = 0.3, sample_rate: int = 44100) -> bytes:
-    """Generate a simple sine wave beep.
 
-    Args:
-        frequency: Tone frequency in Hz (default 880 = A5)
-        duration_ms: Duration in milliseconds
-        volume: Volume from 0.0 to 1.0
-        sample_rate: Audio sample rate
+def _white_noise(num_samples: int, volume: float, rng: random.Random) -> list[float]:
+    """Generate white noise samples."""
+    return [rng.uniform(-1.0, 1.0) * volume for _ in range(num_samples)]
 
-    Returns:
-        Raw audio data as bytes (16-bit mono PCM)
+
+def _sine(num_samples: int, frequency: float, volume: float, sample_rate: int = SAMPLE_RATE) -> list[float]:
+    """Generate sine wave samples."""
+    return [math.sin(2 * math.pi * frequency * i / sample_rate) * volume for i in range(num_samples)]
+
+
+def _apply_envelope(samples: list[float], attack_ms: float, decay_ms: float, sample_rate: int = SAMPLE_RATE) -> list[float]:
+    """Apply attack/decay envelope to samples. No sustain -- percussive shape."""
+    n = len(samples)
+    attack_samples = int(sample_rate * attack_ms / 1000)
+    decay_samples = int(sample_rate * decay_ms / 1000)
+    result = list(samples)
+    for i in range(n):
+        if i < attack_samples:
+            env = i / max(attack_samples, 1)
+        elif i >= n - decay_samples:
+            env = (n - i) / max(decay_samples, 1)
+        else:
+            env = 1.0
+        result[i] *= env
+    return result
+
+
+def _mix(*layers: list[float]) -> list[float]:
+    """Mix multiple sample layers by summing them. All layers must be same length."""
+    length = max(len(l) for l in layers)
+    result = [0.0] * length
+    for layer in layers:
+        for i in range(len(layer)):
+            result[i] += layer[i]
+    return result
+
+
+def _to_bytes(samples: list[float], master_volume: float = 1.0) -> bytes:
+    """Convert float samples to 16-bit PCM bytes, with clipping."""
+    out = []
+    for s in samples:
+        val = int(s * master_volume * 32767)
+        val = max(-32767, min(32767, val))
+        out.append(struct.pack('<h', val))
+    return b''.join(out)
+
+
+def _silence_bytes(duration_ms: float, sample_rate: int = SAMPLE_RATE) -> bytes:
+    """Generate silence as bytes."""
+    return b'\x00\x00' * int(sample_rate * duration_ms / 1000)
+
+
+def generate_ptt_click_chirp(volume: float = 0.15) -> bytes:
+    """PTT key-up: short rising click-chirp like keying a radio.
+
+    Quick noise burst attack followed by a brief rising tone sweep.
+    Total duration ~60ms.
     """
-    num_samples = int(sample_rate * duration_ms / 1000)
-    samples = []
+    rng = random.Random(42)  # Deterministic noise
 
-    for i in range(num_samples):
-        # Generate sine wave
-        t = i / sample_rate
-        value = math.sin(2 * math.pi * frequency * t)
+    # Phase 1: Initial click -- short noise burst (8ms)
+    click_len = int(SAMPLE_RATE * 0.008)
+    click_noise = _white_noise(click_len, 0.7, rng)
+    click_noise = _apply_envelope(click_noise, attack_ms=0.5, decay_ms=3.0)
 
-        # Apply simple envelope to avoid clicks (fade in/out)
-        fade_samples = int(sample_rate * 0.01)  # 10ms fade
-        if i < fade_samples:
-            value *= i / fade_samples
-        elif i > num_samples - fade_samples:
-            value *= (num_samples - i) / fade_samples
+    # Phase 2: Rising chirp (50ms) -- frequency sweep from 1200 to 2800 Hz
+    chirp_len = int(SAMPLE_RATE * 0.050)
+    chirp = []
+    for i in range(chirp_len):
+        t = i / SAMPLE_RATE
+        progress = i / chirp_len
+        freq = 1200 + (2800 - 1200) * progress
+        # Add slight noise texture
+        noise_val = rng.uniform(-1.0, 1.0) * 0.15
+        tone_val = math.sin(2 * math.pi * freq * t) * 0.6
+        chirp.append(tone_val + noise_val)
+    chirp = _apply_envelope(chirp, attack_ms=1.0, decay_ms=15.0)
 
-        # Scale to 16-bit and apply volume
-        sample = int(value * volume * 32767)
-        samples.append(struct.pack('<h', sample))
-
-    return b''.join(samples)
+    all_samples = click_noise + chirp
+    return _to_bytes(all_samples, master_volume=volume)
 
 
-def generate_double_beep(freq1: int = 880, freq2: int = 1100, duration_ms: int = 80, gap_ms: int = 50, volume: float = 0.3) -> bytes:
-    """Generate a double beep (two tones with a gap).
+def generate_ptt_release(volume: float = 0.15) -> bytes:
+    """PTT release: descending click like releasing the transmit button.
 
-    Args:
-        freq1: First tone frequency
-        freq2: Second tone frequency
-        duration_ms: Duration of each tone
-        gap_ms: Gap between tones
-        volume: Volume from 0.0 to 1.0
-
-    Returns:
-        Raw audio data as bytes
+    Brief falling tone followed by a noise click tail.
+    Total duration ~55ms.
     """
-    sample_rate = 44100
-    beep1 = generate_beep(freq1, duration_ms, volume, sample_rate)
-    gap = b'\x00\x00' * int(sample_rate * gap_ms / 1000)  # Silence
-    beep2 = generate_beep(freq2, duration_ms, volume, sample_rate)
-    return beep1 + gap + beep2
+    rng = random.Random(99)
+
+    # Phase 1: Falling chirp (40ms) -- frequency sweep from 2400 to 800 Hz
+    chirp_len = int(SAMPLE_RATE * 0.040)
+    chirp = []
+    for i in range(chirp_len):
+        t = i / SAMPLE_RATE
+        progress = i / chirp_len
+        freq = 2400 - (2400 - 800) * progress
+        noise_val = rng.uniform(-1.0, 1.0) * 0.12
+        tone_val = math.sin(2 * math.pi * freq * t) * 0.6
+        chirp.append(tone_val + noise_val)
+    chirp = _apply_envelope(chirp, attack_ms=1.0, decay_ms=12.0)
+
+    # Phase 2: Tail click -- noise burst (15ms)
+    tail_len = int(SAMPLE_RATE * 0.015)
+    tail = _white_noise(tail_len, 0.5, rng)
+    tail = _apply_envelope(tail, attack_ms=0.5, decay_ms=8.0)
+
+    all_samples = chirp + tail
+    return _to_bytes(all_samples, master_volume=volume)
+
+
+def generate_double_click(volume: float = 0.14) -> bytes:
+    """Quick double click for clipboard -- two very short percussive noise clicks.
+
+    Two ~12ms noise bursts separated by a ~25ms gap.
+    """
+    rng = random.Random(77)
+
+    def _single_click():
+        click_len = int(SAMPLE_RATE * 0.012)
+        # Noise with a slight high-freq tone for sharpness
+        noise = _white_noise(click_len, 0.6, rng)
+        tone = _sine(click_len, 3000, 0.3)
+        mixed = _mix(noise, tone)
+        return _apply_envelope(mixed, attack_ms=0.3, decay_ms=6.0)
+
+    click1 = _single_click()
+    click2 = _single_click()
+
+    click1_bytes = _to_bytes(click1, master_volume=volume)
+    gap = _silence_bytes(25)
+    click2_bytes = _to_bytes(click2, master_volume=volume)
+
+    return click1_bytes + gap + click2_bytes
+
+
+def generate_rising_chirp(volume: float = 0.12) -> bytes:
+    """Rising chirp for toggle-on / PTT engage.
+
+    Quick ascending sweep with noise texture. ~45ms.
+    """
+    rng = random.Random(55)
+    chirp_len = int(SAMPLE_RATE * 0.045)
+    chirp = []
+    for i in range(chirp_len):
+        t = i / SAMPLE_RATE
+        progress = i / chirp_len
+        freq = 1000 + (3200 - 1000) * (progress ** 0.8)  # Slightly curved sweep
+        noise_val = rng.uniform(-1.0, 1.0) * 0.10
+        tone_val = math.sin(2 * math.pi * freq * t) * 0.55
+        chirp.append(tone_val + noise_val)
+    chirp = _apply_envelope(chirp, attack_ms=0.5, decay_ms=12.0)
+    return _to_bytes(chirp, master_volume=volume)
+
+
+def generate_falling_chirp(volume: float = 0.12) -> bytes:
+    """Falling chirp for toggle-off / PTT disengage.
+
+    Quick descending sweep with noise texture. ~45ms.
+    """
+    rng = random.Random(66)
+    chirp_len = int(SAMPLE_RATE * 0.045)
+    chirp = []
+    for i in range(chirp_len):
+        t = i / SAMPLE_RATE
+        progress = i / chirp_len
+        freq = 3200 - (3200 - 1000) * (progress ** 0.8)
+        noise_val = rng.uniform(-1.0, 1.0) * 0.10
+        tone_val = math.sin(2 * math.pi * freq * t) * 0.55
+        chirp.append(tone_val + noise_val)
+    chirp = _apply_envelope(chirp, attack_ms=0.5, decay_ms=12.0)
+    return _to_bytes(chirp, master_volume=volume)
+
+
+def generate_rising_double_chirp(volume: float = 0.14) -> bytes:
+    """Rising double-chirp for append mode.
+
+    Two quick ascending chirps separated by a short gap. ~110ms total.
+    """
+    rng = random.Random(88)
+
+    def _single_chirp(base_freq: float, top_freq: float):
+        chirp_len = int(SAMPLE_RATE * 0.035)
+        chirp = []
+        for i in range(chirp_len):
+            t = i / SAMPLE_RATE
+            progress = i / chirp_len
+            freq = base_freq + (top_freq - base_freq) * progress
+            noise_val = rng.uniform(-1.0, 1.0) * 0.10
+            tone_val = math.sin(2 * math.pi * freq * t) * 0.55
+            chirp.append(tone_val + noise_val)
+        return _apply_envelope(chirp, attack_ms=0.5, decay_ms=10.0)
+
+    chirp1 = _single_chirp(1000, 2200)
+    chirp2 = _single_chirp(1400, 3000)
+
+    chirp1_bytes = _to_bytes(chirp1, master_volume=volume)
+    gap = _silence_bytes(20)
+    chirp2_bytes = _to_bytes(chirp2, master_volume=volume)
+
+    return chirp1_bytes + gap + chirp2_bytes
 
 
 class AudioFeedback:
-    """Manages audio feedback sounds."""
+    """Manages audio feedback sounds (PTT walkie-talkie style)."""
 
     def __init__(self):
         self._enabled = True
-        # Pre-generate beep sounds (volume ~0.12 for discreet office-friendly notifications)
-        self._start_beep = generate_beep(frequency=880, duration_ms=100, volume=0.12)  # A5, short
-        self._stop_beep = generate_double_beep(freq1=880, freq2=660, duration_ms=80, volume=0.12)  # A5 down to E5
-        self._clipboard_beep = self._generate_clipboard_beep()  # Quick triple beep for clipboard
-        # Toggle beeps - quick chirps to indicate state changes
-        self._toggle_on_beep = generate_double_beep(freq1=660, freq2=880, duration_ms=50, gap_ms=30, volume=0.10)  # Rising
-        self._toggle_off_beep = generate_double_beep(freq1=880, freq2=660, duration_ms=50, gap_ms=30, volume=0.10)  # Falling
-        # Append mode beep - distinct pattern (rising then sustained)
-        self._append_beep = generate_double_beep(freq1=660, freq2=990, duration_ms=70, gap_ms=40, volume=0.12)  # Low to high
+        # Pre-generate all PTT sounds
+        self._start_beep = generate_ptt_click_chirp(volume=0.15)
+        self._stop_beep = generate_ptt_release(volume=0.15)
+        self._clipboard_beep = generate_double_click(volume=0.14)
+        self._toggle_on_beep = generate_rising_chirp(volume=0.12)
+        self._toggle_off_beep = generate_falling_chirp(volume=0.12)
+        self._append_beep = generate_rising_double_chirp(volume=0.14)
 
     @property
     def enabled(self) -> bool:
@@ -100,44 +251,33 @@ class AudioFeedback:
     def enabled(self, value: bool):
         self._enabled = value
 
-    def _generate_clipboard_beep(self) -> bytes:
-        """Generate a quick triple beep for clipboard (high pitch, very short).
-
-        Uses a higher frequency (1320Hz = E6) and very short duration to distinguish
-        from start/stop beeps. Triple beep pattern makes it unique.
-        """
-        sample_rate = 44100
-        beep = generate_beep(frequency=1320, duration_ms=50, volume=0.12, sample_rate=sample_rate)
-        gap = b'\x00\x00' * int(sample_rate * 30 / 1000)  # 30ms silence between beeps
-        return beep + gap + beep + gap + beep
-
     def play_start_beep(self):
-        """Play the recording start beep."""
+        """Play the recording start sound (PTT key-up click-chirp)."""
         if self._enabled:
             self._play_async(self._start_beep)
 
     def play_stop_beep(self):
-        """Play the recording stop beep."""
+        """Play the recording stop sound (PTT release click)."""
         if self._enabled:
             self._play_async(self._stop_beep)
 
     def play_clipboard_beep(self):
-        """Play the clipboard copy beep."""
+        """Play the clipboard copy sound (quick double click)."""
         if self._enabled:
             self._play_async(self._clipboard_beep)
 
     def play_toggle_on_beep(self):
-        """Play the toggle-on beep (rising tone) for enabling settings."""
+        """Play the toggle-on sound (rising chirp)."""
         if self._enabled:
             self._play_async(self._toggle_on_beep)
 
     def play_toggle_off_beep(self):
-        """Play the toggle-off beep (falling tone) for disabling settings."""
+        """Play the toggle-off sound (falling chirp)."""
         if self._enabled:
             self._play_async(self._toggle_off_beep)
 
     def play_append_beep(self):
-        """Play the append mode beep (distinct rising pattern)."""
+        """Play the append mode sound (rising double-chirp)."""
         if self._enabled:
             self._play_async(self._append_beep)
 
@@ -148,11 +288,10 @@ class AudioFeedback:
 
     def _play_audio(self, audio_data: bytes):
         """Play raw audio data."""
-        sample_rate = 44100
+        sample_rate = SAMPLE_RATE
 
         if HAS_SIMPLEAUDIO:
             try:
-                # simpleaudio is the cleanest option
                 wave_obj = sa.WaveObject(audio_data, 1, 2, sample_rate)
                 play_obj = wave_obj.play()
                 play_obj.wait_done()

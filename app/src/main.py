@@ -108,7 +108,7 @@ from .ui_utils import get_provider_icon, get_model_icon
 from .clipboard import copy_to_clipboard
 from .recent_panel import RecentPanel
 from .transcription_queue import TranscriptionQueue
-from .output_panel import DualOutputPanel
+from .output_panel import OutputPanel
 
 
 class HotkeyEdit(QLineEdit):
@@ -447,16 +447,15 @@ class MainWindow(QMainWindow):
         analytics_action = QAction("Analytics...", self)
         analytics_action.triggered.connect(self.show_analytics)
         view_menu.addAction(analytics_action)
-
-        # Beta menu (experimental features)
-        beta_menu = menubar.addMenu("Beta")
+        view_menu.addSeparator()
         file_transcription_action = QAction("File Transcription...", self)
         file_transcription_action.triggered.connect(self.show_file_transcription_window)
-        beta_menu.addAction(file_transcription_action)
+        view_menu.addAction(file_transcription_action)
 
         # Settings menu
         settings_menu = menubar.addMenu("Settings")
         preferences_action = QAction("Preferences...", self)
+        preferences_action.setShortcut("Ctrl+,")
         preferences_action.triggered.connect(self.show_settings)
         settings_menu.addAction(preferences_action)
 
@@ -493,10 +492,10 @@ class MainWindow(QMainWindow):
 
         # Recording controls - using icons for compact display
         self.record_btn = QPushButton("●")  # Record icon
-        self.record_btn.setMinimumHeight(42)
-        self.record_btn.setMinimumWidth(50)
+        self.record_btn.setMinimumHeight(56)
+        self.record_btn.setMinimumWidth(72)
         self.record_btn.setToolTip(
-            "Record\nStart a new recording.\nClears any cached audio and begins fresh."
+            "Record (Ctrl+R)\nStart a new recording.\nClears any cached audio and begins fresh."
         )
         self._record_btn_idle_style = """
             QPushButton {
@@ -505,10 +504,10 @@ class MainWindow(QMainWindow):
                 color: white;
                 border: none;
                 border-bottom: 3px solid #a71d2a;
-                border-radius: 6px;
+                border-radius: 28px;
                 font-weight: bold;
-                font-size: 20px;
-                padding: 0 8px;
+                font-size: 24px;
+                padding: 0 12px;
             }
             QPushButton:hover {
                 background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -522,10 +521,10 @@ class MainWindow(QMainWindow):
                 color: white;
                 border: 3px solid #ff6666;
                 border-bottom: 4px solid #cc0000;
-                border-radius: 6px;
+                border-radius: 28px;
                 font-weight: bold;
-                font-size: 20px;
-                padding: 0 8px;
+                font-size: 24px;
+                padding: 0 12px;
             }
             QPushButton:hover {
                 background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -812,10 +811,18 @@ class MainWindow(QMainWindow):
         self._mode_buttons["inject"] = self.mode_inject_btn
         mode_layout.addWidget(self.mode_inject_btn)
 
-        # Add spacing before VAD checkbox
-        mode_layout.addSpacing(12)
+        mode_layout.addSpacing(16)
 
-        # VAD checkbox (silence removal)
+        # Separator
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setStyleSheet("color: #dee2e6;")
+        sep.setFixedHeight(20)
+        mode_layout.addWidget(sep)
+
+        mode_layout.addSpacing(8)
+
+        # VAD checkbox (silence removal) - separate from output modes
         self.vad_checkbox = QCheckBox("VAD")
         self.vad_checkbox.setToolTip(
             "Voice Activity Detection\n"
@@ -949,15 +956,15 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(presets_section_layout)
 
-        # Text output area - dual panel for queue mode
-        self.output_panel = DualOutputPanel()
+        # Text output area
+        self.output_panel = OutputPanel()
         self.output_panel.setMinimumHeight(120)
         self.output_panel.copy_clicked.connect(self._on_output_copy_clicked)
         self.output_panel.text_changed.connect(self.update_word_count)
         layout.addWidget(self.output_panel, 1)
 
-        # Legacy compatibility: text_output points to slot1's text widget
-        self.text_output = self.output_panel.slot1.text_widget
+        # Legacy compatibility: text_output points to the panel's text widget
+        self.text_output = self.output_panel.text_widget
 
         # Create transcription queue
         self.transcription_queue = TranscriptionQueue(
@@ -1099,16 +1106,20 @@ class MainWindow(QMainWindow):
         self.recent_panel.transcript_copied.connect(self._on_recent_copied)
         main_layout.addWidget(self.recent_panel)
 
-        # Persistent audio feedback footer
+        # Footer separator
+        footer_sep = QFrame()
+        footer_sep.setFrameShape(QFrame.Shape.HLine)
+        footer_sep.setStyleSheet("color: #e9ecef;")
+        main_layout.addWidget(footer_sep)
+
+        # Footer bar
         feedback_footer = QHBoxLayout()
-        feedback_footer.setSpacing(8)
-        feedback_footer.setContentsMargins(0, 8, 0, 0)
+        feedback_footer.setSpacing(6)
+        feedback_footer.setContentsMargins(0, 4, 0, 0)
 
-        feedback_footer.addStretch()
-
-        # Notification Mode label
-        notification_mode_label = QLabel("Notification Mode")
-        notification_mode_label.setStyleSheet("""
+        # Notification mode group
+        sounds_label = QLabel("Sounds")
+        sounds_label.setStyleSheet("""
             QLabel {
                 color: #888;
                 font-size: 10px;
@@ -1117,18 +1128,17 @@ class MainWindow(QMainWindow):
                 padding: 2px 8px;
             }
         """)
-        feedback_footer.addWidget(notification_mode_label)
-        feedback_footer.addSpacing(8)
+        feedback_footer.addWidget(sounds_label)
+        feedback_footer.addSpacing(4)
 
-        # Create button group for mutual exclusion
         self._feedback_buttons = {}
         feedback_btn_style = """
             QPushButton {
                 background-color: #f0f0f0;
                 border: 1px solid #ccc;
                 border-radius: 4px;
-                padding: 4px 12px;
-                font-size: 11px;
+                padding: 3px 10px;
+                font-size: 10px;
                 color: #555;
             }
             QPushButton:hover {
@@ -1141,60 +1151,65 @@ class MainWindow(QMainWindow):
             }
         """
 
-        quiet_btn = QPushButton("Quiet")
+        quiet_btn = QPushButton("Silent")
         quiet_btn.setCheckable(True)
         quiet_btn.setStyleSheet(feedback_btn_style)
         quiet_btn.clicked.connect(lambda: self._set_audio_feedback_mode("silent"))
         self._feedback_buttons["silent"] = quiet_btn
         feedback_footer.addWidget(quiet_btn)
 
-        tts_btn = QPushButton("TTS")
-        tts_btn.setCheckable(True)
-        tts_btn.setStyleSheet(feedback_btn_style)
-        tts_btn.clicked.connect(lambda: self._set_audio_feedback_mode("tts"))
-        self._feedback_buttons["tts"] = tts_btn
-        feedback_footer.addWidget(tts_btn)
-
-        beeps_btn = QPushButton("Beeps")
+        beeps_btn = QPushButton("PTT")
         beeps_btn.setCheckable(True)
         beeps_btn.setStyleSheet(feedback_btn_style)
         beeps_btn.clicked.connect(lambda: self._set_audio_feedback_mode("beeps"))
         self._feedback_buttons["beeps"] = beeps_btn
         feedback_footer.addWidget(beeps_btn)
 
+        tts_btn = QPushButton("Voice")
+        tts_btn.setCheckable(True)
+        tts_btn.setStyleSheet(feedback_btn_style)
+        tts_btn.clicked.connect(lambda: self._set_audio_feedback_mode("tts"))
+        self._feedback_buttons["tts"] = tts_btn
+        feedback_footer.addWidget(tts_btn)
+
+        # Voice pack selector (shown when TTS mode active)
+        self._voice_pack_btn = QToolButton()
+        self._voice_pack_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._voice_pack_btn.setStyleSheet("""
+            QToolButton {
+                color: #666;
+                font-size: 10px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 2px 8px;
+                background-color: #f8f9fa;
+            }
+            QToolButton:hover {
+                background-color: #e9ecef;
+            }
+            QToolButton::menu-indicator {
+                width: 0;
+                height: 0;
+            }
+        """)
+        self._setup_voice_pack_menu()
+        feedback_footer.addWidget(self._voice_pack_btn)
+
         feedback_footer.addStretch()
 
-        # All-time word count display
+        # All-time word count
         self.all_time_word_count_label = QLabel("")
-        self.all_time_word_count_label.setStyleSheet("""
-            QLabel {
-                color: #888;
-                font-size: 10px;
-            }
-        """)
+        self.all_time_word_count_label.setStyleSheet("color: #888; font-size: 10px;")
         self.all_time_word_count_label.setToolTip("Total words transcribed across all sessions")
         feedback_footer.addWidget(self.all_time_word_count_label)
-        feedback_footer.addSpacing(12)
+        feedback_footer.addSpacing(8)
 
-        # Open History link button
-        history_link = QPushButton("Open History")
-        history_link.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                border: none;
-                color: #007bff;
-                font-size: 11px;
-                text-decoration: underline;
-                padding: 4px 8px;
-            }
-            QPushButton:hover {
-                color: #0056b3;
-            }
-        """)
-        history_link.setCursor(Qt.CursorShape.PointingHandCursor)
-        history_link.setToolTip("Open transcription history in a separate window (Ctrl+Shift+H)")
-        history_link.clicked.connect(self.show_history_window)
-        feedback_footer.addWidget(history_link)
+        # History button (consistent style)
+        history_btn = QPushButton("History")
+        history_btn.setStyleSheet(feedback_btn_style.replace(":checked {", ":checked_UNUSED {"))  # No checked state
+        history_btn.setToolTip("Open transcription history (Ctrl+H)")
+        history_btn.clicked.connect(self.show_history_window)
+        feedback_footer.addWidget(history_btn)
 
         main_layout.addLayout(feedback_footer)
 
@@ -1480,9 +1495,13 @@ class MainWindow(QMainWindow):
         copy_shortcut = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
         copy_shortcut.activated.connect(self.copy_to_clipboard)
 
-        # Ctrl+N to clear
-        clear_shortcut = QShortcut(QKeySequence("Ctrl+N"), self)
+        # Ctrl+Shift+Delete to clear (Ctrl+N reserved for platform convention)
+        clear_shortcut = QShortcut(QKeySequence("Ctrl+Shift+Delete"), self)
         clear_shortcut.activated.connect(self.clear_transcription)
+
+        # Ctrl+, to open Settings (standard Linux convention)
+        settings_shortcut = QShortcut(QKeySequence("Ctrl+,"), self)
+        settings_shortcut.activated.connect(self.show_settings)
 
         # Ctrl+H to open History window
         history_shortcut = QShortcut(QKeySequence("Ctrl+H"), self)
@@ -1875,11 +1894,59 @@ class MainWindow(QMainWindow):
         save_config(self.config)
         self._update_feedback_buttons()
 
+    def _setup_voice_pack_menu(self):
+        """Set up the voice pack dropdown menu."""
+        voice_pack_names = {
+            "ryan": "Ryan (Professional)",
+            "herman": "Herman (Talking Donkey)",
+            "corn": "Corn (Elderly Sloth)",
+            "venti": "Venti (Expressive)",
+            "napoleon": "Napoleon (Motivational)",
+            "wizard": "Wizard (Mystical)",
+        }
+        self._voice_pack_menu = QMenu(self)
+        self._voice_pack_actions = {}
+        voice_group = QActionGroup(self)
+        voice_group.setExclusive(True)
+
+        for pack_id, pack_name in voice_pack_names.items():
+            action = QAction(pack_name, self)
+            action.setCheckable(True)
+            action.setData(pack_id)
+            action.triggered.connect(lambda checked, pid=pack_id: self._on_voice_pack_changed(pid))
+            voice_group.addAction(action)
+            self._voice_pack_menu.addAction(action)
+            self._voice_pack_actions[pack_id] = action
+
+        self._voice_pack_btn.setMenu(self._voice_pack_menu)
+        self._update_voice_pack_display()
+
+    def _on_voice_pack_changed(self, pack_id: str):
+        """Handle voice pack selection change."""
+        self.config.tts_voice_pack = pack_id
+        save_config(self.config)
+        from .tts_announcer import set_announcer_voice_pack
+        set_announcer_voice_pack(pack_id)
+        self._update_voice_pack_display()
+
+    def _update_voice_pack_display(self):
+        """Update voice pack button text and checkmarks."""
+        current = getattr(self.config, 'tts_voice_pack', 'ryan')
+        short_names = {
+            "ryan": "Ryan", "herman": "Herman", "corn": "Corn",
+            "venti": "Venti", "napoleon": "Napoleon", "wizard": "Wizard",
+        }
+        self._voice_pack_btn.setText(short_names.get(current, current.title()))
+        for pack_id, action in self._voice_pack_actions.items():
+            action.setChecked(pack_id == current)
+
     def _update_feedback_buttons(self):
         """Update feedback button checked states based on current config."""
         current_mode = self.config.audio_feedback_mode
         for mode_key, btn in self._feedback_buttons.items():
             btn.setChecked(mode_key == current_mode)
+        # Show voice pack selector only when TTS mode is active
+        self._voice_pack_btn.setVisible(current_mode == "tts")
 
     def _update_all_time_word_count(self):
         """Update the all-time word count display in the footer."""
@@ -2910,22 +2977,25 @@ class MainWindow(QMainWindow):
         _, model = self._get_current_model()
         preset = self.config.active_model_preset
 
-        # Button shows just "Primary" or "Fallback"
-        display_text = preset.title()
-
-        # Get custom name for tooltip (if configured)
+        # Get human-readable name
         if preset == "primary" and self.config.primary_name:
-            custom_name = self.config.primary_name
+            display_name = self.config.primary_name
         elif preset == "fallback" and self.config.fallback_name:
-            custom_name = self.config.fallback_name
+            display_name = self.config.fallback_name
         else:
-            custom_name = get_model_display_name(model)
+            display_name = get_model_display_name(model)
 
-        # Set button text (no indicator - click shows menu)
+        # Show human-readable name with multimodal indicator
+        is_gemini = "gemini" in model.lower()
+        badge = "Gemini" if is_gemini else "AI"
+        display_text = f"{badge} · {display_name}"
+
+        # Set button text with readable name
         self.model_selector_btn.setText(display_text)
         self.model_selector_btn.setToolTip(
-            f"{custom_name}\n"
+            f"Single-pass multimodal transcription\n"
             f"Model: {model}\n"
+            f"Preset: {preset.title()}\n"
             f"Failover: {'Enabled' if self.config.failover_enabled else 'Disabled'}\n"
             f"Click to change"
         )
@@ -3563,7 +3633,7 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, watched, event):
         """Handle events from child widgets."""
-        # DualOutputPanel handles its own layout, so we just pass through
+        # OutputPanel handles its own layout, so we just pass through
         return super().eventFilter(watched, event)
 
     def changeEvent(self, event):
@@ -4070,13 +4140,23 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """Handle window close - minimize to tray instead."""
         event.ignore()
+        # Notify user if they have unsaved text
+        text = self.text_output.toPlainText()
+        if text and text.strip():
+            self.tray.showMessage(
+                "AI Transcription Utility",
+                "Minimized to tray. Text is auto-saved to history.",
+                QSystemTrayIcon.MessageIcon.Information,
+                2000,
+            )
+        else:
+            self.tray.showMessage(
+                "AI Transcription Utility",
+                "Minimized to system tray. Click icon to restore.",
+                QSystemTrayIcon.MessageIcon.Information,
+                2000,
+            )
         self.hide()
-        self.tray.showMessage(
-            "AI Transcription Utility",
-            "Minimized to system tray. Click icon to restore.",
-            QSystemTrayIcon.MessageIcon.Information,
-            2000,
-        )
 
 
 def main():
