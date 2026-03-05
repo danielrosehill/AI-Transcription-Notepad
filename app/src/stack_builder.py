@@ -234,26 +234,9 @@ class StackBuilderWidget(QWidget):
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(8)
 
-        # Top row: Infer Format + Base options + Reset
+        # Top row: Base options + Reset
         top_row = QHBoxLayout()
         top_row.setSpacing(16)
-
-        # Infer Format checkbox
-        self.infer_format_checkbox = QCheckBox("Infer Format")
-        self.infer_format_checkbox.setToolTip(
-            "Let the AI infer the intended format from the content"
-        )
-        self.infer_format_checkbox.setStyleSheet("""
-            QCheckBox {
-                font-size: 11px;
-                color: #444;
-            }
-            QCheckBox::indicator {
-                width: 14px;
-                height: 14px;
-            }
-        """)
-        top_row.addWidget(self.infer_format_checkbox)
 
         # Base options (always visible)
         base_frame = QFrame()
@@ -641,7 +624,6 @@ class StackBuilderWidget(QWidget):
 
     def _connect_signals(self):
         """Connect all widget signals."""
-        self.infer_format_checkbox.stateChanged.connect(self._on_infer_format_changed)
         self.base_button_group.buttonClicked.connect(self._on_base_changed)
         # Format/Tone/Style checkboxes are connected in setup methods
         self.format_combo.currentIndexChanged.connect(self._on_format_combo_changed)
@@ -674,12 +656,6 @@ class StackBuilderWidget(QWidget):
         elif announcement_type == 'default_prompt_configured':
             announcer.announce_default_prompt_configured()
 
-    def _on_infer_format_changed(self, state: int):
-        is_checked = (state == Qt.CheckState.Checked.value)
-        self.config.prompt_infer_format = is_checked
-        if is_checked:
-            self._announce_tts('format_inference')
-        self.prompt_changed.emit()
 
     def _on_setting_changed(self):
         self._save_to_config()
@@ -765,9 +741,6 @@ class StackBuilderWidget(QWidget):
         """Load current settings from config."""
         self._block_all_signals(True)
 
-        self.infer_format_checkbox.setChecked(
-            getattr(self.config, 'prompt_infer_format', False)
-        )
 
         # Base preset (General vs Verbatim vs Translation)
         base_preset = self.config.format_preset
@@ -842,7 +815,6 @@ class StackBuilderWidget(QWidget):
 
     def _block_all_signals(self, block: bool):
         """Block or unblock signals from all widgets."""
-        self.infer_format_checkbox.blockSignals(block)
         self.base_button_group.blockSignals(block)
         self.format_combo.blockSignals(block)
         self.tone_combo.blockSignals(block)
@@ -888,8 +860,6 @@ class StackBuilderWidget(QWidget):
         """Reset stack to General with no modifiers."""
         self._block_all_signals(True)
 
-        self.infer_format_checkbox.setChecked(False)
-        self.config.prompt_infer_format = False
 
         self.base_buttons["general"].setChecked(True)
         self.config.translation_mode_enabled = False

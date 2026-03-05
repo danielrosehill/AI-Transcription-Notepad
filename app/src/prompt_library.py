@@ -1020,9 +1020,6 @@ def build_prompt_from_config(prompt_config: PromptConfig, app_config: Any = None
     # ===== LAYER 1: FOUNDATION (CONDITIONALLY APPLIED) =====
     lines.append("\n## Foundation Cleanup")
     for section_key, section_data in FOUNDATION_PROMPT_SECTIONS.items():
-        # Skip format_detection if prompt_infer_format is disabled
-        if section_key == "format_detection" and app_config and not getattr(app_config, 'prompt_infer_format', False):
-            continue
         # Skip meta_instructions if prompt_follow_instructions is disabled
         if section_key == "meta_instructions" and app_config and not getattr(app_config, 'prompt_follow_instructions', True):
             continue

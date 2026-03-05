@@ -193,10 +193,6 @@ class ConfigSummaryBanner(QWidget):
         if getattr(config, 'tldr_enabled', False):
             pills_data.append(("TLDR", _teal_pill(), "extra", "tldr"))
 
-        # Infer format
-        if getattr(config, 'prompt_infer_format', False):
-            pills_data.append(("Infer", _orange_pill(), "extra", "infer_format"))
-
         # Build pill buttons
         for label, style, category, key in pills_data:
             pill = QPushButton(label)

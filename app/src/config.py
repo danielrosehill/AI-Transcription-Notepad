@@ -931,12 +931,12 @@ FOUNDATION_PROMPT_SECTIONS = {
         ],
     },
 
-    # Section 13: Format detection
+    # Section 13: Format and tone inference (always applied)
     "format_detection": {
-        "heading": "Format Detection",
+        "heading": "Format and Tone Inference",
         "instructions": [
-            "If you can infer that the transcript was intended to be formatted in a specific and commonly used format (such as an email, to-do list, or meeting notes), ensure the text conforms to the expected format.",
-            "Match language tone to detected context: business emails should use professional language, casual notes can be informal.",
+            "Infer the intended output format from the content and structure of what the user dictated. For example, if the user dictates something that reads like an email, format it as an email. If it sounds like a to-do list, format it as a list. If it's meeting notes, add appropriate structure. Apply the most natural format without the user needing to specify it.",
+            "Infer the appropriate level of formality from the user's wording, context, and subject matter. Business communications, professional correspondence, and technical documents should use formal language. Casual notes, personal messages, and informal brainstorms should stay relaxed and conversational. Match the tone the user naturally set in their dictation.",
         ],
     },
 
@@ -1539,9 +1539,6 @@ def build_cleanup_prompt(config: Config, use_prompt_library: bool = False, audio
     lines.append("\n## Foundation Cleanup (Always Applied)")
     # Iterate over sections, conditionally skipping based on config flags
     for section_key, section_data in FOUNDATION_PROMPT_SECTIONS.items():
-        # Skip format_detection if prompt_infer_format is disabled
-        if section_key == "format_detection" and not getattr(config, 'prompt_infer_format', False):
-            continue
         # Skip meta_instructions if prompt_follow_instructions is disabled
         if section_key == "meta_instructions" and not getattr(config, 'prompt_follow_instructions', True):
             continue
