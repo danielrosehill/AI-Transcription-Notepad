@@ -30,17 +30,32 @@ except ImportError:
 
 SAMPLE_RATE = 44100
 
+# Lead-in silence (ms) prepended to all sounds to avoid audio buffer startup glitches
+_LEAD_IN_MS = 30
+
 # Path to bundled sound effects
 _SFX_DIR = Path(__file__).parent.parent / "assets" / "sfx"
 
 
+def _lead_in_bytes(duration_ms: float = _LEAD_IN_MS, sample_rate: int = SAMPLE_RATE) -> bytes:
+    """Generate a short silence buffer to let the audio device stabilize."""
+    return b'\x00\x00' * int(sample_rate * duration_ms / 1000)
+
+
+_LEAD_IN = _lead_in_bytes()
+
+
 def _load_wav_pcm(filename: str) -> bytes:
-    """Load a WAV file from assets/sfx/ and return raw PCM bytes (16-bit mono)."""
+    """Load a WAV file from assets/sfx/ and return raw PCM bytes (16-bit mono).
+
+    Prepends a short silence buffer so the audio device has time to
+    initialize before audible content begins.
+    """
     path = _SFX_DIR / filename
     if not path.exists():
         return b""
     with wave.open(str(path), "rb") as wf:
-        return wf.readframes(wf.getnframes())
+        return _LEAD_IN + wf.readframes(wf.getnframes())
 
 
 def _white_noise(num_samples: int, volume: float, rng: random.Random) -> list[float]:
@@ -81,8 +96,11 @@ def _mix(*layers: list[float]) -> list[float]:
 
 
 def _to_bytes(samples: list[float], master_volume: float = 1.0) -> bytes:
-    """Convert float samples to 16-bit PCM bytes, with clipping."""
-    out = []
+    """Convert float samples to 16-bit PCM bytes, with clipping.
+
+    Prepends a lead-in silence buffer for audio device stabilization.
+    """
+    out = [_LEAD_IN]
     for s in samples:
         val = int(s * master_volume * 32767)
         val = max(-32767, min(32767, val))
@@ -365,8 +383,10 @@ class AudioFeedback:
 
         if HAS_PYAUDIO:
             try:
-                p = pyaudio.PyAudio()
-                stream = p.open(
+                # Reuse a persistent PyAudio instance to avoid per-sound init overhead
+                if not hasattr(self, '_pyaudio_instance') or self._pyaudio_instance is None:
+                    self._pyaudio_instance = pyaudio.PyAudio()
+                stream = self._pyaudio_instance.open(
                     format=pyaudio.paInt16,
                     channels=1,
                     rate=sample_rate,
@@ -375,10 +395,10 @@ class AudioFeedback:
                 stream.write(audio_data)
                 stream.stop_stream()
                 stream.close()
-                p.terminate()
                 return
             except Exception:
-                pass
+                # Reset instance on error so next call retries
+                self._pyaudio_instance = None
 
         # If no audio backend available, silently fail
 
