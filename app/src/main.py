@@ -2103,29 +2103,42 @@ class MainWindow(QMainWindow):
                 self.recorder.set_device(mic_idx)
 
             # Audio feedback (beeps or TTS based on mode)
+            # Play the sound BEFORE opening the mic stream to avoid PulseAudio/PipeWire
+            # contention that causes the start beep to sound clipped or muffled.
+            beep_delay_ms = 0
             if self.config.audio_feedback_mode == "beeps":
                 get_feedback().play_start_beep()
+                beep_delay_ms = 200  # Let beep finish before opening mic
             elif self.config.audio_feedback_mode == "tts":
                 get_announcer().announce_recording()
+                beep_delay_ms = 350  # TTS announcements are longer
 
-            self.recorder.start_recording()
-            self.record_btn.setText("●")
-            self.retake_btn.setEnabled(True)
-            self.append_btn.setEnabled(False)  # Disable append while recording
-            self.stop_btn.setEnabled(True)  # Can stop recording to cache
-            self.transcribe_btn.setEnabled(True)  # Can stop and transcribe immediately
-            self.delete_btn.setEnabled(True)  # Can delete current recording
-            self.status_label.setText("Recording...")
-            self.status_label.setStyleSheet("color: rgba(220, 53, 69, 0.7); font-size: 11px;")
-            self.timer.start(100)
-            # Start visual effects (pulsating record button, grayscale other controls)
-            self._start_recording_visual_effects()
-            # Update tray to recording state
-            self._set_tray_state("recording")
+            if beep_delay_ms > 0:
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(beep_delay_ms, self._finish_start_recording)
+                return
+            self._finish_start_recording()
         else:
             # Stop recording and cache audio (same as stop button)
             # This enables the append button so user can add more clips
             self.handle_stop_button()
+
+    def _finish_start_recording(self):
+        """Open the mic and update UI — called after the start beep finishes."""
+        self.recorder.start_recording()
+        self.record_btn.setText("●")
+        self.retake_btn.setEnabled(True)
+        self.append_btn.setEnabled(False)  # Disable append while recording
+        self.stop_btn.setEnabled(True)  # Can stop recording to cache
+        self.transcribe_btn.setEnabled(True)  # Can stop and transcribe immediately
+        self.delete_btn.setEnabled(True)  # Can delete current recording
+        self.status_label.setText("Recording...")
+        self.status_label.setStyleSheet("color: rgba(220, 53, 69, 0.7); font-size: 11px;")
+        self.timer.start(100)
+        # Start visual effects (pulsating record button, grayscale other controls)
+        self._start_recording_visual_effects()
+        # Update tray to recording state
+        self._set_tray_state("recording")
 
     def retake_recording(self):
         """Discard current recording and immediately start a fresh one.
