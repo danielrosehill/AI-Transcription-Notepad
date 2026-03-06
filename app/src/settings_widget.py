@@ -408,6 +408,22 @@ class BehaviorWidget(QWidget):
         duration_display_layout.addWidget(duration_help)
         form.addRow("Duration display:", duration_display_layout)
 
+        # Coherence check (second pass)
+        coherence_layout = QVBoxLayout()
+        self.coherence_check_enabled = QCheckBox()
+        self.coherence_check_enabled.setChecked(self.config.coherence_check_enabled)
+        self.coherence_check_enabled.toggled.connect(lambda v: self._save_bool("coherence_check_enabled", v))
+        coherence_layout.addWidget(self.coherence_check_enabled)
+        coherence_help = QLabel(
+            "After transcription, a cheap second pass reviews the text for words that "
+            "don't make logical sense in context and corrects them. "
+            f"Uses {self.config.coherence_check_model} (text-only, very low cost)."
+        )
+        coherence_help.setWordWrap(True)
+        coherence_help.setStyleSheet("color: #666; font-size: 10px;")
+        coherence_layout.addWidget(coherence_help)
+        form.addRow("Coherence check:", coherence_layout)
+
         layout.addLayout(form)
         layout.addStretch()
 

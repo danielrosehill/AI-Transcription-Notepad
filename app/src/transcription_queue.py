@@ -33,6 +33,8 @@ class TranscriptionSettings:
     model: str
     prompt: str
     vad_enabled: bool = False
+    coherence_check: bool = False
+    coherence_model: str = ""
 
 
 @dataclass
@@ -94,6 +96,16 @@ class QueueWorker(QThread):
             result = client.transcribe(compressed_audio, settings.prompt)
             self.inference_time_ms = int((time.time() - start_time) * 1000)
 
+            # Second pass: coherence check with cheap model
+            if settings.coherence_check and settings.coherence_model and result.text.strip():
+                self.status.emit(item.id, "Checking coherence...")
+                from .config import COHERENCE_CHECK_PROMPT
+                coherence_client = get_client(settings.api_key, settings.coherence_model)
+                coherence_result = coherence_client.rewrite_text(result.text, COHERENCE_CHECK_PROMPT)
+                if coherence_result.text.strip():
+                    result.text = coherence_result.text
+                    result.output_tokens += coherence_result.output_tokens
+
             self.finished.emit(item.id, result)
 
         except Exception as e:
@@ -126,6 +138,8 @@ class TranscriptionQueue(QObject):
         model: str,
         prompt: str,
         vad_enabled: bool = False,
+        coherence_check: bool = False,
+        coherence_model: str = "",
     ) -> str:
         """Add an item to the transcription queue.
 
@@ -135,6 +149,8 @@ class TranscriptionQueue(QObject):
             model: Model name
             prompt: Cleanup prompt
             vad_enabled: Whether to apply VAD
+            coherence_check: Whether to run second-pass coherence check
+            coherence_model: Model to use for coherence check
 
         Returns:
             item_id: Unique ID for tracking this item
@@ -144,6 +160,8 @@ class TranscriptionQueue(QObject):
             model=model,
             prompt=prompt,
             vad_enabled=vad_enabled,
+            coherence_check=coherence_check,
+            coherence_model=coherence_model,
         )
 
         item = QueueItem(

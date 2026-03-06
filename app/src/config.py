@@ -138,6 +138,26 @@ Apply only essential cleanup:
 Output ONLY the cleaned text. No preamble, no "Here is...", no commentary. Start directly with the content."""
 
 
+# Coherence Check prompt - used for second-pass review of transcriptions
+COHERENCE_CHECK_PROMPT = """Review this transcription for words or phrases that don't make logical sense in context.
+
+Speech-to-text often produces plausible-sounding words that are acoustically similar to what was actually said but semantically wrong. Your job is to identify these and replace them with the most likely intended word or phrase based on the surrounding context.
+
+Examples of the kind of errors to fix:
+- "I need to check the weather in my car" → "I need to check the weather in my car" (correct, leave as-is)
+- "The president signed the new bill into lava" → "The president signed the new bill into law"
+- "I'll send you the report by carrier penguin" → "I'll send you the report by carrier pigeon"
+- "We need to address the elephant in the broom" → "We need to address the elephant in the room"
+
+Rules:
+- ONLY fix words/phrases that are clearly illogical in context
+- Do NOT rephrase, restructure, or "improve" the writing
+- Do NOT change tone, style, or formatting
+- Preserve all markdown, paragraphs, and structure exactly as-is
+- If nothing needs fixing, return the text unchanged
+- Output ONLY the corrected text, no commentary or explanations"""
+
+
 def get_model_display_name(model_id: str) -> str:
     """Get the human-readable display name for a model ID.
 
@@ -409,6 +429,15 @@ class Config:
     translation_mode_enabled: bool = False
     translation_source_language: str = "auto"  # "auto" for auto-detect, or language code
     translation_target_language: str = "en"    # Target language code (default: English)
+
+    # ==========================================================================
+    # COHERENCE CHECK (Second Pass)
+    # ==========================================================================
+    # When enabled, a second text-only pass reviews the transcription for words
+    # or phrases that don't make logical sense in context and corrects them.
+    # Uses a cheap model (Gemini 3.1 Flash Lite) to keep costs minimal.
+    coherence_check_enabled: bool = False
+    coherence_check_model: str = "google/gemini-3.1-flash-lite-preview"
 
 
 def _apply_migrations(config: Config) -> Config:

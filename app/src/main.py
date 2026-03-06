@@ -3,6 +3,7 @@
 
 import sys
 import os
+import socket
 from pathlib import Path
 
 # Load .env file if present (check both src/ and project root)
@@ -176,6 +177,8 @@ class TranscriptionWorker(QThread):
         model: str,
         prompt: str,
         vad_enabled: bool = False,
+        coherence_check: bool = False,
+        coherence_model: str = "",
     ):
         super().__init__()
         self.audio_data = audio_data
@@ -183,6 +186,8 @@ class TranscriptionWorker(QThread):
         self.model = model
         self.prompt = prompt
         self.vad_enabled = vad_enabled
+        self.coherence_check = coherence_check
+        self.coherence_model = coherence_model
         self.inference_time_ms: int = 0
         self.original_duration: float | None = None
         self.vad_duration: float | None = None
@@ -210,6 +215,17 @@ class TranscriptionWorker(QThread):
             client = get_client(self.api_key, self.model)
             result = client.transcribe(compressed_audio, self.prompt)
             self.inference_time_ms = int((time.time() - start_time) * 1000)
+
+            # Second pass: coherence check with cheap model
+            if self.coherence_check and self.coherence_model and result.text.strip():
+                self.status.emit("Checking coherence...")
+                from .config import COHERENCE_CHECK_PROMPT
+                coherence_client = get_client(self.api_key, self.coherence_model)
+                coherence_result = coherence_client.rewrite_text(result.text, COHERENCE_CHECK_PROMPT)
+                if coherence_result.text.strip():
+                    result.text = coherence_result.text
+                    result.output_tokens += coherence_result.output_tokens
+
             self.finished.emit(result)
         except Exception as e:
             self.error.emit(str(e))
@@ -2105,12 +2121,16 @@ class MainWindow(QMainWindow):
             # Audio feedback (beeps or TTS based on mode)
             # Play the sound BEFORE opening the mic stream to avoid PulseAudio/PipeWire
             # contention that causes the start beep to sound clipped or muffled.
+            # Skip start beep/TTS when append_mode is True -- the append beep
+            # from append_to_transcription() already confirmed the action.
             beep_delay_ms = 0
             if self.config.audio_feedback_mode == "beeps":
-                get_feedback().play_start_beep()
-                beep_delay_ms = 200  # Let beep finish before opening mic
+                if not self.append_mode:
+                    get_feedback().play_start_beep()
+                beep_delay_ms = 200  # Always delay for mic (append beep may still be playing)
             elif self.config.audio_feedback_mode == "tts":
-                get_announcer().announce_recording()
+                if not self.append_mode:
+                    get_announcer().announce_recording()
                 beep_delay_ms = 350  # TTS announcements are longer
 
             if beep_delay_ms > 0:
@@ -2191,8 +2211,11 @@ class MainWindow(QMainWindow):
             return
 
         # Audio feedback (beeps or TTS based on mode)
+        # Always play cached beep here -- handle_stop_button() caches audio
+        # by design (appends to accumulated_segments). The distinct "thunk"
+        # confirms the audio was stashed, not discarded.
         if self.config.audio_feedback_mode == "beeps":
-            get_feedback().play_stop_beep()
+            get_feedback().play_cached_beep()
         elif self.config.audio_feedback_mode == "tts":
             # Announce "Cached" for append mode, "Stopped" otherwise
             if self.append_mode or self.accumulated_segments:
@@ -2319,6 +2342,8 @@ class MainWindow(QMainWindow):
                 model=model,
                 prompt=cleanup_prompt,
                 vad_enabled=self.config.vad_enabled,
+                coherence_check=self.config.coherence_check_enabled,
+                coherence_model=self.config.coherence_check_model,
             )
         else:
             # Legacy single-worker mode
@@ -2329,6 +2354,8 @@ class MainWindow(QMainWindow):
                 model,
                 cleanup_prompt,
                 vad_enabled=self.config.vad_enabled,
+                coherence_check=self.config.coherence_check_enabled,
+                coherence_model=self.config.coherence_check_model,
             )
             self.worker.finished.connect(self.on_transcription_complete)
             self.worker.error.connect(self.on_transcription_error)
@@ -2393,6 +2420,8 @@ class MainWindow(QMainWindow):
                 model=model,
                 prompt=cleanup_prompt,
                 vad_enabled=self.config.vad_enabled,
+                coherence_check=self.config.coherence_check_enabled,
+                coherence_model=self.config.coherence_check_model,
             )
         else:
             # Legacy single-worker mode
@@ -2403,6 +2432,8 @@ class MainWindow(QMainWindow):
                 model,
                 cleanup_prompt,
                 vad_enabled=self.config.vad_enabled,
+                coherence_check=self.config.coherence_check_enabled,
+                coherence_model=self.config.coherence_check_model,
             )
             self.worker.finished.connect(self.on_transcription_complete)
             self.worker.error.connect(self.on_transcription_error)
@@ -2533,6 +2564,8 @@ class MainWindow(QMainWindow):
                 model=model,
                 prompt=cleanup_prompt,
                 vad_enabled=self.config.vad_enabled,
+                coherence_check=self.config.coherence_check_enabled,
+                coherence_model=self.config.coherence_check_model,
             )
         else:
             # Legacy single-worker mode
@@ -2543,6 +2576,8 @@ class MainWindow(QMainWindow):
                 model,
                 cleanup_prompt,
                 vad_enabled=self.config.vad_enabled,
+                coherence_check=self.config.coherence_check_enabled,
+                coherence_model=self.config.coherence_check_model,
             )
             self.worker.finished.connect(self.on_transcription_complete)
             self.worker.error.connect(self.on_transcription_error)
@@ -2635,7 +2670,10 @@ class MainWindow(QMainWindow):
 
         # Audio feedback for completion (beeps or TTS based on mode)
         if self.config.audio_feedback_mode == "beeps":
-            get_feedback().play_complete_beep()
+            if self.append_mode:
+                get_feedback().play_append_complete_beep()
+            else:
+                get_feedback().play_complete_beep()
         elif self.config.audio_feedback_mode == "tts":
             # TTS: announce what happened based on output modes
             if injection_failed:
@@ -4171,11 +4209,62 @@ class MainWindow(QMainWindow):
         self.hide()
 
 
+SINGLE_INSTANCE_SOCKET = "\0voice-notepad-v3-single-instance"
+
+
+def _try_activate_existing():
+    """Try to signal an already-running instance. Returns True if one exists."""
+    try:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.connect(SINGLE_INSTANCE_SOCKET)
+        sock.sendall(b"RAISE")
+        sock.close()
+        return True
+    except (ConnectionRefusedError, FileNotFoundError, OSError):
+        return False
+
+
+class _SingleInstanceServer(QThread):
+    """Listens for activation requests from subsequent launches."""
+    raise_window = pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
+        self.daemon = True
+        self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self._sock.bind(SINGLE_INSTANCE_SOCKET)
+        self._sock.listen(1)
+
+    def run(self):
+        while True:
+            try:
+                conn, _ = self._sock.accept()
+                data = conn.recv(16)
+                conn.close()
+                if data == b"RAISE":
+                    self.raise_window.emit()
+            except OSError:
+                break
+
+
 def main():
+    # Check for already-running instance before creating QApplication
+    if _try_activate_existing():
+        print("Voice Notepad is already running. Bringing existing window to front.")
+        sys.exit(0)
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # Keep running in tray
 
     window = MainWindow()
+
+    # Start single-instance listener
+    instance_server = _SingleInstanceServer()
+    instance_server.raise_window.connect(window.show)
+    instance_server.raise_window.connect(window.raise_)
+    instance_server.raise_window.connect(window.activateWindow)
+    instance_server.start()
+
     if not window.config.start_minimized:
         window.show()
 
