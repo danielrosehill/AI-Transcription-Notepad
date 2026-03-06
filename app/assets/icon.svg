@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="mic" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff"/>
+      <stop offset="100%" style="stop-color:#e0e0ff"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect x="8" y="8" width="240" height="240" rx="48" ry="48" fill="url(#bg)"/>
+  <!-- Microphone body -->
+  <rect x="104" y="52" width="48" height="88" rx="24" ry="24" fill="url(#mic)"/>
+  <!-- Microphone stand arc -->
+  <path d="M80 120 C80 152 104 176 128 176 C152 176 176 152 176 120"
+        fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round"/>
+  <!-- Microphone stand -->
+  <line x1="128" y1="176" x2="128" y2="200" stroke="#ffffff" stroke-width="10" stroke-linecap="round"/>
+  <!-- Microphone base -->
+  <line x1="108" y1="200" x2="148" y2="200" stroke="#ffffff" stroke-width="10" stroke-linecap="round"/>
+  <!-- AI sparkle - top right -->
+  <g fill="#fbbf24">
+    <path d="M196 44 L200 56 L212 60 L200 64 L196 76 L192 64 L180 60 L192 56 Z"/>
+    <!-- Small sparkle -->
+    <path d="M218 76 L220 82 L226 84 L220 86 L218 92 L216 86 L210 84 L216 82 Z"/>
+  </g>
+  <!-- Sound waves - left side -->
+  <path d="M60 100 C48 112 48 132 60 144" fill="none" stroke="#c4b5fd" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+  <path d="M44 88 C24 108 24 140 44 160" fill="none" stroke="#c4b5fd" stroke-width="6" stroke-linecap="round" opacity="0.5"/>
+  <!-- Sound waves - right side -->
+  <path d="M196 100 C208 112 208 132 196 144" fill="none" stroke="#c4b5fd" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+  <path d="M212 88 C232 108 232 140 212 160" fill="none" stroke="#c4b5fd" stroke-width="6" stroke-linecap="round" opacity="0.5"/>
+</svg>

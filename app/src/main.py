@@ -1241,14 +1241,15 @@ class MainWindow(QMainWindow):
         self._tray_state = "idle"
 
         # Set up icons for different states
-        # Idle: notepad/text editor icon (common in KDE themes)
-        self._tray_icon_idle = QIcon.fromTheme(
-            "accessories-text-editor",
-            QIcon.fromTheme(
-                "text-x-generic",
+        # Idle: custom app icon (microphone with AI sparkles)
+        _app_icon_path = os.path.join(os.path.dirname(__file__), "..", "assets", "icon.png")
+        if os.path.exists(_app_icon_path):
+            self._tray_icon_idle = QIcon(_app_icon_path)
+        else:
+            self._tray_icon_idle = QIcon.fromTheme(
+                "audio-input-microphone",
                 self.style().standardIcon(self.style().StandardPixmap.SP_FileDialogDetailedView),
-            ),
-        )
+            )
         # Recording: red record icon
         self._tray_icon_recording = QIcon.fromTheme(
             "media-record", self.style().standardIcon(self.style().StandardPixmap.SP_DialogNoButton)
