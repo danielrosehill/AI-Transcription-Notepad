@@ -386,6 +386,7 @@ class Config:
     # Note: Always enabled automatically for email format preset
     personalization_enabled: bool = False
     add_date_enabled: bool = False  # When enabled, adds today's date to the prompt
+    all_caps_enabled: bool = False  # When enabled, instructs the model to return text in ALL CAPS
 
     # ==========================================================================
     # TLDR MODIFIER
@@ -1703,6 +1704,12 @@ def build_cleanup_prompt(config: Config, use_prompt_library: bool = False, audio
         lines.append(f"- Today's date is {formatted_date}.")
         lines.append("- Include this date in the output where appropriate (e.g., letter headers, document dates, meeting notes).")
 
+    # ===== ALL CAPS MODE =====
+    if config.all_caps_enabled:
+        lines.append("\n## All Caps")
+        lines.append("- Convert the ENTIRE output to ALL CAPS (uppercase letters).")
+        lines.append("- Every letter in the final output must be capitalized. No exceptions.")
+
     # ===== TRANSLATION MODE =====
     if config.translation_mode_enabled:
         target_lang = get_language_display_name(config.translation_target_language)
@@ -1857,6 +1864,12 @@ def _build_prompt_from_library(config: Config) -> str:
         lines.append("\n## Date")
         lines.append(f"- Today's date is {formatted_date}.")
         lines.append("- Include this date in the output where appropriate (e.g., letter headers, document dates, meeting notes).")
+
+    # ===== ALL CAPS MODE =====
+    if config.all_caps_enabled:
+        lines.append("\n## All Caps")
+        lines.append("- Convert the ENTIRE output to ALL CAPS (uppercase letters).")
+        lines.append("- Every letter in the final output must be capitalized. No exceptions.")
 
     # ===== TRANSLATION MODE =====
     if config.translation_mode_enabled:

@@ -942,6 +942,12 @@ class MainWindow(QMainWindow):
         self.add_date_checkbox.toggled.connect(self._on_add_date_toggled)
         personalization_layout.addWidget(self.add_date_checkbox)
 
+        self.all_caps_checkbox = QCheckBox("ALL CAPS")
+        self.all_caps_checkbox.setChecked(self.config.all_caps_enabled)
+        self.all_caps_checkbox.setToolTip("Output transcribed text in ALL CAPS")
+        self.all_caps_checkbox.toggled.connect(self._on_all_caps_toggled)
+        personalization_layout.addWidget(self.all_caps_checkbox)
+
         personalization_layout.addStretch()
         presets_section_layout.addLayout(personalization_layout)
 
@@ -1994,6 +2000,11 @@ class MainWindow(QMainWindow):
         When enabled, includes today's date in the output.
         """
         self.config.add_date_enabled = checked
+        save_config(self.config)
+
+    def _on_all_caps_toggled(self, checked: bool):
+        """Handle ALL CAPS checkbox toggle."""
+        self.config.all_caps_enabled = checked
         save_config(self.config)
 
     def _on_tldr_toggled(self, checked: bool):

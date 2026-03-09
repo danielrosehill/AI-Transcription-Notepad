@@ -247,6 +247,55 @@ def generate_falling_chirp(volume: float = 0.12) -> bytes:
     return _to_bytes(chirp, master_volume=volume)
 
 
+def generate_cached_thunk(volume: float = 0.14) -> bytes:
+    """Short percussive thunk for audio cached confirmation.
+
+    A brief low-mid tone with sharp attack, like stashing audio safely.
+    ~60ms total.  Distinct from the stop beep (falling chirp).
+    """
+    rng = random.Random(33)
+    thunk_len = int(SAMPLE_RATE * 0.050)
+    samples = []
+    for i in range(thunk_len):
+        t = i / SAMPLE_RATE
+        progress = i / thunk_len
+        # Low-mid tone that drops slightly (800 -> 600 Hz)
+        freq = 800 - 200 * progress
+        tone_val = math.sin(2 * math.pi * freq * t) * 0.6
+        # Brief noise burst for percussive attack
+        noise_val = rng.uniform(-1.0, 1.0) * 0.25 * max(0, 1 - progress * 4)
+        samples.append(tone_val + noise_val)
+    samples = _apply_envelope(samples, attack_ms=0.5, decay_ms=20.0)
+    return _to_bytes(samples, master_volume=volume)
+
+
+def generate_append_complete_ding(volume: float = 0.14) -> bytes:
+    """Two-tone ascending ding for append transcription complete.
+
+    Quick low note followed by a higher note -- confirms text was appended.
+    ~130ms total.  Distinct from the single-tone complete ding.
+    """
+    def _ding_note(freq, duration_ms):
+        n = int(SAMPLE_RATE * duration_ms / 1000)
+        note_samples = []
+        for i in range(n):
+            t = i / SAMPLE_RATE
+            val = math.sin(2 * math.pi * freq * t) * 0.5
+            # Add harmonic for warmth
+            val += math.sin(2 * math.pi * freq * 1.5 * t) * 0.15
+            note_samples.append(val)
+        return _apply_envelope(note_samples, attack_ms=1.0, decay_ms=duration_ms * 0.6)
+
+    note1 = _ding_note(880, 50)
+    note2 = _ding_note(1320, 50)  # Perfect fifth above
+
+    note1_bytes = _to_bytes(note1, master_volume=volume)
+    gap = _silence_bytes(15)
+    note2_bytes = _to_bytes(note2, master_volume=volume)
+
+    return note1_bytes + gap + note2_bytes
+
+
 def generate_rising_double_chirp(volume: float = 0.14) -> bytes:
     """Rising double-chirp for append mode.
 
@@ -288,6 +337,8 @@ class AudioFeedback:
         self._toggle_on_beep = generate_rising_chirp(volume=0.12)
         self._toggle_off_beep = generate_falling_chirp(volume=0.12)
         self._append_beep = generate_rising_double_chirp(volume=0.14)
+        self._cached_beep = generate_cached_thunk(volume=0.14)
+        self._append_complete_beep = generate_append_complete_ding(volume=0.14)
         self._complete_beep = _load_wav_pcm("ding-complete.wav") or generate_ptt_release(volume=0.15)
         self._pause_beep = _load_wav_pcm("pause.wav") or generate_double_click(volume=0.14)
         self._resume_beep = _load_wav_pcm("resume.wav") or generate_rising_chirp(volume=0.12)
@@ -332,6 +383,16 @@ class AudioFeedback:
         """Play the append mode sound (rising double-chirp)."""
         if self._enabled:
             self._play_async(self._append_beep)
+
+    def play_cached_beep(self):
+        """Play the audio cached sound (percussive thunk)."""
+        if self._enabled:
+            self._play_async(self._cached_beep)
+
+    def play_append_complete_beep(self):
+        """Play the append transcription complete sound (ascending two-tone ding)."""
+        if self._enabled:
+            self._play_async(self._append_complete_beep)
 
     def play_complete_beep(self):
         """Play the transcription complete sound (ding)."""

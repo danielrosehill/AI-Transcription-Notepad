@@ -190,6 +190,8 @@ class ConfigSummaryBanner(QWidget):
             pills_data.append(("Personalize", _teal_pill(), "extra", "personalize"))
         if getattr(config, 'add_date_enabled', False):
             pills_data.append(("Date", _teal_pill(), "extra", "date"))
+        if getattr(config, 'all_caps_enabled', False):
+            pills_data.append(("ALL CAPS", _teal_pill(), "extra", "all_caps"))
         if getattr(config, 'tldr_enabled', False):
             pills_data.append(("TLDR", _teal_pill(), "extra", "tldr"))
 
