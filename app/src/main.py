@@ -325,7 +325,7 @@ class MainWindow(QMainWindow):
         if os.environ.get("VOICE_NOTEPAD_DEV_MODE") == "1":
             title += " (DEV)"
         self.setWindowTitle(title)
-        self.setMinimumSize(900, 850)
+        self.setMinimumSize(920, 850)
         self.resize(self.config.window_width, self.config.window_height)
 
         self.setup_ui()
@@ -863,7 +863,7 @@ class MainWindow(QMainWindow):
         mode_layout.addSpacing(8)
 
         # VAD checkbox (silence removal) - separate from output modes
-        self.vad_checkbox = QCheckBox("VAD")
+        self.vad_checkbox = QCheckBox("VAD On" if self.config.vad_enabled else "VAD Off")
         self.vad_checkbox.setToolTip(
             "Voice Activity Detection\n"
             "Remove silence from audio before transcription.\n"
@@ -2077,6 +2077,7 @@ class MainWindow(QMainWindow):
         """
         enabled = state == Qt.CheckState.Checked.value
         self.config.vad_enabled = enabled
+        self.vad_checkbox.setText("VAD On" if enabled else "VAD Off")
         save_config(self.config)
 
         # Audio feedback for VAD toggle
