@@ -380,6 +380,7 @@ class MainWindow(QMainWindow):
             self.transcribe_btn.setStyleSheet(self._transcribe_btn_idle_style)
             self.append_btn.setEnabled(False)
             self.delete_btn.setEnabled(True)
+            self.retry_btn.show()
         else:
             self.has_cached_audio = False
             self.stop_btn.setEnabled(False)
@@ -725,6 +726,36 @@ class MainWindow(QMainWindow):
         """)
         self.delete_btn.clicked.connect(self.delete_recording)
         control_bar.addWidget(self.delete_btn)
+
+        # Retry button - only visible when transcription fails and audio is preserved
+        self.retry_btn = QPushButton("↻")  # Retry icon
+        self.retry_btn.setMinimumHeight(36)
+        self.retry_btn.setMinimumWidth(44)
+        self.retry_btn.setToolTip(
+            "Retry\n"
+            "Retry transcription of preserved audio.\n"
+            "Audio is kept safe until transcription succeeds or you delete it."
+        )
+        self.retry_btn.setStyleSheet("""
+            QPushButton {
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #ffa726, stop:1 #fb8c00);
+                color: white;
+                border: none;
+                border-bottom: 3px solid #e65100;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 16px;
+                padding: 0 8px;
+            }
+            QPushButton:hover {
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #fb8c00, stop:1 #ef6c00);
+            }
+        """)
+        self.retry_btn.clicked.connect(self.retry_transcription)
+        self.retry_btn.hide()  # Hidden by default, shown on failed transcription
+        control_bar.addWidget(self.retry_btn)
 
         control_bar.addStretch()  # Balance the stretch to center controls
 
@@ -2420,6 +2451,7 @@ class MainWindow(QMainWindow):
         self.stop_btn.setEnabled(False)
         self.transcribe_btn.setEnabled(False)
         self.delete_btn.setEnabled(False)
+        self.retry_btn.hide()  # Hide retry button during retry attempt
         self.status_label.setText("Retrying transcription...")
         self.status_label.setStyleSheet("color: rgba(0, 123, 255, 0.7); font-size: 11px;")
         self.status_label.show()
@@ -2492,7 +2524,8 @@ class MainWindow(QMainWindow):
         self.transcribe_btn.setEnabled(True)  # Enable for retry
         self.transcribe_btn.setStyleSheet(self._transcribe_btn_idle_style)
         self.delete_btn.setEnabled(True)  # Enable to discard failed audio
-        self.status_label.setText("Transcription failed — click ⬆ to retry")
+        self.retry_btn.show()  # Show dedicated retry button
+        self.status_label.setText("Transcription failed — audio preserved. Retry or delete.")
         self.status_label.setStyleSheet("color: rgba(220, 53, 69, 0.9); font-size: 11px;")
         self.status_label.show()
 
@@ -2896,8 +2929,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Transcription Failed",
-                f"{error}\n\nYour audio has been preserved. Click the transcribe button (⬆) to retry, "
-                "or delete to discard.",
+                f"{error}\n\nYour audio has been preserved. Click Retry (↻) to try again, "
+                "or Delete to discard.",
             )
             self._show_retry_ui()
             self._set_tray_state("idle")
@@ -2931,8 +2964,8 @@ class MainWindow(QMainWindow):
                 "Transcription Failed",
                 f"Both primary and fallback models failed.\n\n"
                 f"Error: {error}\n\n"
-                f"Your audio has been preserved. Click the transcribe button (⬆) to retry, "
-                "or delete to discard.",
+                f"Your audio has been preserved. Click Retry (↻) to try again, "
+                "or Delete to discard.",
             )
             self._show_retry_ui()
             self._set_tray_state("idle")
@@ -3216,6 +3249,7 @@ class MainWindow(QMainWindow):
         self.transcribe_btn.setEnabled(False)
         self.transcribe_btn.setStyleSheet(self._transcribe_btn_idle_style)  # Reset to green
         self.delete_btn.setEnabled(False)
+        self.retry_btn.hide()  # Hide retry button on reset
         # Hide duration display and reset minute counter
         self.duration_label.setText("")
         self.duration_container.hide()
@@ -4087,8 +4121,8 @@ class MainWindow(QMainWindow):
             self._set_tray_state("complete")
             QTimer.singleShot(3000, lambda: self._set_tray_state("idle") if self._tray_state == "complete" else None)
 
-    def _on_queue_item_error(self, item_id: str, error: str):
-        """Handle queue item error."""
+    def _on_queue_item_error(self, item_id: str, error: str, audio_data: bytes = b''):
+        """Handle queue item error - preserves audio for retry."""
         self.output_panel.on_transcription_error(item_id, error)
 
         # Show error notification
@@ -4099,7 +4133,24 @@ class MainWindow(QMainWindow):
             3000,
         )
 
-        if self.transcription_queue.is_empty():
+        # Preserve audio data for retry if available
+        if audio_data:
+            self.last_audio_data = audio_data
+            self.has_failed_audio = True
+
+            # TTS announcement for error
+            if self.config.audio_feedback_mode == "tts":
+                get_announcer().announce_error()
+
+            QMessageBox.warning(
+                self,
+                "Transcription Failed",
+                f"{error}\n\nYour audio has been preserved. Click Retry to try again, "
+                "or Delete to discard.",
+            )
+            self._show_retry_ui()
+            self._set_tray_state("idle")
+        elif self.transcription_queue.is_empty():
             self.reset_ui()
             self._set_tray_state("idle")
 

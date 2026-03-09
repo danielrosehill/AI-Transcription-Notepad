@@ -119,7 +119,7 @@ class TranscriptionQueue(QObject):
     item_queued = pyqtSignal(str)  # item_id - new item added to queue
     item_started = pyqtSignal(str)  # item_id - transcription started
     item_complete = pyqtSignal(str, object)  # item_id, TranscriptionResult
-    item_error = pyqtSignal(str, str)  # item_id, error_message
+    item_error = pyqtSignal(str, str, bytes)  # item_id, error_message, audio_data
     item_status = pyqtSignal(str, str)  # item_id, status_message
     queue_changed = pyqtSignal()  # Queue size/state changed
 
@@ -243,19 +243,21 @@ class TranscriptionQueue(QObject):
 
         worker = self.active.pop(item_id)
 
-        # Find and update the item
+        # Find and update the item - preserve audio for retry
+        failed_audio = b''
         item = self._find_active_item(item_id)
         if item:
             item.state = QueueItemState.ERROR
             item.completed_at = datetime.now()
             item.error = error
-            item.audio_data = b''  # Free memory
+            failed_audio = item.audio_data  # Preserve before clearing
+            item.audio_data = b''  # Free memory from queue item
             self.completed.append(item)
 
             while len(self.completed) > self._max_completed:
                 self.completed.pop(0)
 
-        self.item_error.emit(item_id, error)
+        self.item_error.emit(item_id, error, failed_audio)
         self.queue_changed.emit()
 
         worker.deleteLater()

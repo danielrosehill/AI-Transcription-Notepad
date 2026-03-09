@@ -194,19 +194,11 @@ class StackBuilderWidget(QWidget):
         ("todo", f"{FORMAT_ICONS.get('todo', '')} To-Do", "Format as a to-do list"),
     ]
 
-    # Tone options (5 quick-access, multi-select)
-    TONE_QUICK_OPTIONS = [
+    # Tone options (quick-access, mutually exclusive)
+    TONE_OPTIONS = [
+        ("default", "Default", "No tone direction — uses natural tone"),
         ("casual", "Casual", "Relaxed, conversational tone"),
         ("professional", "Professional", "Formal business tone"),
-        ("friendly", "Friendly", "Warm, approachable tone"),
-        ("enthusiastic", "Enthusiastic", "Energetic, excited tone"),
-        ("empathetic", "Empathetic", "Understanding, caring tone"),
-    ]
-
-    TONE_MORE_OPTIONS = [
-        ("authoritative", "Authoritative", "Confident, expert tone"),
-        ("urgent", "Urgent", "Time-sensitive, pressing tone"),
-        ("reassuring", "Reassuring", "Calm, comforting tone"),
     ]
 
     def __init__(self, config: Config, config_dir=None, parent=None):
@@ -312,6 +304,21 @@ class StackBuilderWidget(QWidget):
 
         self._setup_format_section(container_layout)
 
+        # TONE section (exposed like format, not in accordion)
+        tone_heading = QLabel("Tone")
+        tone_heading.setStyleSheet("""
+            QLabel {
+                font-size: 11px;
+                font-weight: bold;
+                color: #666;
+                padding: 4px 0 2px 0;
+            }
+        """)
+        tone_heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        container_layout.addWidget(tone_heading)
+
+        self._setup_tone_section(container_layout)
+
         # "Customize Output" heading for accordion sections
         heading_label = QLabel("Customize Output")
         heading_label.setStyleSheet("""
@@ -325,16 +332,10 @@ class StackBuilderWidget(QWidget):
         heading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         container_layout.addWidget(heading_label)
 
-        # Accordion sections row - center-aligned (Tone, Style, Stacks only)
+        # Accordion sections row - center-aligned (Style, Stacks only)
         accordions_layout = QHBoxLayout()
         accordions_layout.setSpacing(8)
         accordions_layout.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignTop)
-
-        # TONE section
-        self.tone_section = CollapsibleSection("Tone")
-        self.tone_section.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        self._setup_tone_section()
-        accordions_layout.addWidget(self.tone_section, 0, Qt.AlignmentFlag.AlignTop)
 
         # STYLE section
         self.style_section = CollapsibleSection("Style")
@@ -415,58 +416,41 @@ class StackBuilderWidget(QWidget):
         more_layout.addStretch()
         parent_layout.addWidget(more_container)
 
-    def _setup_tone_section(self):
-        """Set up the tone accordion content with checkboxes in vertical grid + search (multi-select)."""
-        self.tone_checkboxes: Dict[str, QCheckBox] = {}
+    def _setup_tone_section(self, parent_layout):
+        """Set up the tone radio buttons (mutually exclusive: Default, Casual, Professional)."""
+        self.tone_button_group = QButtonGroup(self)
+        self.tone_buttons: Dict[str, QRadioButton] = {}
 
-        # Create a grid layout for tones (single column, vertical)
-        grid_container = QWidget()
-        grid_container.setStyleSheet("background: transparent; border: none;")
-        grid = QGridLayout(grid_container)
-        grid.setContentsMargins(0, 0, 0, 4)
-        grid.setSpacing(4)
+        tone_container = QWidget()
+        tone_container.setStyleSheet("background: transparent; border: none;")
+        tone_layout = QHBoxLayout(tone_container)
+        tone_layout.setContentsMargins(0, 0, 0, 0)
+        tone_layout.setSpacing(16)
+        tone_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        for i, (key, label, tooltip) in enumerate(self.TONE_QUICK_OPTIONS):
-            cb = QCheckBox(label)
-            cb.setToolTip(tooltip)
-            cb.setStyleSheet(self._get_checkbox_style())
-            cb.stateChanged.connect(self._on_tone_checkbox_changed)
-            self.tone_checkboxes[key] = cb
-            # Single column layout
-            grid.addWidget(cb, i, 0)
+        for key, label, tooltip in self.TONE_OPTIONS:
+            radio = QRadioButton(label)
+            radio.setToolTip(tooltip)
+            radio.setStyleSheet("""
+                QRadioButton {
+                    font-size: 11px;
+                    padding: 2px 0;
+                    background: transparent;
+                    border: none;
+                }
+                QRadioButton::indicator {
+                    width: 12px;
+                    height: 12px;
+                }
+            """)
+            self.tone_button_group.addButton(radio)
+            self.tone_buttons[key] = radio
+            tone_layout.addWidget(radio)
 
-        self.tone_section.add_widget(grid_container)
+        # Default is selected by default
+        self.tone_buttons["default"].setChecked(True)
 
-        # Searchable "More" dropdown
-        more_container = QWidget()
-        more_container.setStyleSheet("background: transparent; border: none;")
-        more_layout = QHBoxLayout(more_container)
-        more_layout.setContentsMargins(0, 0, 0, 0)
-        more_layout.setSpacing(4)
-
-        more_label = QLabel("More:")
-        more_label.setStyleSheet("color: #666; font-size: 10px; border: none;")
-        more_layout.addWidget(more_label)
-
-        self.tone_combo = self._create_searchable_combo("Search...")
-        self.tone_combo.setMaximumWidth(140)
-        self.tone_combo.addItem("Select...", "")
-
-        # Add tones from TONE_MORE_OPTIONS
-        for key, label, tooltip in self.TONE_MORE_OPTIONS:
-            self.tone_combo.addItem(label, key)
-
-        # Add custom tone prompts
-        custom_tones = self._get_custom_prompts("tone")
-        if custom_tones:
-            self.tone_combo.insertSeparator(self.tone_combo.count())
-            for prompt in custom_tones:
-                self.tone_combo.addItem(f"✦ {prompt.name}", f"custom:{prompt.id}")
-
-        self._setup_combo_completer(self.tone_combo)
-        more_layout.addWidget(self.tone_combo)
-        more_layout.addStretch()
-        self.tone_section.add_widget(more_container)
+        parent_layout.addWidget(tone_container)
 
     def _setup_style_section(self):
         """Set up the style accordion content with checkboxes (multi-select)."""
@@ -647,9 +631,9 @@ class StackBuilderWidget(QWidget):
     def _connect_signals(self):
         """Connect all widget signals."""
         self.base_button_group.buttonClicked.connect(self._on_base_changed)
-        # Format/Tone/Style checkboxes are connected in setup methods
+        # Format/Style checkboxes are connected in setup methods
         self.format_combo.currentIndexChanged.connect(self._on_format_combo_changed)
-        self.tone_combo.currentIndexChanged.connect(self._on_tone_combo_changed)
+        self.tone_button_group.buttonClicked.connect(self._on_tone_changed)
         self.stacks_combo.currentIndexChanged.connect(self._on_stacks_changed)
         self.reset_btn.clicked.connect(self._on_reset_clicked)
 
@@ -748,24 +732,10 @@ class StackBuilderWidget(QWidget):
         for cb in self.format_checkboxes.values():
             cb.blockSignals(block)
 
-    def _on_tone_checkbox_changed(self, state: int):
-        """Handle tone checkbox state change."""
+    def _on_tone_changed(self):
+        """Handle tone radio button change."""
         self._announce_tts('tone')
         self._on_setting_changed()
-
-    def _on_tone_combo_changed(self, index: int):
-        """Handle tone dropdown selection change - adds to selection."""
-        if index > 0:  # Not "Select..."
-            tone_key = self.tone_combo.currentData()
-            # Add to tone checkboxes if it exists there
-            if tone_key in self.tone_checkboxes:
-                self.tone_checkboxes[tone_key].setChecked(True)
-            # Reset combo to "Select..."
-            self.tone_combo.blockSignals(True)
-            self.tone_combo.setCurrentIndex(0)
-            self.tone_combo.blockSignals(False)
-            self._announce_tts('tone')
-            self._on_setting_changed()
 
     def _on_style_checkbox_changed(self, state: int):
         """Handle style checkbox state change."""
@@ -820,11 +790,12 @@ class StackBuilderWidget(QWidget):
         else:
             self.format_combo.setCurrentIndex(0)
 
-        # Tone selection (multi-select checkboxes)
+        # Tone selection (mutually exclusive radio buttons)
         selected_tones = getattr(self.config, 'selected_tones', [])
-        for key, cb in self.tone_checkboxes.items():
-            cb.setChecked(key in selected_tones)
-        self.tone_combo.setCurrentIndex(0)
+        if selected_tones and selected_tones[0] in self.tone_buttons:
+            self.tone_buttons[selected_tones[0]].setChecked(True)
+        else:
+            self.tone_buttons["default"].setChecked(True)
 
         # Style selection (multi-select checkboxes)
         selected_styles = getattr(self.config, 'selected_styles', [])
@@ -867,11 +838,12 @@ class StackBuilderWidget(QWidget):
             # No format selected - keep base preset (general/verbatim)
             self.config.selected_formats = []
 
-        # Save tones from checkboxes (multi-select)
+        # Save tone (mutually exclusive)
         selected_tones = []
-        for key, cb in self.tone_checkboxes.items():
-            if cb.isChecked():
+        for key, radio in self.tone_buttons.items():
+            if radio.isChecked() and key != "default":
                 selected_tones.append(key)
+                break
         self.config.selected_tones = selected_tones
 
         # Save styles from checkboxes (multi-select)
@@ -885,10 +857,8 @@ class StackBuilderWidget(QWidget):
         """Block or unblock signals from all widgets."""
         self.base_button_group.blockSignals(block)
         self.format_combo.blockSignals(block)
-        self.tone_combo.blockSignals(block)
+        self.tone_button_group.blockSignals(block)
         for cb in self.format_checkboxes.values():
-            cb.blockSignals(block)
-        for cb in self.tone_checkboxes.values():
             cb.blockSignals(block)
         for cb in self.style_checkboxes.values():
             cb.blockSignals(block)
@@ -896,13 +866,6 @@ class StackBuilderWidget(QWidget):
 
     def _update_summaries(self):
         """Update accordion header summaries with current selections."""
-        # Tone summary - count selected checkboxes
-        tone_count = sum(1 for cb in self.tone_checkboxes.values() if cb.isChecked())
-        if tone_count > 0:
-            self.tone_section.set_summary(f"{tone_count} selected")
-        else:
-            self.tone_section.set_summary("")
-
         # Style summary - count selected checkboxes
         style_count = sum(1 for cb in self.style_checkboxes.values() if cb.isChecked())
         if style_count > 0:
@@ -931,10 +894,8 @@ class StackBuilderWidget(QWidget):
         self.format_combo.setCurrentIndex(0)
         self._format_from_more = None
 
-        # Reset tones
-        for cb in self.tone_checkboxes.values():
-            cb.setChecked(False)
-        self.tone_combo.setCurrentIndex(0)
+        # Reset tone to Default
+        self.tone_buttons["default"].setChecked(True)
 
         # Reset styles
         for cb in self.style_checkboxes.values():
@@ -984,10 +945,15 @@ class StackBuilderWidget(QWidget):
         self.format_combo.setCurrentIndex(0)
         self._format_from_more = None
 
-        # Apply tones (checkboxes)
-        for key, cb in self.tone_checkboxes.items():
-            cb.setChecked(key in tone_keys)
-        self.tone_combo.setCurrentIndex(0)
+        # Apply tone (radio buttons - use first matching tone or default)
+        applied_tone = False
+        for key in tone_keys:
+            if key in self.tone_buttons:
+                self.tone_buttons[key].setChecked(True)
+                applied_tone = True
+                break
+        if not applied_tone:
+            self.tone_buttons["default"].setChecked(True)
 
         # Apply styles (checkboxes)
         for key, cb in self.style_checkboxes.items():

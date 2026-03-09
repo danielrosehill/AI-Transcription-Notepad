@@ -3,7 +3,10 @@
     "allow": [
       "mcp__personal__cloud-asr_gemini_transcribe",
       "mcp__personal__cloud-asr_gemini_transcribe_raw",
-      "WebFetch(domain:docs.fish.audio)"
+      "WebFetch(domain:docs.fish.audio)",
+      "Bash(source app/.venv/bin/activate)",
+      "Bash(echo $ASSEMBLYAI_API_KEY)",
+      "Bash(op:*)"
     ]
   }
 }
