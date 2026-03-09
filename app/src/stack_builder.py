@@ -178,13 +178,18 @@ class StackBuilderWidget(QWidget):
         ("translation", "Translation", "Transcribe and translate to target language"),
     ]
 
-    # Format options (5 quick-access options)
+    # Format options (8 common formats, 2 rows of 4 alphabetically)
     FORMAT_QUICK_OPTIONS = [
-        ("email", f"{FORMAT_ICONS.get('email', '')} Email", "Format as an email with greeting and signature"),
-        ("todo", f"{FORMAT_ICONS.get('todo', '')} To-Do", "Format as a to-do list"),
+        # Row 1
         ("ai_prompt", f"{FORMAT_ICONS.get('ai_prompt', '')} AI Prompt", "Format as an AI prompt"),
+        ("blog_outline", f"{FORMAT_ICONS.get('blog_outline', '')} Blog Outline", "Format as a blog post outline"),
+        ("dev_prompt", f"{FORMAT_ICONS.get('dev_prompt', '')} Dev Prompt", "Format as development instructions for AI"),
+        ("email", f"{FORMAT_ICONS.get('email', '')} Email", "Format as an email with greeting and signature"),
+        # Row 2
         ("meeting_minutes", f"{FORMAT_ICONS.get('meeting_minutes', '')} Minutes", "Format as formal meeting minutes"),
+        ("meeting_notes", f"{FORMAT_ICONS.get('meeting_notes', '')} Notes", "Format as structured meeting notes"),
         ("social_post", f"{FORMAT_ICONS.get('social_post', '')} Social Post", "Format for social media/community"),
+        ("todo", f"{FORMAT_ICONS.get('todo', '')} To-Do", "Format as a to-do list"),
     ]
 
     # Tone options (5 quick-access, multi-select)
@@ -290,7 +295,22 @@ class StackBuilderWidget(QWidget):
 
         container_layout.addLayout(top_row)
 
-        # "Customize Output" heading label
+        # FORMAT section (always visible, not in accordion)
+        format_heading = QLabel("Format")
+        format_heading.setStyleSheet("""
+            QLabel {
+                font-size: 11px;
+                font-weight: bold;
+                color: #666;
+                padding: 4px 0 2px 0;
+            }
+        """)
+        format_heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        container_layout.addWidget(format_heading)
+
+        self._setup_format_section(container_layout)
+
+        # "Customize Output" heading for accordion sections
         heading_label = QLabel("Customize Output")
         heading_label.setStyleSheet("""
             QLabel {
@@ -303,16 +323,10 @@ class StackBuilderWidget(QWidget):
         heading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         container_layout.addWidget(heading_label)
 
-        # Accordion sections row - center-aligned
+        # Accordion sections row - center-aligned (Tone, Style, Stacks only)
         accordions_layout = QHBoxLayout()
         accordions_layout.setSpacing(8)
         accordions_layout.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignTop)
-
-        # FORMAT section
-        self.format_section = CollapsibleSection("Format")
-        self.format_section.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        self._setup_format_section()
-        accordions_layout.addWidget(self.format_section, 0, Qt.AlignmentFlag.AlignTop)
 
         # TONE section
         self.tone_section = CollapsibleSection("Tone")
@@ -336,11 +350,16 @@ class StackBuilderWidget(QWidget):
 
         main_layout.addWidget(container)
 
-    def _setup_format_section(self):
-        """Set up the format accordion content with checkboxes in vertical grid + search."""
-        self.format_checkboxes: Dict[str, QCheckBox] = {}
+    def _setup_format_section(self, parent_layout):
+        """Set up the format checkboxes in 2 rows of 4 + More dropdown.
 
-        # Create a grid layout for formats (single column, vertical)
+        Formats are mutually exclusive - only one can be active at a time.
+        Exposed directly (not in an accordion) since these are frequently used.
+        """
+        self.format_checkboxes: Dict[str, QCheckBox] = {}
+        self._format_from_more = None  # Track format selected from More dropdown
+
+        # Create a grid layout for formats (2 rows of 4)
         grid_container = QWidget()
         grid_container.setStyleSheet("background: transparent; border: none;")
         grid = QGridLayout(grid_container)
@@ -353,12 +372,13 @@ class StackBuilderWidget(QWidget):
             cb.setStyleSheet(self._get_checkbox_style())
             cb.stateChanged.connect(lambda state, k=key: self._on_format_checkbox_changed(k, state))
             self.format_checkboxes[key] = cb
-            # Single column layout
-            grid.addWidget(cb, i, 0)
+            row = i // 4
+            col = i % 4
+            grid.addWidget(cb, row, col)
 
-        self.format_section.add_widget(grid_container)
+        parent_layout.addWidget(grid_container)
 
-        # Searchable "More" dropdown
+        # "More" dropdown for less common formats
         more_container = QWidget()
         more_container.setStyleSheet("background: transparent; border: none;")
         more_layout = QHBoxLayout(more_container)
@@ -370,7 +390,7 @@ class StackBuilderWidget(QWidget):
         more_layout.addWidget(more_label)
 
         self.format_combo = self._create_searchable_combo("Search...")
-        self.format_combo.setMaximumWidth(160)
+        self.format_combo.setMaximumWidth(200)
         self.format_combo.addItem("Select...", "")
 
         # Add formats not in quick options
@@ -391,7 +411,7 @@ class StackBuilderWidget(QWidget):
         self._setup_combo_completer(self.format_combo)
         more_layout.addWidget(self.format_combo)
         more_layout.addStretch()
-        self.format_section.add_widget(more_container)
+        parent_layout.addWidget(more_container)
 
     def _setup_tone_section(self):
         """Set up the tone accordion content with checkboxes in vertical grid + search (multi-select)."""
@@ -683,23 +703,48 @@ class StackBuilderWidget(QWidget):
         self._on_setting_changed()
 
     def _on_format_checkbox_changed(self, key: str, state: int):
-        """Handle format checkbox state change."""
+        """Handle format checkbox state change.
+
+        Formats are mutually exclusive - checking one unchecks all others.
+        Also clears any selection from the More dropdown.
+        """
+        if state == 2:  # Checked
+            # Uncheck all other format checkboxes
+            self._block_format_signals(True)
+            for other_key, cb in self.format_checkboxes.items():
+                if other_key != key:
+                    cb.setChecked(False)
+            self._block_format_signals(False)
+            # Clear any More dropdown selection
+            self._format_from_more = None
+            self.format_combo.blockSignals(True)
+            self.format_combo.setCurrentIndex(0)
+            self.format_combo.blockSignals(False)
         self._announce_tts('format')
         self._on_setting_changed()
 
     def _on_format_combo_changed(self, index: int):
-        """Handle format dropdown selection change - adds to selection."""
+        """Handle format dropdown selection change.
+
+        Selecting from More clears all checkbox selections and sets
+        the format to the single dropdown selection.
+        """
         if index > 0:  # Not "Select..."
             format_key = self.format_combo.currentData()
-            # Add to format checkboxes if it exists there
-            if format_key in self.format_checkboxes:
-                self.format_checkboxes[format_key].setChecked(True)
-            # Reset combo to "Select..."
-            self.format_combo.blockSignals(True)
-            self.format_combo.setCurrentIndex(0)
-            self.format_combo.blockSignals(False)
+            # Clear all format checkboxes
+            self._block_format_signals(True)
+            for cb in self.format_checkboxes.values():
+                cb.setChecked(False)
+            self._block_format_signals(False)
+            # Track the More selection
+            self._format_from_more = format_key
             self._announce_tts('format')
             self._on_setting_changed()
+
+    def _block_format_signals(self, block: bool):
+        """Block or unblock signals from format checkboxes only."""
+        for cb in self.format_checkboxes.values():
+            cb.blockSignals(block)
 
     def _on_tone_checkbox_changed(self, state: int):
         """Handle tone checkbox state change."""
@@ -753,14 +798,25 @@ class StackBuilderWidget(QWidget):
         else:
             self.base_buttons["general"].setChecked(True)
 
-        # Format selection (multi-select checkboxes)
+        # Format selection (mutually exclusive)
         selected_formats = getattr(self.config, 'selected_formats', [])
         # Also check legacy single format_preset
         if not selected_formats and base_preset not in ["general", "verbatim"]:
             selected_formats = [base_preset]
+        active_format = selected_formats[0] if selected_formats else None
+        # Check if active format is in checkboxes or in More dropdown
+        self._format_from_more = None
         for key, cb in self.format_checkboxes.items():
-            cb.setChecked(key in selected_formats)
-        self.format_combo.setCurrentIndex(0)
+            cb.setChecked(key == active_format)
+        if active_format and active_format not in self.format_checkboxes:
+            # Format is from the More dropdown - find and select it
+            self._format_from_more = active_format
+            for i in range(self.format_combo.count()):
+                if self.format_combo.itemData(i) == active_format:
+                    self.format_combo.setCurrentIndex(i)
+                    break
+        else:
+            self.format_combo.setCurrentIndex(0)
 
         # Tone selection (multi-select checkboxes)
         selected_tones = getattr(self.config, 'selected_tones', [])
@@ -792,12 +848,22 @@ class StackBuilderWidget(QWidget):
             self.config.translation_mode_enabled = False
             self.config.format_preset = "general"
 
-        # Save formats from checkboxes (multi-select)
-        selected_formats = []
+        # Save format (mutually exclusive - only one at a time)
+        selected_format = None
         for key, cb in self.format_checkboxes.items():
             if cb.isChecked():
-                selected_formats.append(key)
-        self.config.selected_formats = selected_formats
+                selected_format = key
+                break
+        # Check if a format was selected from the More dropdown
+        if not selected_format and self._format_from_more:
+            selected_format = self._format_from_more
+
+        if selected_format:
+            self.config.format_preset = selected_format
+            self.config.selected_formats = [selected_format]
+        else:
+            # No format selected - keep base preset (general/verbatim)
+            self.config.selected_formats = []
 
         # Save tones from checkboxes (multi-select)
         selected_tones = []
@@ -828,13 +894,6 @@ class StackBuilderWidget(QWidget):
 
     def _update_summaries(self):
         """Update accordion header summaries with current selections."""
-        # Format summary - count selected checkboxes
-        format_count = sum(1 for cb in self.format_checkboxes.values() if cb.isChecked())
-        if format_count > 0:
-            self.format_section.set_summary(f"{format_count} selected")
-        else:
-            self.format_section.set_summary("")
-
         # Tone summary - count selected checkboxes
         tone_count = sum(1 for cb in self.tone_checkboxes.values() if cb.isChecked())
         if tone_count > 0:
@@ -868,6 +927,7 @@ class StackBuilderWidget(QWidget):
         for cb in self.format_checkboxes.values():
             cb.setChecked(False)
         self.format_combo.setCurrentIndex(0)
+        self._format_from_more = None
 
         # Reset tones
         for cb in self.tone_checkboxes.values():
@@ -915,10 +975,12 @@ class StackBuilderWidget(QWidget):
                     # Grammar elements don't map to our UI directly
                     pass
 
-        # Apply formats (checkboxes)
+        # Apply format (mutually exclusive - use first format key only)
+        active_format = format_keys[0] if format_keys else None
         for key, cb in self.format_checkboxes.items():
-            cb.setChecked(key in format_keys)
+            cb.setChecked(key == active_format)
         self.format_combo.setCurrentIndex(0)
+        self._format_from_more = None
 
         # Apply tones (checkboxes)
         for key, cb in self.tone_checkboxes.items():

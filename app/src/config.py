@@ -1568,7 +1568,14 @@ def build_cleanup_prompt(config: Config, use_prompt_library: bool = False, audio
     # ===== LAYER 1: FOUNDATION (ALWAYS APPLIED) =====
     lines.append("\n## Foundation Cleanup (Always Applied)")
     # Iterate over sections, conditionally skipping based on config flags
+    # Determine if user details should be included (only for formats where name is appropriate)
+    _name_appropriate_formats = {"email", "internal_memo", "press_release", "newsletter"}
+    _include_user_details = config.format_preset in _name_appropriate_formats
+
     for section_key, section_data in FOUNDATION_PROMPT_SECTIONS.items():
+        # Skip user_details for formats where name injection is inappropriate (dev prompts, AI prompts, etc.)
+        if section_key == "user_details" and not _include_user_details:
+            continue
         # Skip meta_instructions if prompt_follow_instructions is disabled
         if section_key == "meta_instructions" and not getattr(config, 'prompt_follow_instructions', True):
             continue
