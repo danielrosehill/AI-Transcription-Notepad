@@ -974,6 +974,40 @@ class StackBuilderWidget(QWidget):
         self._update_summaries()
         self.prompt_changed.emit()
 
+    def select_format(self, format_key: str):
+        """Programmatically select a format by key.
+
+        Works for both quick-option checkboxes and 'More' dropdown formats.
+        """
+        # Check if it's one of the quick-option checkboxes
+        if format_key in self.format_checkboxes:
+            self.format_checkboxes[format_key].setChecked(True)
+            # _on_format_checkbox_changed handles unchecking others + saving
+        else:
+            # It's a format from the "More" dropdown
+            idx = self.format_combo.findData(format_key)
+            if idx >= 0:
+                self.format_combo.setCurrentIndex(idx)
+                # _on_format_combo_changed handles clearing checkboxes + saving
+
+    def select_tone(self, tone_key: str):
+        """Programmatically select a tone by key."""
+        if tone_key in self.tone_buttons:
+            self.tone_buttons[tone_key].setChecked(True)
+            self._on_tone_changed()
+
+    def clear_format(self):
+        """Clear all format selections (revert to general)."""
+        self._block_format_signals(True)
+        for cb in self.format_checkboxes.values():
+            cb.setChecked(False)
+        self._block_format_signals(False)
+        self._format_from_more = None
+        self.format_combo.blockSignals(True)
+        self.format_combo.setCurrentIndex(0)
+        self.format_combo.blockSignals(False)
+        self._on_setting_changed()
+
     def get_selected_format(self) -> str:
         return self.config.format_preset
 

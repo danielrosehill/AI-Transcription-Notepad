@@ -1559,6 +1559,39 @@ class MainWindow(QMainWindow):
             shortcut = QShortcut(QKeySequence(f"Ctrl+{i + 1}"), self)
             shortcut.activated.connect(lambda idx=i: self._copy_recent_by_index(idx))
 
+        # Format shortcuts (Alt+key)
+        format_shortcuts = {
+            "Alt+E": "email",
+            "Alt+A": "ai_prompt",
+            "Alt+D": "dev_prompt",
+            "Alt+T": "todo",
+            "Alt+N": "meeting_notes",
+            "Alt+M": "meeting_minutes",
+            "Alt+B": "blog_outline",
+            "Alt+P": "social_post",
+            "Alt+G": None,  # General (clear format)
+        }
+        for key_seq, fmt_key in format_shortcuts.items():
+            shortcut = QShortcut(QKeySequence(key_seq), self)
+            if fmt_key is None:
+                shortcut.activated.connect(self.stack_builder.clear_format)
+            else:
+                shortcut.activated.connect(
+                    lambda f=fmt_key: self.stack_builder.select_format(f)
+                )
+
+        # Tone shortcuts (Alt+Shift+key)
+        tone_shortcuts = {
+            "Alt+Shift+C": "casual",
+            "Alt+Shift+F": "professional",
+            "Alt+Shift+D": "default",
+        }
+        for key_seq, tone_key in tone_shortcuts.items():
+            shortcut = QShortcut(QKeySequence(key_seq), self)
+            shortcut.activated.connect(
+                lambda t=tone_key: self.stack_builder.select_tone(t)
+            )
+
         # Set up configurable in-focus hotkeys (F15, F16, etc.)
         self._setup_configurable_shortcuts()
 
