@@ -578,6 +578,35 @@ class MainWindow(QMainWindow):
         self.retake_btn.clicked.connect(self.retake_recording)
         control_bar.addWidget(self.retake_btn)
 
+        self.pause_btn = QPushButton("⏸")  # Pause icon
+        self.pause_btn.setFixedSize(44, 44)
+        self.pause_btn.setEnabled(False)
+        self.pause_btn.setToolTip(
+            "Pause\n"
+            "Pause the current recording.\n"
+            "Click again to resume recording."
+        )
+        self.pause_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6f42c1;
+                color: white;
+                border: none;
+                border-radius: 22px;
+                font-weight: bold;
+                font-size: 18px;
+                padding: 0;
+            }
+            QPushButton:hover {
+                background-color: #5a32a3;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+                color: #aaa;
+            }
+        """)
+        self.pause_btn.clicked.connect(self.toggle_pause)
+        control_bar.addWidget(self.pause_btn)
+
         self.append_btn = QPushButton("+")  # Append/plus icon
         self.append_btn.setFixedSize(44, 44)
         self.append_btn.setEnabled(False)
@@ -2241,6 +2270,8 @@ class MainWindow(QMainWindow):
         self.recorder.start_recording()
         self.record_btn.setText("●")
         self.retake_btn.setEnabled(True)
+        self.pause_btn.setEnabled(True)  # Can pause recording
+        self.pause_btn.setText("⏸")  # Reset to pause icon
         self.append_btn.setEnabled(False)  # Disable append while recording
         self.stop_btn.setEnabled(True)  # Can stop recording to cache
         self.transcribe_btn.setEnabled(True)  # Can stop and transcribe immediately
@@ -2298,9 +2329,40 @@ class MainWindow(QMainWindow):
         # Immediately start fresh recording
         self.toggle_recording()
 
+    def toggle_pause(self):
+        """Pause or resume the current recording."""
+        if not self.recorder.is_recording and not self.recorder.is_paused:
+            return
+
+        if self.recorder.is_paused:
+            # Resume recording
+            self.recorder.resume_recording()
+            self.pause_btn.setText("⏸")
+            self.pause_btn.setToolTip(
+                "Pause\n"
+                "Pause the current recording.\n"
+                "Click again to resume recording."
+            )
+            self.status_label.setText("Recording...")
+            self.status_label.setStyleSheet("color: rgba(220, 53, 69, 0.7); font-size: 11px;")
+            self.timer.start(100)
+            self._start_recording_visual_effects()
+        else:
+            # Pause recording
+            self.recorder.pause_recording()
+            self.pause_btn.setText("▶")
+            self.pause_btn.setToolTip(
+                "Resume\n"
+                "Resume the paused recording."
+            )
+            self.status_label.setText("Paused")
+            self.status_label.setStyleSheet("color: rgba(111, 66, 193, 0.8); font-size: 11px;")
+            self.timer.stop()
+            self._stop_recording_visual_effects()
+
     def handle_stop_button(self):
         """Stop recording and cache audio without transcribing."""
-        if not self.recorder.is_recording:
+        if not self.recorder.is_recording and not self.recorder.is_paused:
             return
 
         # Audio feedback (beeps or TTS based on mode)
@@ -2336,6 +2398,8 @@ class MainWindow(QMainWindow):
         self.record_btn.setStyleSheet(self._record_btn_idle_style)
         self.record_btn.setEnabled(True)
         self.retake_btn.setEnabled(True)  # Can retake (discard and start fresh)
+        self.pause_btn.setEnabled(False)  # Can't pause when not recording
+        self.pause_btn.setText("⏸")  # Reset to pause icon
         self.stop_btn.setEnabled(False)  # Can't stop when not recording
         self.append_btn.setEnabled(True)  # Can append more clips
         self.transcribe_btn.setEnabled(True)  # Can transcribe cached audio
@@ -3272,6 +3336,8 @@ class MainWindow(QMainWindow):
         self.record_btn.setStyleSheet(self._record_btn_idle_style)
         self.record_btn.setEnabled(True)
         self.retake_btn.setEnabled(False)
+        self.pause_btn.setEnabled(False)
+        self.pause_btn.setText("⏸")  # Reset to pause icon
         self.append_btn.setEnabled(False)
         self.stop_btn.setEnabled(False)
         self.transcribe_btn.setEnabled(False)
@@ -4146,6 +4212,9 @@ class MainWindow(QMainWindow):
         # Update UI state
         if self.transcription_queue.is_empty():
             self.reset_ui()
+            # Enable append button if app mode is enabled (text is visible)
+            if self.config.output_to_app:
+                self.append_btn.setEnabled(True)
             self._set_tray_state("complete")
             QTimer.singleShot(3000, lambda: self._set_tray_state("idle") if self._tray_state == "complete" else None)
 
