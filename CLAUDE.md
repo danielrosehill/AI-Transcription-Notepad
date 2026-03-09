@@ -408,6 +408,8 @@ Output files:
 
 ### Release Workflow
 
+After every feature update, run `/incremental-release` to bump the patch version, push to GitHub, build the .deb, and update the local installation. This is the standard post-feature workflow.
+
 ```bash
 ./build.sh --release              # Patch release (1.3.0 -> 1.3.1)
 ./build.sh --release minor        # Minor release (1.3.0 -> 1.4.0)

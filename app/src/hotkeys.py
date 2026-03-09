@@ -117,6 +117,18 @@ EVDEV_KEY_MAP = {
     "space": 57, "enter": 28, "tab": 15, "escape": 1,
     "backspace": 14, "delete": 111, "insert": 110,
     "home": 102, "end": 107, "pageup": 104, "pagedown": 109,
+    # Letter keys (evdev KEY_A=30 through KEY_Z)
+    "a": 30, "b": 48, "c": 46, "d": 32, "e": 18, "f": 33, "g": 34,
+    "h": 35, "i": 23, "j": 36, "k": 37, "l": 38, "m": 50, "n": 49,
+    "o": 24, "p": 25, "q": 16, "r": 19, "s": 31, "t": 20, "u": 22,
+    "v": 47, "w": 17, "x": 45, "y": 21, "z": 44,
+    # Number keys
+    "1": 2, "2": 3, "3": 4, "4": 5, "5": 6, "6": 7, "7": 8, "8": 9,
+    "9": 10, "0": 11,
+    # Punctuation
+    "minus": 12, "equal": 13, "leftbrace": 26, "rightbrace": 27,
+    "semicolon": 39, "apostrophe": 40, "grave": 41, "backslash": 43,
+    "comma": 51, "dot": 52, "slash": 53,
 }
 
 # Reverse mapping for evdev
@@ -500,16 +512,9 @@ class EvdevHotkeyListener:
         for part in parts:
             if part in EVDEV_KEY_MAP:
                 key_codes.add(EVDEV_KEY_MAP[part])
-            elif len(part) == 1:
-                # Single character - map to evdev key code
-                # A-Z are codes 30-44, 46-54 in evdev
-                char = part.upper()
-                if 'A' <= char <= 'Z':
-                    # Approximate mapping (not all letters are sequential)
-                    code = ord(char) - ord('A') + 30
-                    if code > 38:  # Skip some non-letter keys
-                        code += 7
-                    key_codes.add(code)
+            elif len(part) == 1 and part.lower() in EVDEV_KEY_MAP:
+                # Single character key (letter, digit)
+                key_codes.add(EVDEV_KEY_MAP[part.lower()])
             else:
                 if _debug_hotkeys:
                     logger.debug(f"Unknown key in hotkey: {part}")

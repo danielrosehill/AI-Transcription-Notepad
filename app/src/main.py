@@ -1641,6 +1641,28 @@ class MainWindow(QMainWindow):
         # Start listening
         self.hotkey_listener.start()
 
+        # Set up D-Bus service for KDE/desktop integration
+        self._setup_dbus_service()
+
+    def _setup_dbus_service(self):
+        """Register D-Bus service for desktop environment integration."""
+        from .dbus_service import DBusActionService
+
+        self.dbus_service = DBusActionService()
+        self.dbus_service.register_action("Toggle",
+            lambda: QTimer.singleShot(0, self._hotkey_toggle_recording))
+        self.dbus_service.register_action("TapToggle",
+            lambda: QTimer.singleShot(0, self._hotkey_tap_toggle))
+        self.dbus_service.register_action("Transcribe",
+            lambda: QTimer.singleShot(0, self._hotkey_transcribe_only))
+        self.dbus_service.register_action("Clear",
+            lambda: QTimer.singleShot(0, self._hotkey_delete))
+        self.dbus_service.register_action("Append",
+            lambda: QTimer.singleShot(0, self._hotkey_append))
+        self.dbus_service.register_action("Retake",
+            lambda: QTimer.singleShot(0, self._hotkey_retake))
+        self.dbus_service.start()
+
     def _register_hotkeys(self):
         """Register global hotkeys for all actions using config values.
 
@@ -4186,6 +4208,10 @@ class MainWindow(QMainWindow):
 
         # Stop hotkey listener
         self.hotkey_listener.stop()
+
+        # Stop D-Bus service
+        if hasattr(self, 'dbus_service'):
+            self.dbus_service.stop()
 
         # Clean up audio recorder
         self.recorder.cleanup()
