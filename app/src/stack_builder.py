@@ -178,15 +178,17 @@ class StackBuilderWidget(QWidget):
         ("translation", "Translation", "Transcribe and translate to target language"),
     ]
 
-    # Format options (8 common formats, 2 rows of 4 alphabetically)
+    # Format options (9 common formats, 3 rows of 3 alphabetically)
     FORMAT_QUICK_OPTIONS = [
         # Row 1
+        ("meeting_agenda", f"{FORMAT_ICONS.get('meeting_agenda', '')} Agenda", "Format as a meeting agenda"),
         ("ai_prompt", f"{FORMAT_ICONS.get('ai_prompt', '')} AI Prompt", "Format as an AI prompt"),
         ("blog_outline", f"{FORMAT_ICONS.get('blog_outline', '')} Blog Outline", "Format as a blog post outline"),
+        # Row 2
         ("dev_prompt", f"{FORMAT_ICONS.get('dev_prompt', '')} Dev Prompt", "Format as development instructions for AI"),
         ("email", f"{FORMAT_ICONS.get('email', '')} Email", "Format as an email with greeting and signature"),
-        # Row 2
         ("meeting_minutes", f"{FORMAT_ICONS.get('meeting_minutes', '')} Minutes", "Format as formal meeting minutes"),
+        # Row 3
         ("meeting_notes", f"{FORMAT_ICONS.get('meeting_notes', '')} Notes", "Format as structured meeting notes"),
         ("social_post", f"{FORMAT_ICONS.get('social_post', '')} Social Post", "Format for social media/community"),
         ("todo", f"{FORMAT_ICONS.get('todo', '')} To-Do", "Format as a to-do list"),
@@ -351,7 +353,7 @@ class StackBuilderWidget(QWidget):
         main_layout.addWidget(container)
 
     def _setup_format_section(self, parent_layout):
-        """Set up the format checkboxes in 2 rows of 4 + More dropdown.
+        """Set up the format checkboxes in 3 rows of 3 + searchable dropdown.
 
         Formats are mutually exclusive - only one can be active at a time.
         Exposed directly (not in an accordion) since these are frequently used.
@@ -359,7 +361,7 @@ class StackBuilderWidget(QWidget):
         self.format_checkboxes: Dict[str, QCheckBox] = {}
         self._format_from_more = None  # Track format selected from More dropdown
 
-        # Create a grid layout for formats (2 rows of 4)
+        # Create a grid layout for formats (3 rows of 3)
         grid_container = QWidget()
         grid_container.setStyleSheet("background: transparent; border: none;")
         grid = QGridLayout(grid_container)
@@ -372,24 +374,24 @@ class StackBuilderWidget(QWidget):
             cb.setStyleSheet(self._get_checkbox_style())
             cb.stateChanged.connect(lambda state, k=key: self._on_format_checkbox_changed(k, state))
             self.format_checkboxes[key] = cb
-            row = i // 4
-            col = i % 4
+            row = i // 3
+            col = i % 3
             grid.addWidget(cb, row, col)
 
         parent_layout.addWidget(grid_container)
 
-        # "More" dropdown for less common formats
+        # Searchable dropdown for additional formats
         more_container = QWidget()
         more_container.setStyleSheet("background: transparent; border: none;")
         more_layout = QHBoxLayout(more_container)
         more_layout.setContentsMargins(0, 0, 0, 0)
         more_layout.setSpacing(4)
 
-        more_label = QLabel("More:")
+        more_label = QLabel("Type a format:")
         more_label.setStyleSheet("color: #666; font-size: 10px; border: none;")
         more_layout.addWidget(more_label)
 
-        self.format_combo = self._create_searchable_combo("Search...")
+        self.format_combo = self._create_searchable_combo("Search formats...")
         self.format_combo.setMaximumWidth(200)
         self.format_combo.addItem("Select...", "")
 
