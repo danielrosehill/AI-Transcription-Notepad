@@ -4339,14 +4339,9 @@ def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # Keep running in tray
 
-    # Apply Material Design theme for polished UI
-    try:
-        from qt_material import apply_stylesheet
-        apply_stylesheet(app, theme='light_blue.xml', extra={
-            'density_scale': '-1',  # Slightly more compact
-        })
-    except ImportError:
-        pass  # Graceful fallback if qt-material not installed
+    # Apply global stylesheet for consistent look
+    from .theme import APP_STYLESHEET
+    app.setStyleSheet(APP_STYLESHEET)
 
     window = MainWindow()
 
