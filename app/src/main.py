@@ -4340,10 +4340,6 @@ def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # Keep running in tray
 
-    # Apply global stylesheet for consistent look
-    from .theme import APP_STYLESHEET
-    app.setStyleSheet(APP_STYLESHEET)
-
     window = MainWindow()
 
     # Start single-instance listener
