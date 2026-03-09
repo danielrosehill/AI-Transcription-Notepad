@@ -415,8 +415,8 @@ class BehaviorWidget(QWidget):
         self.coherence_check_enabled.toggled.connect(lambda v: self._save_bool("coherence_check_enabled", v))
         coherence_layout.addWidget(self.coherence_check_enabled)
         coherence_help = QLabel(
-            "After transcription, a cheap second pass reviews the text for words that "
-            "don't make logical sense in context and corrects them. "
+            "A second-pass review agent fixes misheard words, infers what you actually meant, "
+            "and polishes formatting. Catches errors the first pass missed. "
             f"Uses {self.config.coherence_check_model} (text-only, very low cost)."
         )
         coherence_help.setWordWrap(True)

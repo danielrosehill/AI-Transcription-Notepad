@@ -218,7 +218,7 @@ class TranscriptionWorker(QThread):
 
             # Second pass: coherence check with cheap model
             if self.coherence_check and self.coherence_model and result.text.strip():
-                self.status.emit("Checking coherence...")
+                self.status.emit("Reviewing transcript...")
                 from .config import COHERENCE_CHECK_PROMPT
                 coherence_client = get_client(self.api_key, self.coherence_model)
                 coherence_result = coherence_client.rewrite_text(result.text, COHERENCE_CHECK_PROMPT)

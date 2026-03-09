@@ -98,7 +98,7 @@ class QueueWorker(QThread):
 
             # Second pass: coherence check with cheap model
             if settings.coherence_check and settings.coherence_model and result.text.strip():
-                self.status.emit(item.id, "Checking coherence...")
+                self.status.emit(item.id, "Reviewing transcript...")
                 from .config import COHERENCE_CHECK_PROMPT
                 coherence_client = get_client(settings.api_key, settings.coherence_model)
                 coherence_result = coherence_client.rewrite_text(result.text, COHERENCE_CHECK_PROMPT)

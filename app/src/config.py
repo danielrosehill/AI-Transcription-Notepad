@@ -138,24 +138,47 @@ Apply only essential cleanup:
 Output ONLY the cleaned text. No preamble, no "Here is...", no commentary. Start directly with the content."""
 
 
-# Coherence Check prompt - used for second-pass review of transcriptions
-COHERENCE_CHECK_PROMPT = """Review this transcription for words or phrases that don't make logical sense in context.
+# Second-pass review prompt - intelligent review agent for transcription quality
+COHERENCE_CHECK_PROMPT = """You are a review agent for dictation transcriptions. A first-pass AI has already transcribed and cleaned up audio dictation. Your job is to catch what it missed and polish the result to near-perfect quality.
 
-Speech-to-text often produces plausible-sounding words that are acoustically similar to what was actually said but semantically wrong. Your job is to identify these and replace them with the most likely intended word or phrase based on the surrounding context.
+## 1. Semantic Coherence — Fix Misheard Words
 
-Examples of the kind of errors to fix:
-- "I need to check the weather in my car" → "I need to check the weather in my car" (correct, leave as-is)
-- "The president signed the new bill into lava" → "The president signed the new bill into law"
-- "I'll send you the report by carrier penguin" → "I'll send you the report by carrier pigeon"
-- "We need to address the elephant in the broom" → "We need to address the elephant in the room"
+Speech-to-text often produces plausible-sounding words that are acoustically similar to what was actually said but semantically wrong. Identify these and replace them with the most likely intended word based on context.
 
-Rules:
-- ONLY fix words/phrases that are clearly illogical in context
-- Do NOT rephrase, restructure, or "improve" the writing
-- Do NOT change tone, style, or formatting
-- Preserve all markdown, paragraphs, and structure exactly as-is
-- If nothing needs fixing, return the text unchanged
-- Output ONLY the corrected text, no commentary or explanations"""
+Examples:
+- "signed the new bill into lava" → "into law"
+- "send you the report by carrier penguin" → "carrier pigeon"
+- "address the elephant in the broom" → "in the room"
+- "I need to check the whether" → "the weather" (or "whether" — use context to decide)
+
+## 2. Intent Inference — What Did the User Actually Mean?
+
+Read the transcription as a whole and ask: does this make sense as something a human would intentionally say? If a sentence or phrase seems off, infer the most likely intended meaning and correct it. Trust your intelligence here — you can see patterns the first pass missed.
+
+Common issues to catch:
+- Homophones chosen incorrectly ("there" vs "their" vs "they're")
+- Words that are phonetically close but contextually wrong
+- Technical terms or proper nouns that got mangled
+- Sentences where word order got scrambled by the first-pass model
+- Missing words that make a sentence grammatically incomplete
+
+## 3. Format Polish
+
+Look at the content holistically and apply light formatting improvements:
+- If the text is clearly an email, ensure it has appropriate greeting/sign-off structure
+- If it's a list, ensure consistent formatting (bullets, numbering)
+- If it's a prompt or instruction, ensure it reads clearly and completely
+- Add paragraph breaks where topic shifts occur but weren't marked
+- Do NOT impose a format — only refine what's already there
+
+## Rules
+
+- Preserve the author's voice, tone, and intent — you are fixing errors, not rewriting
+- Do NOT add information that wasn't in the original
+- Do NOT remove content unless it's clearly a transcription artifact (repeated words, stammering leftovers)
+- Preserve all markdown formatting and structure
+- If the text is already good, return it unchanged
+- Output ONLY the corrected text — no commentary, no "Here is...", no explanations"""
 
 
 def get_model_display_name(model_id: str) -> str:
@@ -437,7 +460,7 @@ class Config:
     # When enabled, a second text-only pass reviews the transcription for words
     # or phrases that don't make logical sense in context and corrects them.
     # Uses a cheap model (Gemini 3.1 Flash Lite) to keep costs minimal.
-    coherence_check_enabled: bool = False
+    coherence_check_enabled: bool = True
     coherence_check_model: str = "google/gemini-3.1-flash-lite-preview"
 
 
