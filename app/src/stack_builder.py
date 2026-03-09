@@ -76,17 +76,17 @@ class CollapsibleSection(QWidget):
 
         # Arrow
         self.arrow = QLabel("▶")
-        self.arrow.setStyleSheet("font-size: 9px; color: #666;")
+        self.arrow.setStyleSheet("font-size: 10px; color: #666;")
         header_layout.addWidget(self.arrow)
 
         # Title
         self.title_label = QLabel(f"<b>{self._title}</b>")
-        self.title_label.setStyleSheet("font-size: 11px; color: #333;")
+        self.title_label.setStyleSheet("font-size: 12px; color: #333;")
         header_layout.addWidget(self.title_label)
 
         # Summary (shows current selection)
         self.summary_label = QLabel("")
-        self.summary_label.setStyleSheet("font-size: 11px; color: #666;")
+        self.summary_label.setStyleSheet("font-size: 12px; color: #666;")
         header_layout.addWidget(self.summary_label)
 
         header_layout.addStretch()
@@ -252,12 +252,14 @@ class StackBuilderWidget(QWidget):
             radio.setToolTip(tooltip)
             radio.setStyleSheet("""
                 QRadioButton {
-                    font-size: 11px;
+                    font-size: 13px;
                     font-weight: bold;
+                    padding: 4px 2px;
+                    spacing: 6px;
                 }
                 QRadioButton::indicator {
-                    width: 14px;
-                    height: 14px;
+                    width: 18px;
+                    height: 18px;
                 }
             """)
             self.base_button_group.addButton(radio)
@@ -293,10 +295,10 @@ class StackBuilderWidget(QWidget):
         format_heading = QLabel("Format")
         format_heading.setStyleSheet("""
             QLabel {
-                font-size: 11px;
+                font-size: 12px;
                 font-weight: bold;
                 color: #666;
-                padding: 4px 0 2px 0;
+                padding: 6px 0 4px 0;
             }
         """)
         format_heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -308,10 +310,10 @@ class StackBuilderWidget(QWidget):
         tone_heading = QLabel("Tone")
         tone_heading.setStyleSheet("""
             QLabel {
-                font-size: 11px;
+                font-size: 12px;
                 font-weight: bold;
                 color: #666;
-                padding: 4px 0 2px 0;
+                padding: 6px 0 4px 0;
             }
         """)
         tone_heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -323,10 +325,10 @@ class StackBuilderWidget(QWidget):
         heading_label = QLabel("Customize Output")
         heading_label.setStyleSheet("""
             QLabel {
-                font-size: 11px;
+                font-size: 12px;
                 font-weight: bold;
                 color: #666;
-                padding: 4px 0 2px 0;
+                padding: 6px 0 4px 0;
             }
         """)
         heading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -366,8 +368,8 @@ class StackBuilderWidget(QWidget):
         grid_container = QWidget()
         grid_container.setStyleSheet("background: transparent; border: none;")
         grid = QGridLayout(grid_container)
-        grid.setContentsMargins(0, 0, 0, 4)
-        grid.setSpacing(4)
+        grid.setContentsMargins(4, 4, 4, 4)
+        grid.setSpacing(6)
 
         for i, (key, label, tooltip) in enumerate(self.FORMAT_QUICK_OPTIONS):
             cb = QCheckBox(label)
@@ -389,7 +391,7 @@ class StackBuilderWidget(QWidget):
         more_layout.setSpacing(4)
 
         more_label = QLabel("Type a format:")
-        more_label.setStyleSheet("color: #666; font-size: 10px; border: none;")
+        more_label.setStyleSheet("color: #666; font-size: 12px; border: none;")
         more_layout.addWidget(more_label)
 
         self.format_combo = self._create_searchable_combo("Search formats...")
@@ -433,14 +435,15 @@ class StackBuilderWidget(QWidget):
             radio.setToolTip(tooltip)
             radio.setStyleSheet("""
                 QRadioButton {
-                    font-size: 11px;
-                    padding: 2px 0;
+                    font-size: 13px;
+                    padding: 4px 6px;
                     background: transparent;
                     border: none;
+                    spacing: 6px;
                 }
                 QRadioButton::indicator {
-                    width: 12px;
-                    height: 12px;
+                    width: 18px;
+                    height: 18px;
                 }
             """)
             self.tone_button_group.addButton(radio)
@@ -521,28 +524,30 @@ class StackBuilderWidget(QWidget):
     def _get_radio_style(self) -> str:
         return """
             QRadioButton {
-                font-size: 11px;
-                padding: 2px 0;
+                font-size: 13px;
+                padding: 4px 2px;
                 background: transparent;
                 border: none;
+                spacing: 6px;
             }
             QRadioButton::indicator {
-                width: 12px;
-                height: 12px;
+                width: 18px;
+                height: 18px;
             }
         """
 
     def _get_checkbox_style(self) -> str:
         return """
             QCheckBox {
-                font-size: 11px;
-                padding: 2px 0;
+                font-size: 13px;
+                padding: 4px 2px;
                 background: transparent;
                 border: none;
+                spacing: 6px;
             }
             QCheckBox::indicator {
-                width: 12px;
-                height: 12px;
+                width: 18px;
+                height: 18px;
             }
         """
 
@@ -580,8 +585,8 @@ class StackBuilderWidget(QWidget):
         combo.setPlaceholderText(placeholder)
         combo.setStyleSheet("""
             QComboBox {
-                font-size: 11px;
-                padding: 4px 8px;
+                font-size: 13px;
+                padding: 6px 10px;
                 border: 1px solid #ccc;
                 border-radius: 4px;
                 background: white;
@@ -591,10 +596,10 @@ class StackBuilderWidget(QWidget):
             }
             QComboBox::drop-down {
                 border: none;
-                width: 20px;
+                width: 24px;
             }
             QComboBox QAbstractItemView {
-                font-size: 11px;
+                font-size: 13px;
             }
         """)
         return combo

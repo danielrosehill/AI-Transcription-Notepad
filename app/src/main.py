@@ -552,8 +552,7 @@ class MainWindow(QMainWindow):
         control_bar.addWidget(self.record_btn)
 
         self.retake_btn = QPushButton("↺")  # Retake/restart icon
-        self.retake_btn.setMinimumHeight(36)
-        self.retake_btn.setMinimumWidth(44)
+        self.retake_btn.setFixedSize(44, 44)
         self.retake_btn.setEnabled(False)
         self.retake_btn.setToolTip(
             "Retake\nDiscard current recording and start fresh.\nQuickly restart without transcribing."
@@ -563,10 +562,10 @@ class MainWindow(QMainWindow):
                 background-color: #fd7e14;
                 color: white;
                 border: none;
-                border-radius: 6px;
+                border-radius: 22px;
                 font-weight: bold;
-                font-size: 16px;
-                padding: 0 8px;
+                font-size: 18px;
+                padding: 0;
             }
             QPushButton:hover {
                 background-color: #e96b02;
@@ -580,8 +579,7 @@ class MainWindow(QMainWindow):
         control_bar.addWidget(self.retake_btn)
 
         self.append_btn = QPushButton("+")  # Append/plus icon
-        self.append_btn.setMinimumHeight(36)
-        self.append_btn.setMinimumWidth(44)
+        self.append_btn.setFixedSize(44, 44)
         self.append_btn.setEnabled(False)
         self.append_btn.setToolTip(
             "Append\n"
@@ -593,10 +591,10 @@ class MainWindow(QMainWindow):
                 background-color: #17a2b8;
                 color: white;
                 border: none;
-                border-radius: 6px;
+                border-radius: 22px;
                 font-weight: bold;
-                font-size: 16px;
-                padding: 0 8px;
+                font-size: 18px;
+                padding: 0;
             }
             QPushButton:hover {
                 background-color: #138496;
@@ -610,8 +608,7 @@ class MainWindow(QMainWindow):
         control_bar.addWidget(self.append_btn)
 
         self.stop_btn = QPushButton("■")  # Stop icon (filled square)
-        self.stop_btn.setMinimumHeight(36)
-        self.stop_btn.setMinimumWidth(44)
+        self.stop_btn.setFixedSize(44, 44)
         self.stop_btn.setEnabled(False)
         self.stop_btn.setToolTip(
             "Stop\n"
@@ -623,10 +620,10 @@ class MainWindow(QMainWindow):
                 background-color: #ffc107;
                 color: black;
                 border: none;
-                border-radius: 6px;
+                border-radius: 22px;
                 font-weight: bold;
-                font-size: 16px;
-                padding: 0 8px;
+                font-size: 18px;
+                padding: 0;
             }
             QPushButton:hover {
                 background-color: #e0a800;
@@ -640,8 +637,7 @@ class MainWindow(QMainWindow):
         control_bar.addWidget(self.stop_btn)
 
         self.transcribe_btn = QPushButton("⬆")  # Transcribe/send icon (vertical arrow)
-        self.transcribe_btn.setMinimumHeight(36)
-        self.transcribe_btn.setMinimumWidth(44)
+        self.transcribe_btn.setFixedSize(44, 44)
         self.transcribe_btn.setEnabled(False)
         self.transcribe_btn.setToolTip(
             "Transcribe\n"
@@ -656,10 +652,10 @@ class MainWindow(QMainWindow):
                 color: #1a5c1a;
                 border: none;
                 border-bottom: 3px solid #5CB85C;
-                border-radius: 6px;
+                border-radius: 22px;
                 font-weight: bold;
-                font-size: 16px;
-                padding: 0 8px;
+                font-size: 18px;
+                padding: 0;
             }
             QPushButton:hover {
                 background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -678,10 +674,10 @@ class MainWindow(QMainWindow):
                 color: black;
                 border: none;
                 border-bottom: 3px solid #c59600;
-                border-radius: 6px;
+                border-radius: 22px;
                 font-weight: bold;
-                font-size: 16px;
-                padding: 0 8px;
+                font-size: 18px;
+                padding: 0;
             }
             QPushButton:hover {
                 background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -698,8 +694,7 @@ class MainWindow(QMainWindow):
         control_bar.addWidget(self.transcribe_btn)
 
         self.delete_btn = QPushButton("✕")  # Delete/X icon
-        self.delete_btn.setMinimumHeight(36)
-        self.delete_btn.setMinimumWidth(44)
+        self.delete_btn.setFixedSize(44, 44)
         self.delete_btn.setEnabled(False)
         self.delete_btn.setToolTip(
             "Delete\n"
@@ -711,10 +706,10 @@ class MainWindow(QMainWindow):
                 background-color: #dc3545;
                 color: white;
                 border: none;
-                border-radius: 6px;
+                border-radius: 22px;
                 font-weight: bold;
-                font-size: 16px;
-                padding: 0 8px;
+                font-size: 18px;
+                padding: 0;
             }
             QPushButton:hover {
                 background-color: #c82333;
@@ -729,8 +724,7 @@ class MainWindow(QMainWindow):
 
         # Retry button - only visible when transcription fails and audio is preserved
         self.retry_btn = QPushButton("↻")  # Retry icon
-        self.retry_btn.setMinimumHeight(36)
-        self.retry_btn.setMinimumWidth(44)
+        self.retry_btn.setFixedSize(44, 44)
         self.retry_btn.setToolTip(
             "Retry\n"
             "Retry transcription of preserved audio.\n"
@@ -743,10 +737,10 @@ class MainWindow(QMainWindow):
                 color: white;
                 border: none;
                 border-bottom: 3px solid #e65100;
-                border-radius: 6px;
+                border-radius: 22px;
                 font-weight: bold;
-                font-size: 16px;
-                padding: 0 8px;
+                font-size: 18px;
+                padding: 0;
             }
             QPushButton:hover {
                 background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -4344,6 +4338,15 @@ def main():
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # Keep running in tray
+
+    # Apply Material Design theme for polished UI
+    try:
+        from qt_material import apply_stylesheet
+        apply_stylesheet(app, theme='light_blue.xml', extra={
+            'density_scale': '-1',  # Slightly more compact
+        })
+    except ImportError:
+        pass  # Graceful fallback if qt-material not installed
 
     window = MainWindow()
 
