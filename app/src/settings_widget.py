@@ -791,14 +791,17 @@ class HotkeysWidget(QWidget):
         config_group = QGroupBox("Hotkey Mappings")
         grid = QGridLayout(config_group)
         grid.setSpacing(8)
-        grid.setColumnMinimumWidth(0, 100)  # Action name column
+        grid.setColumnMinimumWidth(0, 80)   # Action name column
+        grid.setColumnMinimumWidth(1, 140)  # Modifier combo
+        grid.setColumnMinimumWidth(3, 90)   # Key combo
+        grid.setColumnStretch(4, 1)         # Description takes remaining space
 
         # Header row
-        for col, header_text in enumerate(["Action", "Modifier", "", "Key"]):
+        for col, header_text in enumerate(["Action", "Modifier", "", "Key", "Description"]):
             header = QLabel(f"<b>{header_text}</b>")
             header.setStyleSheet("color: #495057; font-size: 11px; padding-bottom: 4px;")
             if col == 2:  # The "+" column
-                header.setFixedWidth(12)
+                header.setFixedWidth(16)
                 header.setAlignment(Qt.AlignmentFlag.AlignCenter)
             grid.addWidget(header, 0, col)
 
@@ -829,7 +832,8 @@ class HotkeysWidget(QWidget):
 
             # Description as a small label in col 4
             desc_label = QLabel(description)
-            desc_label.setStyleSheet("color: #888; font-size: 10px; padding-left: 8px;")
+            desc_label.setWordWrap(True)
+            desc_label.setStyleSheet("color: #888; font-size: 11px; padding-left: 8px;")
             grid.addWidget(desc_label, row_idx, 4)
 
         layout.addWidget(config_group)
@@ -1869,8 +1873,8 @@ class SettingsDialog(QDialog):
 
     def _init_ui(self):
         self.setWindowTitle("Settings")
-        self.setMinimumSize(780, 620)
-        self.resize(820, 680)
+        self.setMinimumSize(840, 620)
+        self.resize(900, 700)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

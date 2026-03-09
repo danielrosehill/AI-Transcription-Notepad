@@ -256,6 +256,7 @@ class StackBuilderWidget(QWidget):
                     font-weight: bold;
                     padding: 4px 2px;
                     spacing: 6px;
+                    color: #333;
                 }
                 QRadioButton::indicator {
                     width: 18px;
@@ -440,6 +441,7 @@ class StackBuilderWidget(QWidget):
                     background: transparent;
                     border: none;
                     spacing: 6px;
+                    color: #333;
                 }
                 QRadioButton::indicator {
                     width: 18px;
@@ -529,6 +531,7 @@ class StackBuilderWidget(QWidget):
                 background: transparent;
                 border: none;
                 spacing: 6px;
+                color: #333;
             }
             QRadioButton::indicator {
                 width: 18px;
@@ -544,6 +547,7 @@ class StackBuilderWidget(QWidget):
                 background: transparent;
                 border: none;
                 spacing: 6px;
+                color: #333;
             }
             QCheckBox::indicator {
                 width: 18px;
