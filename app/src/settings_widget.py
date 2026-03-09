@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QCheckBox, QComboBox, QGroupBox, QFormLayout,
     QPushButton, QSpinBox, QFrame, QMessageBox, QFileDialog,
     QTextEdit, QScrollArea, QDialog, QDialogButtonBox,
-    QGraphicsOpacityEffect,
+    QGraphicsOpacityEffect, QGridLayout,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont
@@ -611,93 +611,138 @@ class PersonalizationWidget(QWidget):
             self.settings_parent.notify_saved()
 
 
-class HotkeyCaptureButton(QPushButton):
-    """A button that captures keyboard shortcuts when clicked.
+class HotkeyComboSelector(QWidget):
+    """Dropdown-based hotkey combo builder.
 
-    Supports any key combination including modifier+key combos like Ctrl+Shift+R.
+    Users select an optional modifier and a key from dropdown menus.
+    The resulting hotkey string (e.g., "ctrl+shift+f15") is compatible
+    with the existing hotkey listener format.
     """
 
-    hotkey_captured = pyqtSignal(str)  # Emits the hotkey string (e.g., "ctrl+shift+r")
+    hotkey_changed = pyqtSignal(str)  # Emits the hotkey string
+
+    # Available modifier combinations
+    MODIFIERS = [
+        ("None", ""),
+        ("Ctrl", "ctrl"),
+        ("Alt", "alt"),
+        ("Shift", "shift"),
+        ("Super", "super"),
+        ("Ctrl + Shift", "ctrl+shift"),
+        ("Ctrl + Alt", "ctrl+alt"),
+        ("Ctrl + Super", "ctrl+super"),
+        ("Alt + Shift", "alt+shift"),
+        ("Ctrl + Alt + Shift", "ctrl+alt+shift"),
+    ]
+
+    # Available keys
+    KEYS = (
+        [("Disabled", "")]
+        + [(f"F{i}", f"f{i}") for i in range(1, 25)]
+        + [(chr(c), chr(c).lower()) for c in range(ord("A"), ord("Z") + 1)]
+        + [(str(i), str(i)) for i in range(0, 10)]
+        + [
+            ("Space", "space"),
+            ("Enter", "enter"),
+            ("Tab", "tab"),
+            ("Pause", "pause"),
+            ("Scroll Lock", "scroll_lock"),
+            ("Print Screen", "print_screen"),
+            ("Insert", "insert"),
+            ("Home", "home"),
+            ("End", "end"),
+            ("Page Up", "pageup"),
+            ("Page Down", "pagedown"),
+        ]
+    )
 
     def __init__(self, current_value: str = "", parent=None):
         super().__init__(parent)
-        self._hotkey_value = current_value
-        self._capturing = False
-        self._capture = None
-        self._update_display()
-        self.setMinimumWidth(140)
-        self.setMinimumHeight(32)
-        self.clicked.connect(self._start_capture)
+        self._updating = False  # Guard against recursive signals
+        self._init_ui()
+        self._set_from_string(current_value)
+
+    def _init_ui(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        self._modifier_combo = QComboBox()
+        self._modifier_combo.setMinimumWidth(120)
+        for display, _ in self.MODIFIERS:
+            self._modifier_combo.addItem(display)
+        self._modifier_combo.currentIndexChanged.connect(self._on_selection_changed)
+        layout.addWidget(self._modifier_combo)
+
+        plus_label = QLabel("+")
+        plus_label.setStyleSheet("color: #888; font-weight: bold;")
+        plus_label.setFixedWidth(12)
+        plus_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(plus_label)
+
+        self._key_combo = QComboBox()
+        self._key_combo.setMinimumWidth(100)
+        for display, _ in self.KEYS:
+            self._key_combo.addItem(display)
+        self._key_combo.currentIndexChanged.connect(self._on_selection_changed)
+        layout.addWidget(self._key_combo)
 
     @property
     def hotkey_value(self) -> str:
-        return self._hotkey_value
+        """Build the hotkey string from current selections."""
+        key_idx = self._key_combo.currentIndex()
+        if key_idx <= 0:  # "Disabled"
+            return ""
+        _, key_val = self.KEYS[key_idx]
+
+        mod_idx = self._modifier_combo.currentIndex()
+        _, mod_val = self.MODIFIERS[mod_idx]
+
+        if mod_val:
+            return f"{mod_val}+{key_val}"
+        return key_val
 
     @hotkey_value.setter
     def hotkey_value(self, value: str):
-        self._hotkey_value = value
-        self._update_display()
+        self._set_from_string(value)
 
-    def _update_display(self):
-        """Update button text to show current hotkey."""
-        if self._capturing:
-            self.setText("Press a key...")
-            self.setStyleSheet(
-                "QPushButton { background-color: #fff3cd; border: 2px solid #ffc107; "
-                "font-weight: bold; padding: 4px 8px; }"
-            )
-        elif self._hotkey_value:
-            display = self._hotkey_value.replace("+", " + ").upper()
-            self.setText(display)
-            self.setStyleSheet(
-                "QPushButton { font-weight: bold; padding: 4px 8px; }"
-            )
-        else:
-            self.setText("Disabled")
-            self.setStyleSheet(
-                "QPushButton { color: #999; font-style: italic; padding: 4px 8px; }"
-            )
+    def _set_from_string(self, hotkey_str: str):
+        """Parse a hotkey string and set the dropdowns accordingly."""
+        self._updating = True
+        try:
+            if not hotkey_str:
+                self._modifier_combo.setCurrentIndex(0)  # "None"
+                self._key_combo.setCurrentIndex(0)  # "Disabled"
+                return
 
-    def _start_capture(self):
-        """Start listening for a key combination."""
-        if self._capturing:
-            return
-        self._capturing = True
-        self._update_display()
+            parts = hotkey_str.lower().split("+")
+            # Last part is the key, everything before is modifiers
+            key_part = parts[-1]
+            mod_parts = parts[:-1]
 
-        from .hotkeys import HotkeyCapture
-        self._capture = HotkeyCapture(self._on_key_captured)
-        self._capture.start()
+            # Find modifier match
+            mod_str = "+".join(mod_parts) if mod_parts else ""
+            mod_idx = 0
+            for i, (_, val) in enumerate(self.MODIFIERS):
+                if val == mod_str:
+                    mod_idx = i
+                    break
+            self._modifier_combo.setCurrentIndex(mod_idx)
 
-        # Auto-cancel after 5 seconds
-        QTimer.singleShot(5000, self._cancel_capture)
+            # Find key match
+            key_idx = 0
+            for i, (_, val) in enumerate(self.KEYS):
+                if val == key_part:
+                    key_idx = i
+                    break
+            self._key_combo.setCurrentIndex(key_idx)
+        finally:
+            self._updating = False
 
-    def _on_key_captured(self, hotkey_str: str):
-        """Handle captured hotkey (called from capture thread)."""
-        QTimer.singleShot(0, lambda: self._finish_capture(hotkey_str))
-
-    def _finish_capture(self, hotkey_str: str):
-        """Apply the captured hotkey (main thread)."""
-        self._capturing = False
-        self._hotkey_value = hotkey_str
-        self._update_display()
-        self._capture = None
-        self.hotkey_captured.emit(hotkey_str)
-
-    def _cancel_capture(self):
-        """Cancel capture if still active."""
-        if self._capturing:
-            self._capturing = False
-            if self._capture:
-                self._capture.stop()
-                self._capture = None
-            self._update_display()
-
-    def clear_hotkey(self):
-        """Clear the current hotkey binding."""
-        self._hotkey_value = ""
-        self._update_display()
-        self.hotkey_captured.emit("")
+    def _on_selection_changed(self):
+        """Emit change when user modifies selection."""
+        if not self._updating:
+            self.hotkey_changed.emit(self.hotkey_value)
 
 
 class HotkeysWidget(QWidget):
@@ -709,23 +754,23 @@ class HotkeysWidget(QWidget):
     # Hotkey function definitions: (config_field, display_name, description)
     HOTKEY_FUNCTIONS = [
         ("hotkey_toggle", "Toggle", "Start recording / Stop and transcribe"),
-        ("hotkey_tap_toggle", "Tap Toggle", "Start recording / Stop and cache (for append mode)"),
+        ("hotkey_tap_toggle", "Tap Toggle", "Stop and cache for append mode"),
         ("hotkey_transcribe", "Transcribe", "Transcribe cached audio only"),
         ("hotkey_clear", "Clear", "Clear cache / Delete recording"),
         ("hotkey_append", "Append", "Start new recording to add to cache"),
-        ("hotkey_retake", "Retake", "Discard current and start fresh recording"),
+        ("hotkey_retake", "Retake", "Discard current and start fresh"),
     ]
 
     def __init__(self, config: Config, settings_parent=None, parent=None):
         super().__init__(parent)
         self.config = config
         self.settings_parent = settings_parent
-        self._capture_buttons = {}  # field_name -> HotkeyCaptureButton
+        self._combo_selectors = {}  # field_name -> HotkeyComboSelector
         self._init_ui()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(16)
+        layout.setSpacing(12)
         layout.setContentsMargins(16, 16, 16, 16)
 
         # Title
@@ -735,66 +780,61 @@ class HotkeysWidget(QWidget):
 
         desc = QLabel(
             "Configure global hotkeys for recording control. "
-            "Click a button and press any key or combination (e.g., Ctrl+Shift+R, F15). "
-            "Changes take effect immediately."
+            "Select a modifier (optional) and a key for each action. "
+            "Duplicate assignments are automatically resolved."
         )
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #666; margin-bottom: 12px;")
+        desc.setStyleSheet("color: #666; margin-bottom: 8px;")
         layout.addWidget(desc)
 
-        # Hotkey configuration group with two-column layout
+        # Hotkey mappings table
         config_group = QGroupBox("Hotkey Mappings")
-        columns_layout = QHBoxLayout(config_group)
-        columns_layout.setSpacing(24)
+        grid = QGridLayout(config_group)
+        grid.setSpacing(8)
+        grid.setColumnMinimumWidth(0, 100)  # Action name column
 
-        # Split hotkey functions into two columns
-        left_functions = self.HOTKEY_FUNCTIONS[:3]  # Toggle, Tap Toggle, Transcribe
-        right_functions = self.HOTKEY_FUNCTIONS[3:]  # Clear, Append, Retake
+        # Header row
+        for col, header_text in enumerate(["Action", "Modifier", "", "Key"]):
+            header = QLabel(f"<b>{header_text}</b>")
+            header.setStyleSheet("color: #495057; font-size: 11px; padding-bottom: 4px;")
+            if col == 2:  # The "+" column
+                header.setFixedWidth(12)
+                header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            grid.addWidget(header, 0, col)
 
-        for column_functions in [left_functions, right_functions]:
-            column_form = QFormLayout()
-            column_form.setSpacing(12)
-            column_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        for row_idx, (field_name, display_name, description) in enumerate(self.HOTKEY_FUNCTIONS, start=1):
+            current_value = getattr(self.config, field_name, "")
 
-            for field_name, display_name, description in column_functions:
-                current_value = getattr(self.config, field_name, "")
+            # Action label with description tooltip
+            action_label = QLabel(f"<b>{display_name}</b>")
+            action_label.setToolTip(description)
+            action_label.setStyleSheet("padding: 4px 0;")
+            grid.addWidget(action_label, row_idx, 0)
 
-                # Create capture button + clear button row
-                btn_layout = QHBoxLayout()
-                btn_layout.setSpacing(4)
+            # Combo selector (modifier + key dropdowns)
+            selector = HotkeyComboSelector(current_value)
+            selector.hotkey_changed.connect(
+                lambda val, f=field_name: self._on_hotkey_changed(f, val)
+            )
+            self._combo_selectors[field_name] = selector
 
-                capture_btn = HotkeyCaptureButton(current_value)
-                capture_btn.hotkey_captured.connect(
-                    lambda val, f=field_name: self._on_hotkey_changed(f, val)
-                )
-                btn_layout.addWidget(capture_btn)
+            # Add modifier combo at col 1, plus label at col 2, key combo at col 3
+            grid.addWidget(selector._modifier_combo, row_idx, 1)
+            plus_label = QLabel("+")
+            plus_label.setStyleSheet("color: #888; font-weight: bold;")
+            plus_label.setFixedWidth(12)
+            plus_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            grid.addWidget(plus_label, row_idx, 2)
+            grid.addWidget(selector._key_combo, row_idx, 3)
 
-                clear_btn = QPushButton("×")
-                clear_btn.setFixedSize(28, 28)
-                clear_btn.setToolTip("Clear this hotkey")
-                clear_btn.setStyleSheet("QPushButton { font-weight: bold; font-size: 14px; }")
-                clear_btn.clicked.connect(
-                    lambda _, f=field_name, b=capture_btn: self._clear_hotkey(f, b)
-                )
-                btn_layout.addWidget(clear_btn)
-
-                self._capture_buttons[field_name] = capture_btn
-
-                # Create row with buttons and description
-                row_layout = QVBoxLayout()
-                row_layout.setSpacing(2)
-                row_layout.addLayout(btn_layout)
-                desc_label = QLabel(description)
-                desc_label.setStyleSheet("color: #666; font-size: 10px;")
-                row_layout.addWidget(desc_label)
-
-                column_form.addRow(f"{display_name}:", row_layout)
-
-            columns_layout.addLayout(column_form)
+            # Description as a small label in col 4
+            desc_label = QLabel(description)
+            desc_label.setStyleSheet("color: #888; font-size: 10px; padding-left: 8px;")
+            grid.addWidget(desc_label, row_idx, 4)
 
         layout.addWidget(config_group)
 
-        # KDE integration info
+        # KDE integration info (collapsible-style group)
         kde_group = QGroupBox("KDE Plasma Integration")
         kde_layout = QVBoxLayout(kde_group)
         kde_layout.setSpacing(6)
@@ -830,20 +870,20 @@ class HotkeysWidget(QWidget):
 
         layout.addWidget(kde_group)
 
-        # Quick reference for workflow
+        # Workflow reference
         ref_group = QGroupBox("Workflow Reference")
         ref_layout = QVBoxLayout(ref_group)
-        ref_layout.setSpacing(6)
+        ref_layout.setSpacing(4)
 
         workflows = [
-            ("<b>Simple Workflow:</b> Toggle → Dictate → Toggle (transcribes automatically)", "#495057"),
-            ("<b>Append Workflow:</b> Tap Toggle → Dictate → Tap Toggle (caches) → Append → Dictate → Transcribe", "#495057"),
+            "<b>Simple:</b> Toggle → Dictate → Toggle (transcribes automatically)",
+            "<b>Append:</b> Tap Toggle → Dictate → Tap Toggle (caches) → Append → Dictate → Transcribe",
         ]
 
-        for text, color in workflows:
+        for text in workflows:
             label = QLabel(text)
             label.setWordWrap(True)
-            label.setStyleSheet(f"color: {color}; font-size: 11px; padding: 4px;")
+            label.setStyleSheet("color: #495057; font-size: 11px; padding: 2px 4px;")
             ref_layout.addWidget(label)
 
         layout.addWidget(ref_group)
@@ -860,28 +900,15 @@ class HotkeysWidget(QWidget):
         layout.addStretch()
 
     def _on_hotkey_changed(self, field_name: str, new_value: str):
-        """Handle hotkey capture change."""
-        # Check for duplicate key assignment
+        """Handle hotkey combo change with duplicate detection."""
         if new_value:
-            for other_field, other_btn in self._capture_buttons.items():
-                if other_field != field_name and other_btn.hotkey_value == new_value:
+            for other_field, other_selector in self._combo_selectors.items():
+                if other_field != field_name and other_selector.hotkey_value == new_value:
                     # Duplicate found - clear the other one
-                    other_btn.hotkey_value = ""
+                    other_selector.hotkey_value = ""
                     setattr(self.config, other_field, "")
 
-        # Save the new value
         setattr(self.config, field_name, new_value)
-        save_config(self.config)
-        if self.settings_parent:
-            self.settings_parent.notify_saved()
-
-        # Emit signal so main window can re-register hotkeys
-        self.hotkeys_changed.emit()
-
-    def _clear_hotkey(self, field_name: str, capture_btn: HotkeyCaptureButton):
-        """Clear a hotkey binding."""
-        capture_btn.clear_hotkey()
-        setattr(self.config, field_name, "")
         save_config(self.config)
         if self.settings_parent:
             self.settings_parent.notify_saved()
@@ -900,9 +927,9 @@ class HotkeysWidget(QWidget):
 
         for field_name, default_value in defaults.items():
             setattr(self.config, field_name, default_value)
-            btn = self._capture_buttons.get(field_name)
-            if btn:
-                btn.hotkey_value = default_value
+            selector = self._combo_selectors.get(field_name)
+            if selector:
+                selector.hotkey_value = default_value
 
         save_config(self.config)
         if self.settings_parent:
