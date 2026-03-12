@@ -2220,10 +2220,12 @@ class MainWindow(QMainWindow):
     def toggle_recording(self):
         """Start or stop recording."""
         if not self.recorder.is_recording:
-            # Only clear text if not in append mode and no accumulated segments
+            # Only clear text if not in append mode, no accumulated segments,
+            # and no existing text (overwrite protection)
             if not self.append_mode and not self.accumulated_segments:
-                self.text_output.clear()
-                self.word_count_label.setText("")
+                if not self.text_output.toPlainText().strip():
+                    self.text_output.clear()
+                    self.word_count_label.setText("")
 
             # Clear any failed audio state when starting a new recording
             if self.has_failed_audio:
