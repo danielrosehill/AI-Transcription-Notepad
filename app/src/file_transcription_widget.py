@@ -325,7 +325,7 @@ class FileTranscriptionWidget(QWidget):
 
     def _get_selected_model(self) -> str:
         """Get the selected model ID."""
-        return self.model_combo.currentData() or "google/gemini-3-flash-preview"
+        return self.model_combo.currentData() or "google/gemini-3.5-flash-lite"
 
     def browse_file(self):
         """Open file browser to select audio file."""

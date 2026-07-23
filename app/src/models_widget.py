@@ -15,18 +15,17 @@ from .config import OPENROUTER_MODELS
 
 
 # Model metadata with additional notes
-# Note: Gemini 2.5 models removed as deprecated by Google
 MODEL_INFO = {
-    "google/gemini-3-flash-preview": {
-        "note": "⭐ Gemini 3 Flash - fast, capable, recommended default",
+    "google/gemini-3.5-flash-lite": {
+        "note": "⭐ Gemini 3.5 Flash Lite - fastest and cheapest (audio $0.30/M tokens), recommended default",
         "audio_support": True,
-        "tier": "standard",
+        "tier": "default",
         "recommended": True,
     },
-    "google/gemini-3-pro-preview": {
-        "note": "Gemini 3 Pro - most capable model for complex tasks",
+    "google/gemini-3.6-flash": {
+        "note": "Gemini 3.6 Flash - higher quality for demanding dictations (audio $1.50/M tokens)",
         "audio_support": True,
-        "tier": "premium",
+        "tier": "quality",
     },
 }
 
@@ -63,7 +62,7 @@ class ModelsWidget(QWidget):
 
         intro = QLabel(
             "Voice Notepad uses Gemini models via <b>OpenRouter</b> for audio transcription. "
-            "The default model is <b>Gemini 3 Flash</b> which offers excellent speed and quality."
+            "The default model is <b>Gemini 3.5 Flash Lite</b> — the best balance of speed, quality, and cost for dictation."
         )
         intro.setWordWrap(True)
         intro.setStyleSheet("color: #666; font-size: 11px;")
@@ -75,7 +74,7 @@ class ModelsWidget(QWidget):
             "After extensive testing (~2000 transcriptions), the Gemini Flash models have proven highly "
             "cost-effective for voice transcription workloads—typically just a few dollars for "
             "heavy usage. OpenRouter provides a unified API with competitive latency and "
-            "access to the latest Gemini models including the Gemini 3 preview."
+            "access to the latest Gemini models."
         )
         rationale.setWordWrap(True)
         rationale.setStyleSheet(
@@ -95,9 +94,8 @@ class ModelsWidget(QWidget):
         legend_layout.addWidget(legend_label)
 
         tiers = [
-            ("Budget", "#28a745", "Lower cost"),
-            ("Standard", "#007bff", "Balanced"),
-            ("Premium", "#6f42c1", "Highest capability"),
+            ("Default", "#28a745", "Fast and cost-optimized"),
+            ("Quality", "#6f42c1", "Higher quality, higher cost"),
         ]
 
         for tier_name, color, description in tiers:
@@ -227,13 +225,12 @@ class ModelsWidget(QWidget):
         left_layout.setSpacing(8)
 
         # Tier indicator
-        tier = info.get("tier", "standard")
+        tier = info.get("tier", "default")
         tier_colors = {
-            "budget": "#28a745",
-            "standard": "#007bff",
-            "premium": "#6f42c1",
+            "default": "#28a745",
+            "quality": "#6f42c1",
         }
-        color = tier_colors.get(tier, "#007bff")
+        color = tier_colors.get(tier, "#28a745")
 
         tier_dot = QLabel("●")
         tier_dot.setStyleSheet(f"color: {color}; font-size: 14px; background: transparent;")

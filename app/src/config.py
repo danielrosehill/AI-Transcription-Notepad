@@ -54,17 +54,20 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 # Available models via OpenRouter (model_id, display_name)
 # All models are accessed through OpenRouter's unified API
-# Note: Gemini 2.5 models removed as deprecated by Google
+# Deliberately limited to two models: one cost-optimized default, one
+# quality option. (Gemini 3 preview models retired — gemini-3-pro-preview
+# was removed from OpenRouter entirely.)
+# Audio pricing per 1M tokens: 3.5 Flash Lite $0.30, 3.6 Flash $1.50.
 OPENROUTER_MODELS = [
-    ("google/gemini-3-flash-preview", "Gemini 3 Flash (Default)"),
-    ("google/gemini-3-pro-preview", "Gemini 3 Pro"),
+    ("google/gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite (Default)"),
+    ("google/gemini-3.6-flash", "Gemini 3.6 Flash (Quality)"),
 ]
 
 # Standard and Budget model tiers for quick-toggle buttons
-# Both use Gemini 3 models (2.5 deprecated)
+# Standard: full Flash quality; Budget: Lite (default — 5x cheaper on audio)
 MODEL_TIERS = {
-    "standard": "google/gemini-3-flash-preview",
-    "budget": "google/gemini-3-flash-preview",  # No separate budget tier with Gemini 3
+    "standard": "google/gemini-3.6-flash",
+    "budget": "google/gemini-3.5-flash-lite",
 }
 
 # Short audio optimization: use minimal prompt for brief recordings
@@ -205,16 +208,16 @@ class Config:
     openrouter_api_key: str = ""
 
     # Selected model (all models via OpenRouter)
-    selected_model: str = "google/gemini-3-flash-preview"
+    selected_model: str = "google/gemini-3.5-flash-lite"
 
     # Primary and Fallback models - quick presets for switching with automatic failover
-    # Primary: Your main transcription model (default: Gemini 3 Flash)
-    # Fallback: Used automatically if primary fails (default: Gemini 2.5 Flash)
-    primary_name: str = "Gemini 3 Flash"
-    primary_model: str = "google/gemini-3-flash-preview"
+    # Primary: Your main transcription model (default: Gemini 3.5 Flash Lite)
+    # Fallback: Used automatically if primary fails (default: Gemini 3.6 Flash)
+    primary_name: str = "Gemini 3.5 Flash Lite"
+    primary_model: str = "google/gemini-3.5-flash-lite"
 
-    fallback_name: str = "Gemini 3 Pro"
-    fallback_model: str = "google/gemini-3-pro-preview"
+    fallback_name: str = "Gemini 3.6 Flash"
+    fallback_model: str = "google/gemini-3.6-flash"
 
     # Enable automatic failover to fallback model if primary fails
     failover_enabled: bool = True
@@ -459,9 +462,9 @@ class Config:
     # ==========================================================================
     # When enabled, a second text-only pass reviews the transcription for words
     # or phrases that don't make logical sense in context and corrects them.
-    # Uses a cheap model (Gemini 3.1 Flash Lite) to keep costs minimal.
+    # Uses the cheap default model (Gemini 3.5 Flash Lite) to keep costs minimal.
     coherence_check_enabled: bool = True
-    coherence_check_model: str = "google/gemini-3.1-flash-lite-preview"
+    coherence_check_model: str = "google/gemini-3.5-flash-lite"
 
 
 def _apply_migrations(config: Config) -> Config:
@@ -624,6 +627,30 @@ def _apply_migrations(config: Config) -> Config:
         config.fallback_model = gemini_to_openrouter.get(
             config.fallback_model, config.fallback_model
         )
+
+    # Migration: retire Gemini 3 preview-era model IDs.
+    # gemini-3-pro-preview no longer exists on OpenRouter (requests would 404);
+    # the others are superseded by the cheaper/faster current lineup.
+    retired_models = {
+        "google/gemini-3-flash-preview": "google/gemini-3.5-flash-lite",
+        "google/gemini-3-pro-preview": "google/gemini-3.6-flash",
+        "google/gemini-3.1-flash-lite-preview": "google/gemini-3.5-flash-lite",
+        "google/gemini-3.1-flash-lite": "google/gemini-3.5-flash-lite",
+    }
+    display_names = {
+        "google/gemini-3.5-flash-lite": "Gemini 3.5 Flash Lite",
+        "google/gemini-3.6-flash": "Gemini 3.6 Flash",
+    }
+    if config.selected_model in retired_models:
+        config.selected_model = retired_models[config.selected_model]
+    if config.primary_model in retired_models:
+        config.primary_model = retired_models[config.primary_model]
+        config.primary_name = display_names[config.primary_model]
+    if config.fallback_model in retired_models:
+        config.fallback_model = retired_models[config.fallback_model]
+        config.fallback_name = display_names[config.fallback_model]
+    if config.coherence_check_model in retired_models:
+        config.coherence_check_model = retired_models[config.coherence_check_model]
 
     return config
 
@@ -805,7 +832,7 @@ def get_active_model(config: Config) -> str:
         return config.primary_model
 
     # Ultimate fallback: use selected_model
-    return config.selected_model or "google/gemini-3-flash-preview"
+    return config.selected_model or "google/gemini-3.5-flash-lite"
 
 
 def get_fallback_model(config: Config) -> str | None:

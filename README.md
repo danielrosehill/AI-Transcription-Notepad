@@ -181,9 +181,9 @@ Create custom stacks in the **Prompt Stacks** tab, then apply them with a single
 
 | Provider | Default Model | Notes |
 |----------|---------------|-------|
-| **OpenRouter** | `google/gemini-3-flash-preview` | Gemini 3 Flash (default), Gemini 3 Pro (fallback) |
+| **OpenRouter** | `google/gemini-3.5-flash-lite` | Gemini 3.5 Flash Lite (default), Gemini 3.6 Flash (quality/fallback) |
 
-OpenRouter is the sole provider. It offers per-key cost tracking, low latency, and access to Gemini 3 models via an OpenAI-compatible API.
+OpenRouter is the sole provider. It offers per-key cost tracking, low latency, and access to current Gemini models via an OpenAI-compatible API.
 
 ---
 
@@ -212,7 +212,7 @@ OpenRouter is the sole provider. It offers per-key cost tracking, low latency, a
 
 | Component | Technology |
 |-----------|------------|
-| Transcription | OpenRouter (Gemini 3 Flash / Pro) |
+| Transcription | OpenRouter (Gemini 3.5 Flash Lite / 3.6 Flash) |
 | Voice Activity Detection | [TEN VAD](https://github.com/TEN-framework/ten-vad) |
 | Text-to-Speech | [Edge TTS](https://github.com/rany2/edge-tts) |
 | Database | [Mongita](https://github.com/scottrogowski/mongita) |

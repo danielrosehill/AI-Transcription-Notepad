@@ -112,7 +112,7 @@ class OpenRouterClient(TranscriptionClient):
     _shared_client = None
     _shared_client_key: str = ""
 
-    def __init__(self, api_key: str, model: str = "google/gemini-3-flash-preview"):
+    def __init__(self, api_key: str, model: str = "google/gemini-3.5-flash-lite"):
         self.api_key = api_key
         self.model = model
 

@@ -8,7 +8,7 @@ AI Transcription Utility is a PyQt6 desktop application for voice recording with
 
 Instead of separate speech-to-text followed by text cleanup, this app sends audio directly to Google's Gemini multimodal models along with a cleanup prompt. The model handles both transcription and text cleanup simultaneously.
 
-**Why Gemini via OpenRouter?** After extensive testing (~2000 transcriptions), Gemini Flash models have proven highly cost-effective for voice transcription—typically just a few dollars for heavy usage. OpenRouter provides faster latency than direct Google API access. The default model is `google/gemini-3-flash-preview` via OpenRouter, with automatic failover to direct Gemini API if needed. See [data/](data/) for anonymized performance benchmarks.
+**Why Gemini via OpenRouter?** After extensive testing (~2000 transcriptions), Gemini Flash models have proven highly cost-effective for voice transcription—typically just a few dollars for heavy usage. OpenRouter provides faster latency than direct Google API access. The default model is `google/gemini-3.5-flash-lite` via OpenRouter (audio input at $0.30/M tokens), with automatic failover to `google/gemini-3.6-flash` if needed. See [data/](data/) for anonymized performance benchmarks.
 
 ## Architecture
 
@@ -115,12 +115,9 @@ The app supports global hotkeys that work system-wide, even when the window is m
 
 | Provider | Models | API Endpoint |
 |----------|--------|--------------|
-| **OpenRouter** (Recommended) | `google/gemini-3-flash-preview`*, `google/gemini-2.5-flash`, `google/gemini-2.5-flash-lite` | OpenRouter |
-| Gemini Direct | `gemini-flash-latest`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-2.5-pro` | Google AI |
+| **OpenRouter** (sole provider) | `google/gemini-3.5-flash-lite` (default, cost-optimized), `google/gemini-3.6-flash` (quality) | OpenRouter |
 
-**OpenRouter** is the recommended provider for lower latency. The default model is `google/gemini-3-flash-preview`, with automatic failover to Gemini Direct if needed.
-
-*Gemini 3 Flash is currently in preview. Fallback uses `gemini-flash-latest` which dynamically points to Google's latest stable Flash model.
+The model list is deliberately limited to two options: a cost-optimized default (Gemini 3.5 Flash Lite) and a quality option (Gemini 3.6 Flash, also used for automatic failover). This keeps model choice simple—pick a default and stick with it.
 
 ## Development Guidelines
 
@@ -152,7 +149,7 @@ For recordings under 30 seconds, a minimal prompt is used instead of the full la
 - Fix obvious grammar errors
 - Break into paragraphs if multiple distinct thoughts
 
-This is a backend optimization—no UI changes or user action required. The threshold is defined by `SHORT_AUDIO_THRESHOLD_SECONDS` (30.0) in `config.py`.
+This is a backend optimization—no UI changes or user action required. The threshold is defined by `SHORT_AUDIO_THRESHOLD_SECONDS` (30.0) in `config.py`. The second-pass coherence review is also skipped below this threshold, halving round-trip latency for quick notes.
 
 **Prompt size comparison:**
 - Full prompt: ~4,300 characters
@@ -747,7 +744,7 @@ When modifying transcription providers:
 This means you can:
 - Start recording
 - Change your mind about the format preset (email → todo list)
-- Change the model (gemini-flash-latest → gemini-2.5-pro)
+- Change the model (Gemini 3.5 Flash Lite → Gemini 3.6 Flash)
 - Adjust formality level or verbosity
 - Modify prompt checkboxes
 

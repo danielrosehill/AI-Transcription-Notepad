@@ -266,7 +266,10 @@ class AboutWidget(QWidget):
             ("Ctrl+Return", "Stop and transcribe"),
             ("Ctrl+S", "Save to file"),
             ("Ctrl+Shift+C", "Copy to clipboard"),
-            ("Ctrl+N", "Clear transcription"),
+            ("Ctrl+Shift+Delete", "Clear transcription"),
+            ("Ctrl+H", "Open history"),
+            ("Ctrl+,", "Open settings"),
+            ("Ctrl+1 … Ctrl+5", "Copy a recent transcription"),
         ]
 
         for key, desc in inapp_shortcuts:
@@ -289,8 +292,12 @@ class AboutWidget(QWidget):
         shortcuts_layout.addWidget(global_note)
 
         global_shortcuts = [
-            ("Record Toggle", "Start recording / stop and discard"),
-            ("Stop & Transcribe", "Stop recording and send to AI"),
+            ("Toggle", "Start recording, or stop and transcribe immediately"),
+            ("Tap Toggle", "Start recording, or stop and cache audio (append mode)"),
+            ("Transcribe", "Transcribe cached audio"),
+            ("Append", "Record another segment onto the cached audio"),
+            ("Clear", "Discard current recording and cached audio"),
+            ("Pause", "Pause/resume the current recording"),
         ]
 
         for action, desc in global_shortcuts:
@@ -306,7 +313,7 @@ class AboutWidget(QWidget):
         providers_layout = QVBoxLayout(providers_group)
 
         providers = [
-            "Google Gemini via OpenRouter - Gemini 3 Flash (Default), Gemini 3 Pro",
+            "Google Gemini via OpenRouter - Gemini 3.5 Flash Lite (Default), Gemini 3.6 Flash",
             "All models accessed through OpenRouter's unified API",
         ]
         for p in providers:

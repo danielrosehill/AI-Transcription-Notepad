@@ -35,6 +35,7 @@ class TranscriptionSettings:
     vad_enabled: bool = False
     coherence_check: bool = False
     coherence_model: str = ""
+    fallback_model: str = ""  # Retry model if primary fails ("" = no failover)
 
 
 @dataclass
@@ -89,17 +90,39 @@ class QueueWorker(QThread):
                     reduction = (1 - vad_dur / orig_dur) * 100
                     print(f"[Queue {item.id[:8]}] VAD: {orig_dur:.1f}s → {vad_dur:.1f}s ({reduction:.0f}% reduction)")
 
-            # Transcribe
+            # Transcribe (with automatic failover to the fallback model)
             self.status.emit(item.id, "Transcribing...")
             start_time = time.time()
             client = get_client(settings.api_key, settings.model)
-            result = client.transcribe(compressed_audio, settings.prompt)
+            try:
+                result = client.transcribe(compressed_audio, settings.prompt)
+            except Exception as primary_error:
+                if settings.fallback_model and settings.fallback_model != settings.model:
+                    print(f"[Queue {item.id[:8]}] Primary model failed ({primary_error}), "
+                          f"retrying with {settings.fallback_model}")
+                    self.status.emit(item.id, "Retrying with fallback model...")
+                    fallback_client = get_client(settings.api_key, settings.fallback_model)
+                    result = fallback_client.transcribe(compressed_audio, settings.prompt)
+                else:
+                    raise
             self.inference_time_ms = int((time.time() - start_time) * 1000)
 
-            # Second pass: coherence check with cheap model
-            if settings.coherence_check and settings.coherence_model and result.text.strip():
+            # Second pass: coherence check with cheap model.
+            # Skipped for short recordings — quick notes rarely need review,
+            # and skipping halves round-trip latency for them.
+            from .config import COHERENCE_CHECK_PROMPT, SHORT_AUDIO_THRESHOLD_SECONDS
+            effective_dur = vad_dur if vad_dur is not None else orig_dur
+            if effective_dur is None:
+                # No VAD info; estimate from the 16kHz mono 16-bit WAV payload
+                effective_dur = max(0, len(compressed_audio) - 44) / 32000.0
+            run_coherence = (
+                settings.coherence_check
+                and settings.coherence_model
+                and result.text.strip()
+                and effective_dur >= SHORT_AUDIO_THRESHOLD_SECONDS
+            )
+            if run_coherence:
                 self.status.emit(item.id, "Reviewing transcript...")
-                from .config import COHERENCE_CHECK_PROMPT
                 coherence_client = get_client(settings.api_key, settings.coherence_model)
                 coherence_result = coherence_client.rewrite_text(result.text, COHERENCE_CHECK_PROMPT)
                 if coherence_result.text.strip():
@@ -140,6 +163,7 @@ class TranscriptionQueue(QObject):
         vad_enabled: bool = False,
         coherence_check: bool = False,
         coherence_model: str = "",
+        fallback_model: str = "",
     ) -> str:
         """Add an item to the transcription queue.
 
@@ -151,6 +175,7 @@ class TranscriptionQueue(QObject):
             vad_enabled: Whether to apply VAD
             coherence_check: Whether to run second-pass coherence check
             coherence_model: Model to use for coherence check
+            fallback_model: Model to retry with if the primary fails ("" disables)
 
         Returns:
             item_id: Unique ID for tracking this item
@@ -162,6 +187,7 @@ class TranscriptionQueue(QObject):
             vad_enabled=vad_enabled,
             coherence_check=coherence_check,
             coherence_model=coherence_model,
+            fallback_model=fallback_model,
         )
 
         item = QueueItem(

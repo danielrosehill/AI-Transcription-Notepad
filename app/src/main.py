@@ -57,7 +57,6 @@ from .config import (
     load_env_keys,
     CONFIG_DIR,
     OPENROUTER_MODELS,
-    MODEL_TIERS,
     build_cleanup_prompt,
     get_model_display_name,
     FORMAT_TEMPLATES,
@@ -75,7 +74,6 @@ from .config import (
 from .audio_recorder import AudioRecorder
 from .transcription import get_client, TranscriptionResult
 from .audio_processor import (
-    compress_audio_for_api,
     prepare_audio_for_api,
     archive_audio,
     get_audio_info,
@@ -83,7 +81,6 @@ from .audio_processor import (
 )
 from .markdown_widget import MarkdownTextWidget
 from .database_mongo import get_db, AUDIO_ARCHIVE_DIR
-from .vad_processor import remove_silence, is_vad_available
 from .hotkeys import (
     create_hotkey_listener,
     HotkeyCapture,
@@ -216,10 +213,22 @@ class TranscriptionWorker(QThread):
             result = client.transcribe(compressed_audio, self.prompt)
             self.inference_time_ms = int((time.time() - start_time) * 1000)
 
-            # Second pass: coherence check with cheap model
-            if self.coherence_check and self.coherence_model and result.text.strip():
+            # Second pass: coherence check with cheap model.
+            # Skipped for short recordings — quick notes rarely need review,
+            # and skipping halves round-trip latency for them.
+            from .config import COHERENCE_CHECK_PROMPT, SHORT_AUDIO_THRESHOLD_SECONDS
+            effective_dur = vad_dur if vad_dur is not None else orig_dur
+            if effective_dur is None:
+                # No VAD info; estimate from the 16kHz mono 16-bit WAV payload
+                effective_dur = max(0, len(compressed_audio) - 44) / 32000.0
+            run_coherence = (
+                self.coherence_check
+                and self.coherence_model
+                and result.text.strip()
+                and effective_dur >= SHORT_AUDIO_THRESHOLD_SECONDS
+            )
+            if run_coherence:
                 self.status.emit("Reviewing transcript...")
-                from .config import COHERENCE_CHECK_PROMPT
                 coherence_client = get_client(self.api_key, self.coherence_model)
                 coherence_result = coherence_client.rewrite_text(result.text, COHERENCE_CHECK_PROMPT)
                 if coherence_result.text.strip():
@@ -444,7 +453,7 @@ class MainWindow(QMainWindow):
         self._cleanup_worker("title_worker")
 
     def setup_ui(self):
-        """Set up the main UI with tabs."""
+        """Set up the main UI (menu bar, record panel, status bar)."""
         # Create menu bar
         menubar = self.menuBar()
 
@@ -2503,6 +2512,7 @@ class MainWindow(QMainWindow):
                 vad_enabled=self.config.vad_enabled,
                 coherence_check=self.config.coherence_check_enabled,
                 coherence_model=self.config.coherence_check_model,
+                fallback_model=self._get_failover_model(model),
             )
         else:
             # Legacy single-worker mode
@@ -2582,6 +2592,7 @@ class MainWindow(QMainWindow):
                 vad_enabled=self.config.vad_enabled,
                 coherence_check=self.config.coherence_check_enabled,
                 coherence_model=self.config.coherence_check_model,
+                fallback_model=self._get_failover_model(model),
             )
         else:
             # Legacy single-worker mode
@@ -2727,6 +2738,7 @@ class MainWindow(QMainWindow):
                 vad_enabled=self.config.vad_enabled,
                 coherence_check=self.config.coherence_check_enabled,
                 coherence_model=self.config.coherence_check_model,
+                fallback_model=self._get_failover_model(model),
             )
         else:
             # Legacy single-worker mode
@@ -3324,6 +3336,19 @@ class MainWindow(QMainWindow):
         """
         return ("openrouter", get_active_model(self.config))
 
+    def _get_failover_model(self, primary_model: str) -> str:
+        """Get the model to retry with if the primary fails, or "" if disabled.
+
+        Used by the queue path, which handles failover inside the worker
+        (the legacy single-worker path handles it in on_transcription_error).
+        """
+        if not self.config.failover_enabled:
+            return ""
+        fallback = get_fallback_model(self.config)
+        if not fallback or fallback == primary_model:
+            return ""
+        return fallback
+
     def reset_ui(self):
         """Reset UI to initial state.
 
@@ -3668,7 +3693,7 @@ class MainWindow(QMainWindow):
         self.title_worker = TitleGeneratorWorker(
             text,
             api_key,
-            "google/gemini-3-flash-preview",  # Use Gemini 3 Flash for titles
+            "google/gemini-3.5-flash-lite",  # Cheap, fast model for title generation
         )
         self.title_worker.finished.connect(self.on_title_generated)
         self.title_worker.error.connect(self.on_title_error)

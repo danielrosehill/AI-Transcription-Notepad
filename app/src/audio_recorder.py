@@ -181,8 +181,11 @@ class AudioRecorder:
             self._record_thread.join(timeout=1.0)
 
         if self.stream:
-            self.stream.stop_stream()
-            self.stream.close()
+            try:
+                self.stream.stop_stream()
+                self.stream.close()
+            except OSError:
+                pass  # Stream already dead (e.g. mic disconnected mid-recording)
             self.stream = None
 
         # Convert to WAV bytes

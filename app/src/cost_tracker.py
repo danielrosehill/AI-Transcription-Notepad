@@ -29,11 +29,17 @@ def get_io_executor() -> ThreadPoolExecutor:
 # Pricing per million tokens (approximate, as of Jan 2025)
 # Audio models have different pricing structures
 MODEL_PRICING = {
-    # Gemini 3 models (primary supported models)
-    "gemini-3-flash-preview": {"input": 0.10, "output": 0.40},
-    "gemini-3-pro-preview": {"input": 1.25, "output": 5.00},
-    "google/gemini-3-flash-preview": {"input": 0.10, "output": 0.40},
-    "google/gemini-3-pro-preview": {"input": 1.25, "output": 5.00},
+    # Current supported models (per 1M tokens). Input rate reflects the audio
+    # token rate where it differs from text, since input is audio-dominated.
+    "google/gemini-3.5-flash-lite": {"input": 0.30, "output": 2.50},
+    "google/gemini-3.6-flash": {"input": 1.50, "output": 7.50},
+    # Legacy Gemini 3 preview models (retired, kept for historical cost tracking)
+    "gemini-3-flash-preview": {"input": 1.00, "output": 3.00},
+    "gemini-3-pro-preview": {"input": 2.00, "output": 12.00},
+    "google/gemini-3-flash-preview": {"input": 1.00, "output": 3.00},
+    "google/gemini-3-pro-preview": {"input": 2.00, "output": 12.00},
+    "google/gemini-3.1-flash-lite-preview": {"input": 0.50, "output": 1.50},
+    "google/gemini-3.1-flash-lite": {"input": 0.50, "output": 1.50},
     # Legacy Gemini models (deprecated, kept for historical cost tracking)
     "gemini-flash-latest": {"input": 0.075, "output": 0.30},
     "gemini-2.5-flash": {"input": 0.075, "output": 0.30},
@@ -132,7 +138,8 @@ class CostTracker:
         self._check_date_rollover()
 
         # Calculate cost
-        pricing = MODEL_PRICING.get(model, {"input": 0.10, "output": 0.30})
+        # Unknown models fall back to the default model's rates
+        pricing = MODEL_PRICING.get(model, {"input": 0.30, "output": 2.50})
         cost = (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1_000_000
 
         record = UsageRecord(
