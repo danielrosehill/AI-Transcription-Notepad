@@ -9,6 +9,17 @@ from pydub import AudioSegment
 TARGET_SAMPLE_RATE = 16000
 TARGET_CHANNELS = 1
 
+# Long audio handling: 16kHz mono 16-bit WAV grows ~1.9MB per minute, and
+# base64 encoding adds another 33% on top. Past a few minutes the request
+# payload approaches provider size limits (Gemini inline data is capped at
+# ~20MB per request). Audio longer than this threshold is uploaded as MP3
+# instead — audio tokens are billed per second, so compression doesn't
+# change transcription cost.
+MAX_INLINE_WAV_SECONDS = 360.0
+LONG_AUDIO_MP3_BITRATE = "32k"
+# Hard ceiling on the encoded upload payload (~3 hours of speech at 32kbps)
+MAX_UPLOAD_AUDIO_BYTES = 40 * 1024 * 1024
+
 # AGC settings
 # Target peak level in dBFS (decibels relative to full scale)
 # -3dB leaves headroom while ensuring good signal level
@@ -113,7 +124,7 @@ def prepare_audio_for_api(
     audio_data: bytes,
     vad_enabled: bool = False,
     apply_gain_control: bool = True,
-) -> tuple[bytes, float | None, float | None]:
+) -> tuple[bytes, str, float | None, float | None]:
     """Fused audio pipeline: VAD + AGC + compression in a single pass.
 
     When VAD is enabled, the naive sequential approach loads and converts
@@ -124,14 +135,18 @@ def prepare_audio_for_api(
     When VAD is disabled, this is equivalent to compress_audio_for_api()
     but also returns duration info.
 
+    Audio longer than MAX_INLINE_WAV_SECONDS is exported as MP3 instead of
+    WAV to keep the base64 request payload under provider size limits.
+
     Args:
         audio_data: Raw WAV audio bytes from recorder
         vad_enabled: Whether to apply Voice Activity Detection
         apply_gain_control: Whether to apply Automatic Gain Control
 
     Returns:
-        Tuple of (compressed_wav_bytes, original_duration_secs, vad_duration_secs).
-        Durations are None if VAD is not enabled/available.
+        Tuple of (audio_bytes, audio_format, original_duration_secs, vad_duration_secs).
+        audio_format is "wav" or "mp3". VAD duration is None if VAD is not
+        enabled/available.
     """
     from .vad_processor import get_vad, is_vad_available
 
@@ -174,10 +189,25 @@ def prepare_audio_for_api(
             print(f"AGC: Applied {agc_stats['gain_applied_db']}dB gain "
                   f"(peak: {agc_stats['original_peak_dbfs']:.1f}dB → {agc_stats['final_peak_dbfs']:.1f}dB)")
 
-    # Export ONCE
+    # Export ONCE — WAV for short audio, MP3 for long audio
+    final_duration = len(audio) / 1000.0
     output = io.BytesIO()
-    audio.export(output, format="wav")
-    return output.getvalue(), original_duration, vad_duration
+    if final_duration > MAX_INLINE_WAV_SECONDS:
+        audio.export(output, format="mp3", bitrate=LONG_AUDIO_MP3_BITRATE)
+        audio_format = "mp3"
+    else:
+        audio.export(output, format="wav")
+        audio_format = "wav"
+
+    payload = output.getvalue()
+    if len(payload) > MAX_UPLOAD_AUDIO_BYTES:
+        raise ValueError(
+            f"Audio is too long to upload ({final_duration / 60:.0f} minutes, "
+            f"{len(payload) / 1024 / 1024:.0f}MB encoded). "
+            f"Split the recording into shorter files."
+        )
+
+    return payload, audio_format, original_duration, vad_duration
 
 
 def get_audio_info(audio_data: bytes) -> dict:

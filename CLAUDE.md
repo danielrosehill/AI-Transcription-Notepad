@@ -321,7 +321,10 @@ Audio goes through a multi-stage pipeline before transcription:
 
 4. **Compression** (`audio_processor.py`)
    - Downsampled to 16kHz mono (matches Gemini's internal format)
-   - Converted to WAV for API upload
+   - Converted to WAV for API upload; audio longer than 6 minutes is encoded
+     as 32kbps MP3 instead to stay under provider request-size limits
+     (a 20-minute note is ~4.6MB MP3 vs ~38MB WAV; audio tokens are billed
+     per second, so compression doesn't change cost)
    - Optional Opus archival for storage efficiency
 
 **AGC Configuration Constants:**
@@ -330,6 +333,43 @@ AGC_TARGET_PEAK_DBFS = -3.0   # Target peak level
 AGC_MIN_PEAK_DBFS = -40.0     # Skip AGC if audio is quieter (noise floor)
 AGC_MAX_GAIN_DB = 20.0        # Maximum boost to apply
 ```
+
+**Long Audio Constants:**
+```python
+MAX_INLINE_WAV_SECONDS = 360.0        # Above this, upload as MP3 instead of WAV
+LONG_AUDIO_MP3_BITRATE = "32k"        # Speech-adequate bitrate for uploads
+MAX_UPLOAD_AUDIO_BYTES = 40MB         # Hard ceiling (~3 hours at 32kbps)
+```
+
+### File Upload (Unified Pipeline)
+
+Audio files can be transcribed through the exact same pipeline as recordings —
+same cleanup prompt, format presets, prompt stacks, translation mode, model
+presets, failover, coherence check, output modes (App/Clipboard/Inject), and
+history. There is no separate file-transcription UI.
+
+**Three ways to upload:**
+- The 📁 button in the recording control bar
+- View → Upload Audio File... (Ctrl+O)
+- Drag and drop an audio file onto the main window
+
+Files are decoded off the UI thread (`FileLoadWorker` in `main.py`), downmixed
+to 16kHz mono, and sent via `_send_for_transcription()` — the single entry
+point shared by live recordings, cached append-mode segments, and uploads.
+Uploads are saved to history with `source: "file"` and the original path.
+Files over an hour long prompt for confirmation first.
+
+Supported formats: MP3, WAV, M4A, AAC, OGG, Opus, FLAC, AIFF, WMA, WebM.
+
+### Text Append Semantics
+
+Transcription results never overwrite text in the editor. If the output area
+already has text, new results are appended after it (separated by a blank
+line), or inserted at the cursor when `append_position` is "cursor" and append
+mode is active. This applies to both the queue path (default) and the legacy
+single-worker path, so a long note can be dictated and transcribed in
+segments — record 3 minutes, transcribe, keep recording — while building up
+one block of text with no risk of losing earlier segments.
 
 ## Features
 
@@ -355,6 +395,9 @@ AGC_MAX_GAIN_DB = 20.0        # Maximum boost to apply
 - [x] **Semantic search**: Find similar transcriptions using AI embeddings (Gemini gemini-embedding-001, free)
 - [x] **History window tabs**: Separate View History and Semantic Search tabs with date filtering
 - [x] **Translation mode**: Automatic translation of transcriptions to a target language (30+ languages)
+- [x] **File upload**: Transcribe audio files (button, Ctrl+O, or drag-and-drop) through the same pipeline as recordings
+- [x] **Long audio support**: Recordings/files over 6 minutes upload as 32kbps MP3 to stay under API size limits
+- [x] **Safe text appending**: Results append to existing editor text — segmented dictation never loses earlier text
 
 ### Planned
 

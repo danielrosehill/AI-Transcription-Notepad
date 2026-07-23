@@ -126,10 +126,14 @@ class OutputPanel(QWidget):
     # -------------------------------------------------------------------------
 
     def on_transcription_started(self, item_id: str):
-        """Show transcribing state for a new item."""
+        """Show transcribing state for a new item.
+
+        Existing text is deliberately preserved — results are appended to it
+        by the main window, so clearing here would lose accumulated dictation.
+        """
         self._current_item_id = item_id
-        self.text_widget.setMarkdown("")
-        self.text_widget.setPlaceholderText("Transcribing...")
+        if not self.text_widget.toPlainText().strip():
+            self.text_widget.setPlaceholderText("Transcribing...")
         self._status_label.setText("Transcribing...")
         self._status_label.setStyleSheet("color: #0d6efd; font-size: 10px;")
         self._copy_btn.setEnabled(False)
@@ -141,10 +145,13 @@ class OutputPanel(QWidget):
             }
         """)
 
-    def on_transcription_complete(self, item_id: str, text: str):
-        """Display transcription result."""
+    def on_transcription_complete(self, item_id: str):
+        """Mark an item complete (styling only).
+
+        The main window owns text placement so results can append to
+        existing text instead of replacing it.
+        """
         self._current_item_id = item_id
-        self.text_widget.setMarkdown(text)
         self._status_label.setText("")
         self._status_label.setStyleSheet("color: #888; font-size: 10px;")
         self._copy_btn.setEnabled(True)
@@ -157,12 +164,11 @@ class OutputPanel(QWidget):
         """)
 
     def on_transcription_error(self, item_id: str, error: str):
-        """Display error state."""
+        """Display error state without overwriting accumulated text."""
         self._current_item_id = item_id
-        self.text_widget.setMarkdown(f"**Error:** {error}")
-        self._status_label.setText("Failed")
+        self._status_label.setText(f"Failed: {error[:60]}")
         self._status_label.setStyleSheet("color: #dc3545; font-size: 10px;")
-        self._copy_btn.setEnabled(False)
+        self._copy_btn.setEnabled(bool(self.text_widget.toPlainText()))
         self._frame.setStyleSheet("""
             QFrame#outputFrame {
                 background-color: #fff5f5;

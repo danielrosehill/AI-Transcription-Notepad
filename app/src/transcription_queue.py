@@ -77,7 +77,7 @@ class QueueWorker(QThread):
 
             # Fused pipeline: VAD + AGC + compression in a single pass
             self.status.emit(item.id, "Processing audio...")
-            compressed_audio, orig_dur, vad_dur = prepare_audio_for_api(
+            compressed_audio, audio_format, orig_dur, vad_dur = prepare_audio_for_api(
                 item.audio_data,
                 vad_enabled=settings.vad_enabled,
             )
@@ -95,14 +95,14 @@ class QueueWorker(QThread):
             start_time = time.time()
             client = get_client(settings.api_key, settings.model)
             try:
-                result = client.transcribe(compressed_audio, settings.prompt)
+                result = client.transcribe(compressed_audio, settings.prompt, audio_format)
             except Exception as primary_error:
                 if settings.fallback_model and settings.fallback_model != settings.model:
                     print(f"[Queue {item.id[:8]}] Primary model failed ({primary_error}), "
                           f"retrying with {settings.fallback_model}")
                     self.status.emit(item.id, "Retrying with fallback model...")
                     fallback_client = get_client(settings.api_key, settings.fallback_model)
-                    result = fallback_client.transcribe(compressed_audio, settings.prompt)
+                    result = fallback_client.transcribe(compressed_audio, settings.prompt, audio_format)
                 else:
                     raise
             self.inference_time_ms = int((time.time() - start_time) * 1000)

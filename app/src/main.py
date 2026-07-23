@@ -91,7 +91,6 @@ from .hotkeys import (
 )
 from .cost_tracker import get_tracker
 from .history_window import HistoryWindow
-from .file_transcription_window import FileTranscriptionWindow
 from .analytics_widget import AnalyticsDialog
 from .analysis_widget import format_word_count
 from .settings_widget import SettingsDialog
@@ -194,7 +193,7 @@ class TranscriptionWorker(QThread):
             # Fused pipeline: VAD + AGC + compression in a single pass
             # Avoids redundant WAV parse/export cycles (~100-200ms savings)
             self.status.emit("Processing audio...")
-            compressed_audio, orig_dur, vad_dur = prepare_audio_for_api(
+            compressed_audio, audio_format, orig_dur, vad_dur = prepare_audio_for_api(
                 self.audio_data,
                 vad_enabled=self.vad_enabled,
             )
@@ -210,7 +209,7 @@ class TranscriptionWorker(QThread):
             self.status.emit("Transcribing...")
             start_time = time.time()
             client = get_client(self.api_key, self.model)
-            result = client.transcribe(compressed_audio, self.prompt)
+            result = client.transcribe(compressed_audio, self.prompt, audio_format)
             self.inference_time_ms = int((time.time() - start_time) * 1000)
 
             # Second pass: coherence check with cheap model.
@@ -294,6 +293,47 @@ class TitleGeneratorWorker(QThread):
             self.error.emit(str(e))
 
 
+# Audio formats accepted for file upload (decoded via pydub + ffmpeg)
+SUPPORTED_UPLOAD_FORMATS = {
+    ".mp3", ".wav", ".m4a", ".aac", ".ogg", ".oga", ".opus",
+    ".flac", ".aiff", ".aif", ".wma", ".webm",
+}
+
+
+class FileLoadWorker(QThread):
+    """Worker thread that decodes an audio file from disk into WAV bytes.
+
+    Decoding happens off the UI thread — a 20-minute MP3 can take a couple
+    of seconds through ffmpeg. The audio is downmixed to 16kHz mono here so
+    even long files stay small in memory (~1.9MB per minute).
+    """
+
+    finished = pyqtSignal(bytes, float, str)  # wav_bytes, duration_seconds, source_path
+    error = pyqtSignal(str)
+
+    def __init__(self, file_path: str):
+        super().__init__()
+        self.file_path = file_path
+
+    def run(self):
+        import io
+        try:
+            from pydub import AudioSegment
+
+            audio = AudioSegment.from_file(self.file_path)
+            duration = len(audio) / 1000.0
+            if audio.channels > 1:
+                audio = audio.set_channels(1)
+            if audio.frame_rate > 16000:
+                audio = audio.set_frame_rate(16000)
+
+            buffer = io.BytesIO()
+            audio.export(buffer, format="wav")
+            self.finished.emit(buffer.getvalue(), duration, self.file_path)
+        except Exception as e:
+            self.error.emit(f"Could not read audio file: {e}")
+
+
 class MainWindow(QMainWindow):
     """Main application window."""
 
@@ -324,6 +364,11 @@ class MainWindow(QMainWindow):
             False  # Track if we have audio from a failed transcription (for retry)
         )
         self._failover_in_progress: bool = False  # Track if we're currently in a failover attempt
+        self.file_load_worker: FileLoadWorker | None = None
+        # Source metadata for queued items (item_id -> (source, source_path));
+        # recordings are the default and aren't tracked here
+        self._queue_item_sources: dict[str, tuple[str, str | None]] = {}
+        self._pending_source: tuple[str, str | None] = ("recording", None)
 
         # Initialize unified prompt library
         self.prompt_library = PromptLibrary(CONFIG_DIR)
@@ -335,6 +380,7 @@ class MainWindow(QMainWindow):
             title += " (DEV)"
         self.setWindowTitle(title)
         self.setMinimumSize(920, 850)
+        self.setAcceptDrops(True)  # Drag-and-drop audio files to transcribe
         self.resize(self.config.window_width, self.config.window_height)
 
         self.setup_ui()
@@ -451,6 +497,7 @@ class MainWindow(QMainWindow):
         self._cleanup_worker("worker")
         self._cleanup_worker("rewrite_worker")
         self._cleanup_worker("title_worker")
+        self._cleanup_worker("file_load_worker")
 
     def setup_ui(self):
         """Set up the main UI (menu bar, record panel, status bar)."""
@@ -474,9 +521,10 @@ class MainWindow(QMainWindow):
         analytics_action.triggered.connect(self.show_analytics)
         view_menu.addAction(analytics_action)
         view_menu.addSeparator()
-        file_transcription_action = QAction("File Transcription...", self)
-        file_transcription_action.triggered.connect(self.show_file_transcription_window)
-        view_menu.addAction(file_transcription_action)
+        upload_file_action = QAction("Upload Audio File...", self)
+        upload_file_action.setShortcut("Ctrl+O")
+        upload_file_action.triggered.connect(self.upload_audio_file)
+        view_menu.addAction(upload_file_action)
 
         # Settings menu
         settings_menu = menubar.addMenu("Settings")
@@ -759,6 +807,34 @@ class MainWindow(QMainWindow):
         """)
         self.delete_btn.clicked.connect(self.delete_recording)
         control_bar.addWidget(self.delete_btn)
+
+        self.upload_btn = QPushButton("📁")  # Upload file icon
+        self.upload_btn.setFixedSize(44, 44)
+        self.upload_btn.setToolTip(
+            "Upload (Ctrl+O)\n"
+            "Transcribe an audio file from disk.\n"
+            "Uses the same prompts, model, and output settings as recordings.\n"
+            "You can also drag and drop an audio file onto this window."
+        )
+        self.upload_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6c8ebf;
+                color: white;
+                border: none;
+                border-radius: 22px;
+                font-size: 16px;
+                padding: 0;
+            }
+            QPushButton:hover {
+                background-color: #5a7ba8;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+                color: #aaa;
+            }
+        """)
+        self.upload_btn.clicked.connect(self.upload_audio_file)
+        control_bar.addWidget(self.upload_btn)
 
         # Retry button - only visible when transcription fails and audio is preserved
         self.retry_btn = QPushButton("↻")  # Retry icon
@@ -1177,7 +1253,6 @@ class MainWindow(QMainWindow):
         self.analytics_dialog = None
         self.about_dialog = None
         self.history_window = None
-        self.file_transcription_window = None
 
         # Recent Transcriptions Panel (collapsible)
         self.recent_panel = RecentPanel(
@@ -2284,6 +2359,7 @@ class MainWindow(QMainWindow):
         self.pause_btn.setEnabled(True)  # Can pause recording
         self.pause_btn.setText("⏸")  # Reset to pause icon
         self.append_btn.setEnabled(False)  # Disable append while recording
+        self.upload_btn.setEnabled(False)  # Disable upload while recording
         self.stop_btn.setEnabled(True)  # Can stop recording to cache
         self.transcribe_btn.setEnabled(True)  # Can stop and transcribe immediately
         self.delete_btn.setEnabled(True)  # Can delete current recording
@@ -2413,6 +2489,7 @@ class MainWindow(QMainWindow):
         self.pause_btn.setText("⏸")  # Reset to pause icon
         self.stop_btn.setEnabled(False)  # Can't stop when not recording
         self.append_btn.setEnabled(True)  # Can append more clips
+        self.upload_btn.setEnabled(True)
         self.transcribe_btn.setEnabled(True)  # Can transcribe cached audio
         self.transcribe_btn.setStyleSheet(self._transcribe_btn_idle_style)  # Green when cached
         self.delete_btn.setEnabled(True)  # Can delete cached audio
@@ -2456,30 +2533,46 @@ class MainWindow(QMainWindow):
         self.status_label.show()
         audio_data = combine_wav_segments(self.accumulated_segments)
 
-        # Get original audio info
-        audio_info = get_audio_info(audio_data)
-        self.last_audio_duration = audio_info["duration_seconds"]
-        self.last_vad_duration = None
-
-        # Store audio data for later archiving
-        self.last_audio_data = audio_data
-
         # Clear cache
         self.accumulated_segments = []
         self.accumulated_duration = 0.0
         self._update_segment_indicator()
+
+        audio_info = get_audio_info(audio_data)
+        self._send_for_transcription(audio_data, audio_info["duration_seconds"])
+
+    def _send_for_transcription(
+        self,
+        audio_data: bytes,
+        duration: float | None,
+        source: str = "recording",
+        source_path: str | None = None,
+    ):
+        """Send audio through the transcription pipeline (queue or legacy worker).
+
+        This is the single entry point shared by live recordings, cached
+        append-mode segments, and uploaded files — every source gets the same
+        prompt system, model presets, failover, coherence check, and outputs.
+        """
+        # Store audio/duration for retry, failover, and archiving
+        self.last_audio_duration = duration
+        self.last_vad_duration = None
+        self.last_audio_data = audio_data
         self.has_cached_audio = False
 
         # Disable all controls during transcription
         self.record_btn.setText("●")
+        self.record_btn.setStyleSheet(self._record_btn_idle_style)
         self.record_btn.setEnabled(False)
         self.retake_btn.setEnabled(False)
         self.append_btn.setEnabled(False)
         self.stop_btn.setEnabled(False)
         self.transcribe_btn.setEnabled(False)
         self.delete_btn.setEnabled(False)
+        self.upload_btn.setEnabled(False)
         self.status_label.setText("Transcribing...")
         self.status_label.setStyleSheet("color: rgba(0, 123, 255, 0.7); font-size: 11px;")
+        self.status_label.show()
 
         # Update tray to transcribing state
         self._set_tray_state("transcribing")
@@ -2499,12 +2592,12 @@ class MainWindow(QMainWindow):
 
         # Build cleanup prompt (pass audio duration for short audio optimization)
         cleanup_prompt = build_cleanup_prompt(
-            self.config, audio_duration_seconds=self.last_audio_duration
+            self.config, audio_duration_seconds=duration
         )
 
         # Use queue for transcription (enables rapid dictation)
         if self.config.queue_enabled:
-            self.transcription_queue.enqueue(
+            item_id = self.transcription_queue.enqueue(
                 audio_data,
                 api_key=api_key,
                 model=model,
@@ -2514,8 +2607,11 @@ class MainWindow(QMainWindow):
                 coherence_model=self.config.coherence_check_model,
                 fallback_model=self._get_failover_model(model),
             )
+            if source != "recording":
+                self._queue_item_sources[item_id] = (source, source_path)
         else:
             # Legacy single-worker mode
+            self._pending_source = (source, source_path)
             self._cleanup_worker("worker")
             self.worker = TranscriptionWorker(
                 audio_data,
@@ -2641,8 +2737,10 @@ class MainWindow(QMainWindow):
             total_mins = int(self.accumulated_duration // 60)
             total_secs = int(self.accumulated_duration % 60)
             self.segment_label.setText(f"({count} clips, {total_mins}:{total_secs:02d})")
+            self.segment_label.show()
         else:
             self.segment_label.setText("")
+            self.segment_label.hide()
 
     def stop_and_transcribe(self):
         """Stop recording (if recording) and send for transcription immediately.
@@ -2685,82 +2783,8 @@ class MainWindow(QMainWindow):
             # Nothing to transcribe
             return
 
-        # Get original audio info
         audio_info = get_audio_info(audio_data)
-        self.last_audio_duration = audio_info["duration_seconds"]
-        self.last_vad_duration = None
-
-        # Store audio data for later archiving (VAD now happens in worker thread)
-        self.last_audio_data = audio_data
-
-        # Clear state flags
-        self.has_cached_audio = False
-
-        self.record_btn.setText("●")
-        self.record_btn.setStyleSheet(self._record_btn_idle_style)  # Reset to idle color
-        self.record_btn.setEnabled(False)
-        self.retake_btn.setEnabled(False)
-        self.append_btn.setEnabled(False)
-        self.stop_btn.setEnabled(False)
-        self.transcribe_btn.setEnabled(False)
-        self.delete_btn.setEnabled(False)
-        self.status_label.setText("Transcribing...")
-        self.status_label.setStyleSheet("color: rgba(0, 123, 255, 0.7); font-size: 11px;")
-
-        # Update tray to transcribing state
-        self._set_tray_state("transcribing")
-
-        # Get model from active preset (always using OpenRouter)
-        _, model = self._get_current_model()
-        api_key = self.config.openrouter_api_key
-
-        if not api_key:
-            QMessageBox.warning(
-                self,
-                "Missing API Key",
-                "Please set your OpenRouter API key in Settings.",
-            )
-            self.reset_ui()
-            return
-
-        # Build cleanup prompt (pass audio duration for short audio optimization)
-        cleanup_prompt = build_cleanup_prompt(
-            self.config, audio_duration_seconds=self.last_audio_duration
-        )
-
-        # Use queue for transcription (enables rapid dictation)
-        if self.config.queue_enabled:
-            self.transcription_queue.enqueue(
-                audio_data,
-                api_key=api_key,
-                model=model,
-                prompt=cleanup_prompt,
-                vad_enabled=self.config.vad_enabled,
-                coherence_check=self.config.coherence_check_enabled,
-                coherence_model=self.config.coherence_check_model,
-                fallback_model=self._get_failover_model(model),
-            )
-        else:
-            # Legacy single-worker mode
-            self._cleanup_worker("worker")
-            self.worker = TranscriptionWorker(
-                audio_data,
-                api_key,
-                model,
-                cleanup_prompt,
-                vad_enabled=self.config.vad_enabled,
-                coherence_check=self.config.coherence_check_enabled,
-                coherence_model=self.config.coherence_check_model,
-            )
-            self.worker.finished.connect(self.on_transcription_complete)
-            self.worker.error.connect(self.on_transcription_error)
-            self.worker.status.connect(self.on_worker_status)
-            self.worker.vad_complete.connect(self.on_vad_complete)
-            self.worker.start()
-
-        # TTS announcement for transcribing
-        if self.config.audio_feedback_mode == "tts":
-            get_announcer().announce_transcribing()
+        self._send_for_transcription(audio_data, audio_info["duration_seconds"])
 
     def on_worker_status(self, status: str):
         """Handle worker status updates."""
@@ -2771,6 +2795,32 @@ class MainWindow(QMainWindow):
     def on_vad_complete(self, orig_dur: float, vad_dur: float):
         """Handle VAD processing complete - store duration for database."""
         self.last_vad_duration = vad_dur
+
+    def _append_result_to_editor(self, text: str):
+        """Place a transcription result in the app editor without losing existing text.
+
+        Existing text is always preserved: new results append after it (or at
+        the cursor when append-at-cursor is configured), so a long note can be
+        dictated and transcribed in segments while building one block of text.
+        """
+        existing_text = self.text_output.toPlainText()
+        if not existing_text.strip():
+            self.text_output.setMarkdown(text)
+            return
+
+        if self.append_mode and self.config.append_position == "cursor":
+            # Insert at cursor position
+            cursor = self.text_output.source_view.textCursor()
+            cursor.insertText("\n\n" + text)
+            self.text_output.source_view.setTextCursor(cursor)
+            return
+
+        # Append at end (default)
+        combined_text = existing_text + "\n\n" + text
+        self.text_output.setMarkdown(combined_text)
+        cursor = self.text_output.source_view.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self.text_output.source_view.setTextCursor(cursor)
 
     def on_transcription_complete(self, result: TranscriptionResult):
         """Handle completed transcription.
@@ -2802,48 +2852,17 @@ class MainWindow(QMainWindow):
                 injection_failed = True
 
         # Handle app output
+        was_append = self.append_mode
         if output_to_app:
-            if self.append_mode:
-                existing_text = self.text_output.toPlainText()
-                if existing_text:
-                    if self.config.append_position == "cursor":
-                        # Insert at cursor position
-                        cursor = self.text_output.source_view.textCursor()
-                        cursor.insertText("\n\n" + result.text)
-                        self.text_output.source_view.setTextCursor(cursor)
-                    else:
-                        # Append at end (default)
-                        combined_text = existing_text + "\n\n" + result.text
-                        self.text_output.setMarkdown(combined_text)
-                        # Move cursor to end of document after appending
-                        cursor = self.text_output.source_view.textCursor()
-                        cursor.movePosition(cursor.MoveOperation.End)
-                        self.text_output.source_view.setTextCursor(cursor)
-                else:
-                    self.text_output.setMarkdown(result.text)
-                # Reset append mode
-                self.append_mode = False
-            else:
-                # Normal mode - append to existing text if present
-                existing_text = self.text_output.toPlainText()
-                if existing_text.strip():
-                    # Append new transcription to existing text
-                    combined_text = existing_text + "\n\n" + result.text
-                    self.text_output.setMarkdown(combined_text)
-                    # Move cursor to end
-                    cursor = self.text_output.source_view.textCursor()
-                    cursor.movePosition(cursor.MoveOperation.End)
-                    self.text_output.source_view.setTextCursor(cursor)
-                else:
-                    self.text_output.setMarkdown(result.text)
+            self._append_result_to_editor(result.text)
         else:
             # App output disabled - clear the text area
             self.text_output.setMarkdown("")
-            self.append_mode = False
+        self.append_mode = False
 
         # Audio feedback for completion (beeps or TTS based on mode)
         if self.config.audio_feedback_mode == "beeps":
-            if self.append_mode:
+            if was_append:
                 get_feedback().play_append_complete_beep()
             else:
                 get_feedback().play_complete_beep()
@@ -2908,6 +2927,8 @@ class MainWindow(QMainWindow):
         inference_time_ms = self.worker.inference_time_ms if self.worker else 0
         store_audio = self.config.store_audio
         last_audio_data = getattr(self, "last_audio_data", None)
+        source, source_path = self._pending_source
+        self._pending_source = ("recording", None)
 
         # Determine cost
         final_cost = 0.0
@@ -2944,6 +2965,8 @@ class MainWindow(QMainWindow):
                 audio_file_path=audio_file_path,
                 vad_audio_duration_seconds=vad_duration,
                 prompt_text_length=prompt_length,
+                source=source,
+                source_path=source_path,
             )
 
             # Check if embedding batch processing is needed
@@ -3370,6 +3393,7 @@ class MainWindow(QMainWindow):
         self.transcribe_btn.setEnabled(False)
         self.transcribe_btn.setStyleSheet(self._transcribe_btn_idle_style)  # Reset to green
         self.delete_btn.setEnabled(False)
+        self.upload_btn.setEnabled(True)
         self.retry_btn.hide()  # Hide retry button on reset
         # Hide duration display and reset minute counter
         self.duration_label.setText("")
@@ -3822,16 +3846,78 @@ class MainWindow(QMainWindow):
             # Non-critical error, just log it
             print(f"Embedding batch check failed: {e}")
 
-    def show_file_transcription_window(self):
-        """Show the file transcription window (Beta feature)."""
-        # Create window if it doesn't exist
-        if self.file_transcription_window is None:
-            self.file_transcription_window = FileTranscriptionWindow(config=self.config)
+    def upload_audio_file(self):
+        """Pick an audio file from disk and send it through the standard
+        transcription pipeline (same prompts, model, and outputs as recordings)."""
+        extensions = " ".join(f"*{ext}" for ext in sorted(SUPPORTED_UPLOAD_FORMATS))
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Upload Audio File",
+            "",
+            f"Audio Files ({extensions});;All Files (*)",
+        )
+        if file_path:
+            self._ingest_audio_file(file_path)
 
-        # Show
-        self.file_transcription_window.show()
-        self.file_transcription_window.raise_()
-        self.file_transcription_window.activateWindow()
+    def _ingest_audio_file(self, file_path: str):
+        """Load an audio file in the background, then transcribe it."""
+        if self.recorder.is_recording or self.recorder.is_paused:
+            QMessageBox.information(
+                self,
+                "Recording in Progress",
+                "Stop or delete the current recording before uploading a file.",
+            )
+            return
+
+        ext = Path(file_path).suffix.lower()
+        if ext not in SUPPORTED_UPLOAD_FORMATS:
+            QMessageBox.warning(
+                self,
+                "Unsupported Format",
+                f"Unsupported audio format: {ext}\n\n"
+                f"Supported: {', '.join(sorted(SUPPORTED_UPLOAD_FORMATS))}",
+            )
+            return
+
+        self.upload_btn.setEnabled(False)
+        self.status_label.setText("Loading audio file...")
+        self.status_label.setStyleSheet("color: rgba(0, 123, 255, 0.7); font-size: 11px;")
+        self.status_label.show()
+
+        self._cleanup_worker("file_load_worker")
+        self.file_load_worker = FileLoadWorker(file_path)
+        self.file_load_worker.finished.connect(self._on_file_loaded)
+        self.file_load_worker.error.connect(self._on_file_load_error)
+        self.file_load_worker.start()
+
+    def _on_file_loaded(self, wav_bytes: bytes, duration: float, source_path: str):
+        """File decoded successfully - confirm very long files, then transcribe."""
+        self.upload_btn.setEnabled(True)
+
+        if duration > 3600:
+            mins = int(duration // 60)
+            reply = QMessageBox.question(
+                self,
+                "Long Audio File",
+                f"This file is {mins} minutes long. Transcribe it anyway?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                self.status_label.setText("")
+                self.status_label.hide()
+                return
+
+        self._send_for_transcription(
+            wav_bytes, duration, source="file", source_path=source_path
+        )
+
+    def _on_file_load_error(self, error: str):
+        """File decoding failed."""
+        self.upload_btn.setEnabled(True)
+        self.status_label.setText("")
+        self.status_label.hide()
+        QMessageBox.warning(self, "Upload Failed", error)
 
     def show_analytics(self):
         """Show analytics dialog."""
@@ -3869,6 +3955,25 @@ class MainWindow(QMainWindow):
         self.setWindowState(
             (self.windowState() & ~Qt.WindowState.WindowMinimized) | Qt.WindowState.WindowActive
         )
+
+    def dragEnterEvent(self, event):
+        """Accept drags of supported audio files (for upload transcription)."""
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                path = urls[0].toLocalFile()
+                if path and Path(path).suffix.lower() in SUPPORTED_UPLOAD_FORMATS:
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event):
+        """Handle a dropped audio file - transcribe via the standard pipeline."""
+        urls = event.mimeData().urls()
+        if urls:
+            path = urls[0].toLocalFile()
+            if path:
+                self._ingest_audio_file(path)
 
     def eventFilter(self, watched, event):
         """Handle events from child widgets."""
@@ -4227,8 +4332,15 @@ class MainWindow(QMainWindow):
 
     def _on_queue_item_complete(self, item_id: str, result):
         """Handle queue item completion."""
-        # Display in the output panel
-        self.output_panel.on_transcription_complete(item_id, result.text)
+        # Mark the panel complete, then place text with append semantics —
+        # existing text is preserved, never replaced (same as legacy path)
+        self.output_panel.on_transcription_complete(item_id)
+        if self.config.output_to_app:
+            self._append_result_to_editor(result.text)
+        else:
+            # App output disabled - clear the text area
+            self.text_output.setMarkdown("")
+        self.append_mode = False
 
         # Handle output modes (clipboard, inject)
         self._handle_queue_result_outputs(result)
@@ -4335,6 +4447,7 @@ class MainWindow(QMainWindow):
         vad_duration = item.vad_duration
         prompt_length = len(item.settings.prompt)
         inference_time_ms = item.inference_time_ms
+        source, source_path = self._queue_item_sources.pop(item_id, ("recording", None))
 
         # Determine cost
         final_cost = 0.0
@@ -4361,6 +4474,8 @@ class MainWindow(QMainWindow):
                 audio_file_path=None,  # Queue doesn't support archival yet
                 vad_audio_duration_seconds=vad_duration,
                 prompt_text_length=prompt_length,
+                source=source,
+                source_path=source_path,
             )
 
             # Check embedding batch

@@ -84,7 +84,7 @@ class TranscriptionClient(ABC):
     """Base class for transcription clients."""
 
     @abstractmethod
-    def transcribe(self, audio_data: bytes, prompt: str) -> TranscriptionResult:
+    def transcribe(self, audio_data: bytes, prompt: str, audio_format: str = "wav") -> TranscriptionResult:
         """Transcribe audio with cleanup prompt."""
         pass
 
@@ -130,8 +130,12 @@ class OpenRouterClient(TranscriptionClient):
         OpenRouterClient._shared_client_key = self.api_key
         return OpenRouterClient._shared_client
 
-    def transcribe(self, audio_data: bytes, prompt: str) -> TranscriptionResult:
-        """Transcribe audio using OpenRouter's multimodal models."""
+    def transcribe(self, audio_data: bytes, prompt: str, audio_format: str = "wav") -> TranscriptionResult:
+        """Transcribe audio using OpenRouter's multimodal models.
+
+        audio_format is "wav" or "mp3" — long recordings are sent as MP3
+        to stay under provider request-size limits.
+        """
         client = self._get_client()
 
         # Encode audio as base64
@@ -152,7 +156,7 @@ class OpenRouterClient(TranscriptionClient):
                             "type": "input_audio",
                             "input_audio": {
                                 "data": audio_b64,
-                                "format": "wav"
+                                "format": audio_format
                             }
                         }
                     ]

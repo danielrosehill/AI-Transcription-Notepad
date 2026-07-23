@@ -264,6 +264,7 @@ class AboutWidget(QWidget):
             ("Ctrl+R", "Start/toggle recording"),
             ("Ctrl+Space", "Pause/resume recording"),
             ("Ctrl+Return", "Stop and transcribe"),
+            ("Ctrl+O", "Upload audio file"),
             ("Ctrl+S", "Save to file"),
             ("Ctrl+Shift+C", "Copy to clipboard"),
             ("Ctrl+Shift+Delete", "Clear transcription"),
