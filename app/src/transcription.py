@@ -7,6 +7,13 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
 
+import httpx
+
+try:
+    from .config import STT_MODEL_IDS, STT_CLEANUP_MODEL, NO_REASONING_MODEL_IDS
+except ImportError:
+    from config import STT_MODEL_IDS, STT_CLEANUP_MODEL, NO_REASONING_MODEL_IDS
+
 try:
     from openai import OpenAI
     OPENAI_SDK_AVAILABLE = True
@@ -112,9 +119,17 @@ class OpenRouterClient(TranscriptionClient):
     _shared_client = None
     _shared_client_key: str = ""
 
-    def __init__(self, api_key: str, model: str = "google/gemini-3.5-flash-lite"):
+    def __init__(self, api_key: str, model: str = "google/gemini-3.8-flash"):
         self.api_key = api_key
         self.model = model
+        # STT-only models can't do text work; route rewrites/titles elsewhere
+        self._text_model = STT_CLEANUP_MODEL if model in STT_MODEL_IDS else model
+
+    def _extra_body(self) -> dict:
+        body = {"usage": {"include": True}}
+        if self.model in NO_REASONING_MODEL_IDS:
+            body["reasoning"] = {"enabled": False}
+        return body
 
     def _get_client(self):
         # Reuse shared HTTP client if API key matches (avoids HTTPS handshake per call)
@@ -136,6 +151,9 @@ class OpenRouterClient(TranscriptionClient):
         audio_format is "wav" or "mp3" — long recordings are sent as MP3
         to stay under provider request-size limits.
         """
+        if self.model in STT_MODEL_IDS:
+            return self._transcribe_stt(audio_data, prompt, audio_format)
+
         client = self._get_client()
 
         # Encode audio as base64
@@ -163,7 +181,7 @@ class OpenRouterClient(TranscriptionClient):
                 }
             ],
             # Request usage information including cost
-            extra_body={"usage": {"include": True}},
+            extra_body=self._extra_body(),
         )
 
         # Extract usage data
@@ -195,12 +213,53 @@ class OpenRouterClient(TranscriptionClient):
             generation_id=generation_id,
         )
 
+    def _transcribe_stt(self, audio_data: bytes, prompt: str, audio_format: str) -> TranscriptionResult:
+        """Two-pass path for STT-only models: raw transcript, then text cleanup.
+
+        OpenRouter serves these on POST /audio/transcriptions (JSON body with
+        base64 input_audio); the response is {"text": ..., "usage": {...}}.
+        """
+        response = httpx.post(
+            f"{self.OPENROUTER_BASE_URL}/audio/transcriptions",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json={
+                "model": self.model,
+                "input_audio": {
+                    "data": base64.b64encode(audio_data).decode("utf-8"),
+                    "format": audio_format,
+                },
+            },
+            timeout=300,
+        )
+        response.raise_for_status()
+        stt = response.json()
+        stt_usage = stt.get("usage") or {}
+
+        instruction = (
+            "The user message is a raw speech-to-text transcript of the dictation "
+            "described below, not audio. Apply these instructions to it.\n\n" + prompt
+        )
+        cleaned = self.rewrite_text(stt.get("text", ""), instruction)
+
+        stt_cost = stt_usage.get("cost")
+        actual_cost = None
+        if stt_cost is not None or cleaned.actual_cost is not None:
+            actual_cost = (stt_cost or 0) + (cleaned.actual_cost or 0)
+
+        return TranscriptionResult(
+            text=cleaned.text,
+            input_tokens=(stt_usage.get("input_tokens") or 0) + cleaned.input_tokens,
+            output_tokens=(stt_usage.get("output_tokens") or 0) + cleaned.output_tokens,
+            actual_cost=actual_cost,
+            generation_id=cleaned.generation_id,
+        )
+
     def rewrite_text(self, text: str, instruction: str) -> TranscriptionResult:
         """Rewrite text using OpenRouter (text-only, no audio)."""
         client = self._get_client()
 
         response = client.chat.completions.create(
-            model=self.model,
+            model=self._text_model,
             messages=[
                 {
                     "role": "system",
@@ -211,7 +270,7 @@ class OpenRouterClient(TranscriptionClient):
                     "content": text
                 }
             ],
-            extra_body={"usage": {"include": True}},
+            extra_body=self._extra_body(),
         )
 
         # Extract usage data
@@ -248,7 +307,7 @@ class OpenRouterClient(TranscriptionClient):
         )
 
         response = client.chat.completions.create(
-            model=self.model,
+            model=self._text_model,
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": text[:1000]}

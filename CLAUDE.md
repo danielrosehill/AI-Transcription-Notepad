@@ -8,7 +8,7 @@ AI Transcription Utility is a PyQt6 desktop application for voice recording with
 
 Instead of separate speech-to-text followed by text cleanup, this app sends audio directly to Google's Gemini multimodal models along with a cleanup prompt. The model handles both transcription and text cleanup simultaneously.
 
-**Why Gemini via OpenRouter?** After extensive testing (~2000 transcriptions), Gemini Flash models have proven highly cost-effective for voice transcription—typically just a few dollars for heavy usage. OpenRouter provides faster latency than direct Google API access. The default model is `google/gemini-3.5-flash-lite` via OpenRouter (audio input at $0.30/M tokens), with automatic failover to `google/gemini-3.6-flash` if needed. See [data/](data/) for anonymized performance benchmarks.
+**Why Gemini via OpenRouter?** After extensive testing (~2000 transcriptions), Gemini Flash models have proven highly cost-effective for voice transcription—typically just a few dollars for heavy usage. OpenRouter provides faster latency than direct Google API access. The default model is `google/gemini-3.8-flash` via OpenRouter (audio input at $0.75/M tokens), with automatic failover to `google/gemini-3.5-flash-lite` ($0.30/M) if needed. See [data/](data/) for anonymized performance benchmarks.
 
 ## Architecture
 
@@ -115,9 +115,16 @@ The app supports global hotkeys that work system-wide, even when the window is m
 
 | Provider | Models | API Endpoint |
 |----------|--------|--------------|
-| **OpenRouter** (sole provider) | `google/gemini-3.5-flash-lite` (default, cost-optimized), `google/gemini-3.6-flash` (quality) | OpenRouter |
+| **OpenRouter** (sole provider) | `google/gemini-3.8-flash` (default), `google/gemini-3.5-flash-lite` (budget, failover), plus multimodal and STT-only models listed in `OPENROUTER_MODELS` | OpenRouter |
 
-The model list is deliberately limited to two options: a cost-optimized default (Gemini 3.5 Flash Lite) and a quality option (Gemini 3.6 Flash, also used for automatic failover). This keeps model choice simple—pick a default and stick with it.
+`OPENROUTER_MODELS` in `config.py` holds 15 audio-capable models (as of 2026-10-13), with OpenRouter release dates in `MODEL_RELEASE_DATES` (the `created` field of `GET /api/v1/models/{id}/endpoints`). The Models tab sorts by that date, newest first. Two kinds:
+
+- **Multimodal (single pass)**: Gemini 3.8 Flash, Gemini 3.5 Flash Lite, Xiaomi MiMo V2.6 Flash/Pro, Qwen3.8 Omni Flash. Audio + cleanup prompt via `chat/completions`.
+- **STT-only (two pass)**: models whose OpenRouter modality is `audio->transcription` (display name ends `(STT)` → `STT_MODEL_IDS`). They take no prompt, so `OpenRouterClient._transcribe_stt()` calls `POST /api/v1/audio/transcriptions` with JSON `{"model", "input_audio": {"data": <base64>, "format": "wav"|"mp3"}}` (response `{"text", "usage": {"cost", ...}}`), then runs the cleanup prompt as a text-only pass on `STT_CLEANUP_MODEL` (Gemini 3.8 Flash). Costs of both passes are summed. These never appear in the `/api/v1/models` chat listing; query `/api/v1/models/{id}/endpoints` to inspect them.
+
+Quirk: MiMo models put their whole answer in the reasoning field and return `content: None` unless reasoning is disabled. `NO_REASONING_MODEL_IDS` sends `reasoning: {"enabled": false}` for them.
+
+All 15 models verified end-to-end on 2026-10-13 with a short TTS clip. Gemini 3.6/3.7 Flash were dropped because OpenRouter prices them the same as 3.8 Flash. Saved configs pointing at 3.6 Flash migrate to 3.8 Flash. Installs still on the old 3.5 Flash Lite default are switched once (`default_model_38_migrated` flag in `config.py`).
 
 ## Development Guidelines
 
@@ -787,7 +794,7 @@ When modifying transcription providers:
 This means you can:
 - Start recording
 - Change your mind about the format preset (email → todo list)
-- Change the model (Gemini 3.5 Flash Lite → Gemini 3.6 Flash)
+- Change the model (Gemini 3.8 Flash → Gemini 3.5 Flash Lite)
 - Adjust formality level or verbosity
 - Modify prompt checkboxes
 

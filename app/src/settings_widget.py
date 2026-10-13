@@ -1118,21 +1118,21 @@ class ModelSelectionWidget(QWidget):
 
         selection_layout.addLayout(model_layout)
 
-        # Model tier quick toggle (Default / Quality)
+        # Model tier quick toggle (Default / Budget)
         tier_layout = QHBoxLayout()
         tier_layout.addWidget(QLabel("Quick Select:"))
 
-        self.budget_btn = QPushButton("Default")
-        self.budget_btn.setCheckable(True)
-        self.budget_btn.setMinimumWidth(80)
-        self.budget_btn.setToolTip("Gemini 3.5 Flash Lite — fast and cost-optimized")
-        self.budget_btn.clicked.connect(lambda: self._set_model_tier("budget"))
-
-        self.standard_btn = QPushButton("Quality")
+        self.standard_btn = QPushButton("Default")
         self.standard_btn.setCheckable(True)
         self.standard_btn.setMinimumWidth(80)
-        self.standard_btn.setToolTip("Gemini 3.6 Flash — higher quality, ~5x audio cost")
+        self.standard_btn.setToolTip("Gemini 3.8 Flash — recommended default")
         self.standard_btn.clicked.connect(lambda: self._set_model_tier("standard"))
+
+        self.budget_btn = QPushButton("Budget")
+        self.budget_btn.setCheckable(True)
+        self.budget_btn.setMinimumWidth(80)
+        self.budget_btn.setToolTip("Gemini 3.5 Flash Lite — fastest, ~2.5x cheaper on audio")
+        self.budget_btn.clicked.connect(lambda: self._set_model_tier("budget"))
 
         # Style for tier buttons
         tier_btn_style = """
@@ -1154,8 +1154,8 @@ class ModelSelectionWidget(QWidget):
         self.standard_btn.setStyleSheet(tier_btn_style)
         self.budget_btn.setStyleSheet(tier_btn_style)
 
-        tier_layout.addWidget(self.budget_btn)
         tier_layout.addWidget(self.standard_btn)
+        tier_layout.addWidget(self.budget_btn)
         tier_layout.addStretch()
 
         selection_layout.addLayout(tier_layout)
@@ -1176,10 +1176,10 @@ class ModelSelectionWidget(QWidget):
         info_layout.setSpacing(6)
 
         info_text = QLabel(
-            "<b>Gemini 3.5 Flash Lite</b> (Default) is fast and cost-efficient — "
-            "the recommended choice for everyday dictation.<br><br>"
-            "<b>Gemini 3.6 Flash</b> (Quality) costs about 5x more for audio and can "
-            "help on long or complex recordings.<br><br>"
+            "<b>Gemini 3.8 Flash</b> (Default) is the recommended choice for "
+            "everyday dictation.<br><br>"
+            "<b>Gemini 3.5 Flash Lite</b> (Budget) is faster and about 2.5x cheaper "
+            "for audio, at some cost in accuracy.<br><br>"
             "Your selection here sets the primary model used for every transcription."
         )
         info_text.setWordWrap(True)
@@ -1192,7 +1192,7 @@ class ModelSelectionWidget(QWidget):
         default_layout = QHBoxLayout()
         default_layout.addStretch()
         self.default_btn = QPushButton("Set Default")
-        self.default_btn.setToolTip("Reset to Gemini 3.5 Flash Lite")
+        self.default_btn.setToolTip("Reset to Gemini 3.8 Flash")
         self.default_btn.setFixedWidth(100)
         self.default_btn.clicked.connect(self._set_default)
         default_layout.addWidget(self.default_btn)
@@ -1375,8 +1375,8 @@ class ModelSelectionWidget(QWidget):
         self.budget_btn.blockSignals(False)
 
     def _set_default(self):
-        """Reset to default: Gemini 3.5 Flash Lite model."""
-        idx = self.model_combo.findData("google/gemini-3.5-flash-lite")
+        """Reset to default: Gemini 3.8 Flash model."""
+        idx = self.model_combo.findData("google/gemini-3.8-flash")
         if idx < 0:
             return
         if idx == self.model_combo.currentIndex():

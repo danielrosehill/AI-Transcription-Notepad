@@ -31,8 +31,10 @@ def get_io_executor() -> ThreadPoolExecutor:
 MODEL_PRICING = {
     # Current supported models (per 1M tokens). Input rate reflects the audio
     # token rate where it differs from text, since input is audio-dominated.
+    "google/gemini-3.8-flash": {"input": 0.75, "output": 3.75},
     "google/gemini-3.5-flash-lite": {"input": 0.30, "output": 2.50},
-    "google/gemini-3.6-flash": {"input": 1.50, "output": 7.50},
+    # Retired from the model list, kept for historical cost tracking
+    "google/gemini-3.6-flash": {"input": 0.75, "output": 3.75},
     # Legacy Gemini 3 preview models (retired, kept for historical cost tracking)
     "gemini-3-flash-preview": {"input": 1.00, "output": 3.00},
     "gemini-3-pro-preview": {"input": 2.00, "output": 12.00},

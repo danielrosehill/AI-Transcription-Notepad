@@ -54,19 +54,69 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 # Available models via OpenRouter (model_id, display_name)
 # All models are accessed through OpenRouter's unified API
-# Deliberately limited to two models: one cost-optimized default, one
-# quality option. (Gemini 3 preview models retired — gemini-3-pro-preview
-# was removed from OpenRouter entirely.)
-# Audio pricing per 1M tokens: 3.5 Flash Lite $0.30, 3.6 Flash $1.50.
+# (Gemini 3 preview models retired — gemini-3-pro-preview was removed from
+# OpenRouter entirely.)
+# Audio pricing per 1M tokens (OpenRouter, 2026-10-13): 3.8 Flash $0.75,
+# 3.5 Flash Lite $0.30. 3.6/3.7 Flash were dropped: same price as 3.8 Flash.
+# Models marked (STT) are speech-to-text only — see STT_MODEL_IDS.
+# Order: default, budget, then multimodal and STT groups newest-first.
 OPENROUTER_MODELS = [
-    ("google/gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite (Default)"),
-    ("google/gemini-3.6-flash", "Gemini 3.6 Flash (Quality)"),
+    ("google/gemini-3.8-flash", "Gemini 3.8 Flash (Default)"),
+    ("google/gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite (Budget)"),
+    ("xiaomi/mimo-v2.6-flash", "MiMo V2.6 Flash"),
+    ("xiaomi/mimo-v2.6-pro", "MiMo V2.6 Pro"),
+    ("qwen/qwen3.8-omni-flash", "Qwen3.8 Omni Flash"),
+    ("elevenlabs/scribe-v2", "ElevenLabs Scribe v2 (STT)"),
+    ("google/gemini-3.5-transcribe", "Gemini 3.5 Transcribe (STT)"),
+    ("meta/muse-voice-transcribe-1.0", "Meta Muse Voice Transcribe 1.0 (STT)"),
+    ("mistralai/voxtral-small-24b-2507-stt", "Voxtral Small 24B (STT)"),
+    ("qwen/qwen3-asr-1.7b", "Qwen3 ASR 1.7B (STT)"),
+    ("x-ai/grok-stt-1.0", "Grok STT 1.0 (STT)"),
+    ("deepgram/nova-3", "Deepgram Nova-3 (STT)"),
+    ("nvidia/parakeet-tdt-0.6b-v3", "NVIDIA Parakeet TDT 0.6B v3 (STT)"),
+    ("mistralai/voxtral-mini-transcribe", "Voxtral Mini Transcribe (STT)"),
+    ("google/chirp-3", "Google Chirp 3 (STT)"),
 ]
 
+# Release dates: OpenRouter's `created` timestamp from
+# GET /api/v1/models/{id}/endpoints (date the model was listed), as of 2026-10-13.
+MODEL_RELEASE_DATES = {
+    "google/gemini-3.8-flash": "2026-09-02",
+    "google/gemini-3.5-flash-lite": "2026-07-21",
+    "xiaomi/mimo-v2.6-flash": "2026-09-21",
+    "xiaomi/mimo-v2.6-pro": "2026-09-21",
+    "qwen/qwen3.8-omni-flash": "2026-09-21",
+    "elevenlabs/scribe-v2": "2026-10-07",
+    "google/gemini-3.5-transcribe": "2026-09-25",
+    "meta/muse-voice-transcribe-1.0": "2026-09-11",
+    "mistralai/voxtral-small-24b-2507-stt": "2026-08-13",
+    "qwen/qwen3-asr-1.7b": "2026-08-13",
+    "x-ai/grok-stt-1.0": "2026-07-23",
+    "deepgram/nova-3": "2026-07-15",
+    "nvidia/parakeet-tdt-0.6b-v3": "2026-05-27",
+    "mistralai/voxtral-mini-transcribe": "2026-05-15",
+    "google/chirp-3": "2026-05-05",
+}
+
+# Speech-to-text-only models (OpenRouter modality "audio->transcription").
+# They are served by POST /audio/transcriptions, not chat completions, and
+# accept no prompt — so cleanup runs as a second, text-only pass on
+# STT_CLEANUP_MODEL. This is the two-pass (ASR + LLM) path the multimodal
+# models avoid; it exists so dedicated ASR engines can be compared.
+STT_MODEL_IDS = frozenset(
+    model_id for model_id, display_name in OPENROUTER_MODELS
+    if display_name.endswith("(STT)")
+)
+STT_CLEANUP_MODEL = "google/gemini-3.8-flash"
+
+# With reasoning enabled, MiMo returns the whole answer inside the reasoning
+# field ("<think>...") and message.content is None. Verified 2026-10-13.
+NO_REASONING_MODEL_IDS = frozenset({"xiaomi/mimo-v2.6-flash", "xiaomi/mimo-v2.6-pro"})
+
 # Standard and Budget model tiers for quick-toggle buttons
-# Standard: full Flash quality; Budget: Lite (default — 5x cheaper on audio)
+# Standard: 3.8 Flash (default); Budget: Lite (2.5x cheaper on audio)
 MODEL_TIERS = {
-    "standard": "google/gemini-3.6-flash",
+    "standard": "google/gemini-3.8-flash",
     "budget": "google/gemini-3.5-flash-lite",
 }
 
@@ -208,16 +258,16 @@ class Config:
     openrouter_api_key: str = ""
 
     # Selected model (all models via OpenRouter)
-    selected_model: str = "google/gemini-3.5-flash-lite"
+    selected_model: str = "google/gemini-3.8-flash"
 
     # Primary and Fallback models - quick presets for switching with automatic failover
-    # Primary: Your main transcription model (default: Gemini 3.5 Flash Lite)
-    # Fallback: Used automatically if primary fails (default: Gemini 3.6 Flash)
-    primary_name: str = "Gemini 3.5 Flash Lite"
-    primary_model: str = "google/gemini-3.5-flash-lite"
+    # Primary: Your main transcription model (default: Gemini 3.8 Flash)
+    # Fallback: Used automatically if primary fails (default: Gemini 3.5 Flash Lite)
+    primary_name: str = "Gemini 3.8 Flash"
+    primary_model: str = "google/gemini-3.8-flash"
 
-    fallback_name: str = "Gemini 3.6 Flash"
-    fallback_model: str = "google/gemini-3.6-flash"
+    fallback_name: str = "Gemini 3.5 Flash Lite"
+    fallback_model: str = "google/gemini-3.5-flash-lite"
 
     # Enable automatic failover to fallback model if primary fails
     failover_enabled: bool = True
@@ -462,9 +512,13 @@ class Config:
     # ==========================================================================
     # When enabled, a second text-only pass reviews the transcription for words
     # or phrases that don't make logical sense in context and corrects them.
-    # Uses the cheap default model (Gemini 3.5 Flash Lite) to keep costs minimal.
+    # Uses the budget model (Gemini 3.5 Flash Lite) to keep costs minimal.
     coherence_check_enabled: bool = True
     coherence_check_model: str = "google/gemini-3.5-flash-lite"
+
+    # One-time switch of existing installs from the old 3.5 Flash Lite default
+    # to 3.8 Flash. Set once applied so a later manual pick of Lite sticks.
+    default_model_38_migrated: bool = False
 
 
 def _apply_migrations(config: Config) -> Config:
@@ -632,14 +686,15 @@ def _apply_migrations(config: Config) -> Config:
     # gemini-3-pro-preview no longer exists on OpenRouter (requests would 404);
     # the others are superseded by the cheaper/faster current lineup.
     retired_models = {
-        "google/gemini-3-flash-preview": "google/gemini-3.5-flash-lite",
-        "google/gemini-3-pro-preview": "google/gemini-3.6-flash",
+        "google/gemini-3-flash-preview": "google/gemini-3.8-flash",
+        "google/gemini-3-pro-preview": "google/gemini-3.8-flash",
         "google/gemini-3.1-flash-lite-preview": "google/gemini-3.5-flash-lite",
         "google/gemini-3.1-flash-lite": "google/gemini-3.5-flash-lite",
+        "google/gemini-3.6-flash": "google/gemini-3.8-flash",
     }
     display_names = {
         "google/gemini-3.5-flash-lite": "Gemini 3.5 Flash Lite",
-        "google/gemini-3.6-flash": "Gemini 3.6 Flash",
+        "google/gemini-3.8-flash": "Gemini 3.8 Flash",
     }
     if config.selected_model in retired_models:
         config.selected_model = retired_models[config.selected_model]
@@ -651,6 +706,19 @@ def _apply_migrations(config: Config) -> Config:
         config.fallback_name = display_names[config.fallback_model]
     if config.coherence_check_model in retired_models:
         config.coherence_check_model = retired_models[config.coherence_check_model]
+
+    # Migration: default moved from 3.5 Flash Lite to 3.8 Flash. Lite remains
+    # valid, so only move installs still on the old default, and only once.
+    if not config.default_model_38_migrated:
+        if config.primary_model == "google/gemini-3.5-flash-lite":
+            config.primary_model = "google/gemini-3.8-flash"
+            config.primary_name = display_names[config.primary_model]
+            if config.fallback_model == "google/gemini-3.8-flash":
+                config.fallback_model = "google/gemini-3.5-flash-lite"
+                config.fallback_name = display_names[config.fallback_model]
+        if config.selected_model == "google/gemini-3.5-flash-lite":
+            config.selected_model = "google/gemini-3.8-flash"
+        config.default_model_38_migrated = True
 
     return config
 
@@ -832,7 +900,7 @@ def get_active_model(config: Config) -> str:
         return config.primary_model
 
     # Ultimate fallback: use selected_model
-    return config.selected_model or "google/gemini-3.5-flash-lite"
+    return config.selected_model or "google/gemini-3.8-flash"
 
 
 def get_fallback_model(config: Config) -> str | None:

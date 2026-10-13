@@ -314,7 +314,7 @@ class AboutWidget(QWidget):
         providers_layout = QVBoxLayout(providers_group)
 
         providers = [
-            "Google Gemini via OpenRouter - Gemini 3.5 Flash Lite (Default), Gemini 3.6 Flash",
+            "Google Gemini via OpenRouter - Gemini 3.8 Flash (Default), Gemini 3.5 Flash Lite (Budget)",
             "All models accessed through OpenRouter's unified API",
         ]
         for p in providers:

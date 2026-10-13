@@ -11,22 +11,25 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
-from .config import OPENROUTER_MODELS
+from .config import OPENROUTER_MODELS, MODEL_RELEASE_DATES, STT_MODEL_IDS, STT_CLEANUP_MODEL
 
 
 # Model metadata with additional notes
 MODEL_INFO = {
-    "google/gemini-3.5-flash-lite": {
-        "note": "⭐ Gemini 3.5 Flash Lite - fastest and cheapest (audio $0.30/M tokens), recommended default",
+    "google/gemini-3.8-flash": {
+        "note": "⭐ Gemini 3.8 Flash - current Flash generation (audio $0.75/M tokens), recommended default",
         "audio_support": True,
         "tier": "default",
         "recommended": True,
     },
-    "google/gemini-3.6-flash": {
-        "note": "Gemini 3.6 Flash - higher quality for demanding dictations (audio $1.50/M tokens)",
+    "google/gemini-3.5-flash-lite": {
+        "note": "Gemini 3.5 Flash Lite - fastest and cheapest (audio $0.30/M tokens), also the failover model",
         "audio_support": True,
-        "tier": "quality",
+        "tier": "budget",
     },
+    "xiaomi/mimo-v2.6-flash": {"note": "Xiaomi MiMo V2.6 Flash - very cheap multimodal model", "tier": "multimodal"},
+    "xiaomi/mimo-v2.6-pro": {"note": "Xiaomi MiMo V2.6 Pro - larger MiMo multimodal model", "tier": "multimodal"},
+    "qwen/qwen3.8-omni-flash": {"note": "Qwen3.8 Omni Flash - cheap omni-modal model", "tier": "multimodal"},
 }
 
 
@@ -62,7 +65,8 @@ class ModelsWidget(QWidget):
 
         intro = QLabel(
             "Voice Notepad uses Gemini models via <b>OpenRouter</b> for audio transcription. "
-            "The default model is <b>Gemini 3.5 Flash Lite</b> — the best balance of speed, quality, and cost for dictation."
+            "The default model is <b>Gemini 3.8 Flash</b>; <b>Gemini 3.5 Flash Lite</b> is available as a cheaper budget option. "
+            "Models are listed newest first by OpenRouter release date."
         )
         intro.setWordWrap(True)
         intro.setStyleSheet("color: #666; font-size: 11px;")
@@ -94,8 +98,10 @@ class ModelsWidget(QWidget):
         legend_layout.addWidget(legend_label)
 
         tiers = [
-            ("Default", "#28a745", "Fast and cost-optimized"),
-            ("Quality", "#6f42c1", "Higher quality, higher cost"),
+            ("Default", "#28a745", "Recommended"),
+            ("Budget", "#17a2b8", "Cheapest Gemini"),
+            ("Multimodal", "#6f42c1", "Single pass: audio + cleanup prompt"),
+            ("STT", "#fd7e14", "Speech-to-text, then text cleanup pass"),
         ]
 
         for tier_name, color, description in tiers:
@@ -114,8 +120,8 @@ class ModelsWidget(QWidget):
         models_widget = self._create_models_list(
             OPENROUTER_MODELS,
             "https://openrouter.ai/models?fmt=cards&input_modalities=audio",
-            "Access to Gemini models via OpenRouter's OpenAI-compatible API. "
-            "All models support audio input for transcription."
+            "Audio-capable models via OpenRouter. STT models only return a raw "
+            f"transcript, so cleanup runs as a second text pass on {STT_CLEANUP_MODEL}."
         )
         container_layout.addWidget(models_widget)
 
@@ -175,7 +181,8 @@ class ModelsWidget(QWidget):
         separator.setFixedHeight(1)
         layout.addWidget(separator)
 
-        # Models list
+        # Models list, newest release first
+        models = sorted(models, key=lambda m: MODEL_RELEASE_DATES.get(m[0], ""), reverse=True)
         for model_id, display_name in models:
             model_widget = self._create_model_entry(model_id, display_name)
             layout.addWidget(model_widget)
@@ -225,10 +232,12 @@ class ModelsWidget(QWidget):
         left_layout.setSpacing(8)
 
         # Tier indicator
-        tier = info.get("tier", "default")
+        tier = info.get("tier", "stt" if model_id in STT_MODEL_IDS else "multimodal")
         tier_colors = {
             "default": "#28a745",
-            "quality": "#6f42c1",
+            "budget": "#17a2b8",
+            "multimodal": "#6f42c1",
+            "stt": "#fd7e14",
         }
         color = tier_colors.get(tier, "#28a745")
 
@@ -261,6 +270,9 @@ class ModelsWidget(QWidget):
 
         # Right column: Description
         note = info.get("note", "")
+        released = MODEL_RELEASE_DATES.get(model_id)
+        if released:
+            note = f"{note} · Released {released}" if note else f"Released {released}"
         note_label = QLabel(note if note else "—")
         note_label.setStyleSheet("color: #666; font-size: 12px; background: transparent;")
         note_label.setWordWrap(True)
