@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.26] - 2026-10-20
+
+### Fixed
+- **Debian package runs on Ubuntu 26.04 again.** The release .deb is now built in an Ubuntu
+  26.04 container, so its bundled venv matches the system Python (3.14). The 1.14.25 release
+  .deb contained a Python 3.10 venv and could not start there.
+- `Depends` now pins the Python minor the venv was built with, instead of `python3 (>= 3.10)`.
+- Local builds are versioned `X.Y.Z~local<timestamp>`, so the released package replaces them
+  through apt instead of sharing their version number.
+- The build venv cache is keyed on the Python version as well as `requirements.txt`.
+
 ## [1.13.2] - 2026-01-05
 
 ### Added

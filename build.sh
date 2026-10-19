@@ -101,7 +101,7 @@ case "$COMMAND" in
     --dev)
         # Quick dev build: fast deb + install
         echo -e "${BLUE}=== Quick Dev Build ===${NC}"
-        "$BUILD_SCRIPTS/deb.sh" --fast "$@"
+        "$BUILD_SCRIPTS/deb.sh" --fast --local "$@"
         "$BUILD_SCRIPTS/install.sh"
         ;;
     --release|-r)

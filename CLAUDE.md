@@ -453,6 +453,26 @@ Output files:
 ./build.sh --install          # Install latest .deb from dist/
 ```
 
+### Packaging constraints (2026-10-20)
+
+- **The .deb bundles a venv built against the build machine's `/usr/bin/python3`**, so it only
+  runs on that Python minor. `deb.sh` pins `Depends: python3 (>= M.m), python3 (<< M.m+1)`.
+  CI builds the release .deb in an `ubuntu:26.04` container (`build-deb` job in
+  `.github/workflows/release.yml`) to match Daniel's laptop. Until 1.14.25 it built on the
+  22.04 runner and shipped a Python 3.10 venv that could not import its packages on 3.14,
+  while `Depends: python3 (>= 3.10)` let it install anyway. Bump the container image when
+  the target Ubuntu moves. AppImage and tarball still build on the 22.04 runner.
+- **The venv cache key includes `python3 -V`** (`deb.sh`, `appimage.sh`, `tarball.sh`).
+  It used to hash only `requirements.txt`, so a 3.13 venv was reused after the laptop moved
+  to 3.14.
+- **Local builds are `X.Y.Z~local<timestamp>`** (`deb.sh --local`, used by `build.sh --dev`,
+  `release.sh` and `scripts/build/release.sh --deb-only`). Only CI builds carry the bare
+  version, so apt can tell them apart and the release replaces the local build.
+- The release .deb is distributed through Daniel's APT repo (`https://apps.danielrosehill.com/apt`,
+  `github.com/danielrosehill/APT-Public-Repo`). After a tag's release finishes, publish it with
+  `gh workflow run publish.yml -R danielrosehill/APT-Public-Repo` (or the `software-publisher`
+  plugin's `deb-publish` skill); the APT repo has no schedule.
+
 ### Release Workflow
 
 After every feature update, run `/incremental-release` to bump the patch version, push to GitHub, build the .deb, and update the local installation. This is the standard post-feature workflow.

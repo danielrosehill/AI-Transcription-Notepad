@@ -20,7 +20,7 @@ Run the release script in deb-only mode (this bumps the version in `pyproject.to
 
 This will:
 - Increment the patch version (e.g., 1.14.7 -> 1.14.8)
-- Build the Debian package to `dist/`
+- Build the Debian package to `dist/` as `X.Y.Z~local<timestamp>` (a local build; see Notes)
 
 ### 3. Commit the version bump
 
@@ -57,5 +57,14 @@ Tell the user:
 - This is a **patch release** (third version number). For minor/major bumps, the user should specify explicitly.
 - The build uses `--deb-only` mode since this is for personal local use, not a full public release with AppImage/tarball.
 - If the build or install fails, stop and report the error rather than continuing.
+- **Local builds are versioned `X.Y.Z~local<timestamp>`** (since 1.14.26). The `~` sorts below
+  `X.Y.Z`, so when a `vX.Y.Z` tag is released, the CI build (Ubuntu 26.04 container, the one
+  on GitHub and in the APT repo at apps.danielrosehill.com/apt) replaces the local one via
+  `apt upgrade`. Before this, a local and a CI build both claimed 1.14.25 and apt showed
+  "upgradable from 1.14.25 to 1.14.25".
+- The .deb bundles a venv tied to the build machine's Python minor, and `Depends` pins it
+  (`python3 (>= 3.14), python3 (<< 3.15)` on Ubuntu 26.04). It will not install on another
+  Ubuntu release; that is deliberate. The 1.14.25 CI build shipped a Python 3.10 venv and
+  could not run on 3.14.
 
 $ARGUMENTS

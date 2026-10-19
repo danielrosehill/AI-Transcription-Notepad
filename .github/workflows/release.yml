@@ -31,7 +31,37 @@ jobs:
             echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
           fi
 
-  # Build Linux packages
+  # Build the .deb inside Ubuntu 26.04. The package bundles a venv tied to the build's
+  # python3 minor (its Depends pins it), so it must be built on the Ubuntu it targets.
+  # Built on the 22.04 runner until 1.14.25, it shipped a Python 3.10 venv that could not
+  # run on Daniel's 26.04 laptop (Python 3.14). Bump the image when the target moves.
+  build-deb:
+    needs: prepare
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    steps:
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl git python3 python3-venv python3-dev build-essential \
+            ffmpeg portaudio19-dev dpkg-dev
+
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh && echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Build .deb
+        run: ./scripts/build/deb.sh ${{ needs.prepare.outputs.version }}
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: dist/*.deb
+
+  # Build the AppImage and tarball
   build-linux:
     needs: prepare
     runs-on: ubuntu-22.04
@@ -52,8 +82,8 @@ jobs:
       - name: Add uv to PATH
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Build all Linux packages
-        run: ./build.sh --all ${{ needs.prepare.outputs.version }}
+      - name: Build AppImage and tarball
+        run: ./scripts/build/all.sh ${{ needs.prepare.outputs.version }} --appimage --tarball --checksums
 
       - name: Rename checksums for release
         run: |
@@ -66,7 +96,6 @@ jobs:
         with:
           name: linux-packages
           path: |
-            dist/*.deb
             dist/*.AppImage
             dist/*.tar.gz
             dist/SHA256SUMS-linux.txt
@@ -177,7 +206,7 @@ jobs:
 
   # Create GitHub Release
   release:
-    needs: [prepare, build-linux, build-windows]
+    needs: [prepare, build-deb, build-linux, build-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -186,6 +215,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: linux-packages
+          path: dist/
+
+      - name: Download .deb
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-package
           path: dist/
 
       - name: Download Windows artifacts
@@ -197,7 +232,9 @@ jobs:
       - name: Combine checksums
         run: |
           cd dist
-          cat SHA256SUMS-linux.txt SHA256SUMS-windows.txt > SHA256SUMS.txt
+          sha256sum *.deb > SHA256SUMS-deb.txt
+          cat SHA256SUMS-deb.txt SHA256SUMS-linux.txt SHA256SUMS-windows.txt > SHA256SUMS.txt
+          rm SHA256SUMS-deb.txt
           rm SHA256SUMS-linux.txt SHA256SUMS-windows.txt
 
       - name: Create Release
@@ -213,7 +250,7 @@ jobs:
 
             | Platform | Package | Description |
             |----------|---------|-------------|
-            | **Linux (Debian/Ubuntu)** | `voice-notepad_${{ needs.prepare.outputs.version }}_amd64.deb` | Install with `sudo dpkg -i` |
+            | **Linux (Debian/Ubuntu)** | `voice-notepad_${{ needs.prepare.outputs.version }}_amd64.deb` | Ubuntu 26.04. Install with `sudo apt install ./voice-notepad_*.deb`, or from the APT repo at apps.danielrosehill.com/apt |
             | **Linux (Universal)** | `Voice_Notepad-${{ needs.prepare.outputs.version }}-x86_64.AppImage` | Run directly, works on any distro |
             | **Linux (Portable)** | `voice-notepad-${{ needs.prepare.outputs.version }}-linux-x86_64.tar.gz` | Extract and run |
             | **Windows (Installer)** | `Voice-Notepad-${{ needs.prepare.outputs.version }}-windows-x64-setup.exe` | **Recommended** - Run installer, creates Start Menu shortcut |

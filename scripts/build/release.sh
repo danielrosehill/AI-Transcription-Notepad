@@ -78,8 +78,9 @@ echo ""
 echo "=== Building Packages ==="
 
 if [ "$DEB_ONLY" = true ]; then
-    # Personal use: just build the deb
-    "$SCRIPT_DIR/deb.sh" "$NEW_VERSION"
+    # Personal use: just build the deb. --local makes it NEW_VERSION~local<ts>, so the
+    # CI-built release of NEW_VERSION (GitHub, APT repo) replaces it rather than clashing.
+    "$SCRIPT_DIR/deb.sh" "$NEW_VERSION" --local
 else
     # Public release: build all formats
     "$SCRIPT_DIR/all.sh" "$NEW_VERSION"
@@ -90,7 +91,7 @@ echo "=== Release Complete ==="
 echo "Version: $NEW_VERSION"
 
 if [ "$DEB_ONLY" = true ]; then
-    echo "Package: dist/voice-notepad_${NEW_VERSION}_amd64.deb"
+    echo "Package: $(ls -t dist/voice-notepad_${NEW_VERSION}~local*_amd64.deb | head -1)"
 else
     echo "Packages:"
     echo "  - dist/voice-notepad_${NEW_VERSION}_amd64.deb"

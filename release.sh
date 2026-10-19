@@ -177,8 +177,11 @@ main() {
     print_step "2/6" "Building Debian package"
 
     print_info "Running build (this may take a moment)..."
-    if ./scripts/build/deb.sh "$NEW_VERSION" > /tmp/build.log 2>&1; then
-        print_success "Built voice-notepad_${NEW_VERSION}_amd64.deb"
+    # --local: the installed copy is VERSION~local<ts>, so the CI release of VERSION (the
+    # one GitHub and the APT repo ship) replaces it on the next apt upgrade.
+    if ./scripts/build/deb.sh "$NEW_VERSION" --local > /tmp/build.log 2>&1; then
+        LOCAL_DEB=$(ls -t dist/voice-notepad_${NEW_VERSION}~local*_amd64.deb | head -1)
+        print_success "Built $(basename "$LOCAL_DEB")"
     else
         echo ""
         cat /tmp/build.log
@@ -189,7 +192,7 @@ main() {
     print_step "3/6" "Installing on local machine"
 
     print_info "Installing package (may require sudo password)..."
-    if sudo dpkg -i "dist/voice-notepad_${NEW_VERSION}_amd64.deb" > /tmp/install.log 2>&1; then
+    if sudo dpkg -i "$LOCAL_DEB" > /tmp/install.log 2>&1; then
         print_success "Installed v$NEW_VERSION locally"
     else
         # Try to fix dependencies

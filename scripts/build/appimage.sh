@@ -58,7 +58,9 @@ mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 mkdir -p "$APPDIR/opt/voice-notepad"
 
 # Check if we need to rebuild the venv
-CURRENT_HASH=$(sha256sum app/requirements.txt | cut -d' ' -f1)
+# Key includes the Python version: a venv only works with the interpreter it was built
+# against, and a requirements-only key reused a 3.13 venv after the move to 3.14.
+CURRENT_HASH=$( { cat app/requirements.txt; /usr/bin/python3 -V; } | sha256sum | cut -d' ' -f1)
 CACHED_HASH=""
 if [ -f "$REQUIREMENTS_HASH_FILE" ]; then
     CACHED_HASH=$(cat "$REQUIREMENTS_HASH_FILE")

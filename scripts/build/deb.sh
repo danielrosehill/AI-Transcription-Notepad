@@ -4,8 +4,13 @@
 #
 # Uses venv caching for fast rebuilds - only reinstalls deps when requirements.txt changes
 #
-# Usage: ./scripts/build/deb.sh [VERSION] [--fast]
+# Usage: ./scripts/build/deb.sh [VERSION] [--fast] [--local]
 #   --fast: Skip compression for faster builds (larger .deb, good for dev iteration)
+#   --local: Version becomes VERSION~local<timestamp>. For builds installed on this machine
+#            (dev builds, release.sh). "~" sorts below the bare version, so the CI-built
+#            release of VERSION replaces it through apt instead of clashing with it. Without
+#            it, a local and a CI build both claimed 1.14.25 and apt listed the package as
+#            "upgradable from 1.14.25 to 1.14.25" (2026-10-20).
 
 set -e
 
@@ -15,12 +20,16 @@ cd "$PROJECT_ROOT"
 
 # Parse arguments
 FAST_MODE=false
+LOCAL_BUILD=false
 VERSION_ARG=""
 
 for arg in "$@"; do
     case $arg in
         --fast)
             FAST_MODE=true
+            ;;
+        --local)
+            LOCAL_BUILD=true
             ;;
         *)
             VERSION_ARG="$arg"
@@ -41,6 +50,16 @@ else
     echo "Error: No version specified and pyproject.toml not found"
     exit 1
 fi
+
+if [ "$LOCAL_BUILD" = true ]; then
+    VERSION="${VERSION}~local$(date +%Y%m%d%H%M%S)"
+fi
+
+# The bundled venv only runs on the Python minor it was built with, so pin it.
+# The old "python3 (>= 3.10)" let a 3.10 build (CI on Ubuntu 22.04) install on 3.14,
+# where it cannot import its own packages.
+PY_MM=$(/usr/bin/python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
+PY_NEXT=$(/usr/bin/python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1] + 1}")')
 
 PACKAGE_NAME="voice-notepad"
 ARCH="amd64"
@@ -74,7 +93,9 @@ mkdir -p "$INSTALL_DIR/usr/share/applications"
 mkdir -p "$INSTALL_DIR/usr/share/icons/hicolor/128x128/apps"
 
 # Check if we need to rebuild the venv
-CURRENT_HASH=$(sha256sum app/requirements.txt | cut -d' ' -f1)
+# Key includes the Python version: a venv only works with the interpreter it was built
+# against, and a requirements-only key reused a 3.13 venv after the move to 3.14.
+CURRENT_HASH=$( { cat app/requirements.txt; /usr/bin/python3 -V; } | sha256sum | cut -d' ' -f1)
 CACHED_HASH=""
 if [ -f "$REQUIREMENTS_HASH_FILE" ]; then
     CACHED_HASH=$(cat "$REQUIREMENTS_HASH_FILE")
@@ -157,7 +178,7 @@ Section: sound
 Priority: optional
 Architecture: ${ARCH}
 Installed-Size: ${INSTALLED_SIZE}
-Depends: python3 (>= 3.10), python3-venv, ffmpeg, portaudio19-dev
+Depends: python3 (>= ${PY_MM}), python3 (<< ${PY_NEXT}), ffmpeg, portaudio19-dev
 Maintainer: Daniel Rosehill <public@danielrosehill.com>
 Homepage: https://github.com/danielrosehill/Voice-Notepad-V3
 Description: Voice recording with AI-powered transcription
